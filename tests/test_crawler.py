@@ -13,6 +13,7 @@ from bugdb.crawler import (
     crawl_globalprotect,
     crawl_panos,
     crawl_prisma_access_agent,
+    extract_workaround,
     get_existing_versions,
     merge_databases,
 )
@@ -1333,3 +1334,215 @@ class TestSkipVersionsParameter:
             assert db is not None
             versions = {v.version for p in db.products for v in p.versions}
             assert "26.1.2" not in versions
+
+
+class TestExtractWorkaround:
+    """Tests for the extract_workaround function."""
+
+    def test_extract_workaround_simple(self):
+        """Test extracting a simple workaround."""
+        description = "The application crashes when clicking save. Workaround: Click cancel instead."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "The application crashes when clicking save."
+        assert workaround == "Click cancel instead."
+
+    def test_extract_workaround_no_space_after_colon(self):
+        """Test extracting workaround without space after colon."""
+        description = "Bug in login flow. Workaround:Use the mobile app instead."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "Bug in login flow."
+        assert workaround == "Use the mobile app instead."
+
+    def test_extract_workaround_case_insensitive(self):
+        """Test that workaround extraction is case insensitive."""
+        description = "Connection drops unexpectedly. WORKAROUND: Reconnect manually."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "Connection drops unexpectedly."
+        assert workaround == "Reconnect manually."
+
+    def test_extract_workaround_mixed_case(self):
+        """Test workaround with mixed case."""
+        description = "Error on startup. WorkAround: Restart the service."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "Error on startup."
+        assert workaround == "Restart the service."
+
+    def test_extract_workaround_multiline(self):
+        """Test extracting multiline workaround."""
+        description = "Memory leak detected. Workaround: 1. Stop the service. 2. Clear cache. 3. Restart."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "Memory leak detected."
+        assert workaround == "1. Stop the service. 2. Clear cache. 3. Restart."
+
+    def test_extract_workaround_at_end(self):
+        """Test workaround at the end of description."""
+        description = "Feature not working as expected. Workaround: Disable and re-enable the feature."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "Feature not working as expected."
+        assert workaround == "Disable and re-enable the feature."
+
+    def test_extract_workaround_none_present(self):
+        """Test when no workaround is present."""
+        description = "The button color is wrong. This affects all users."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "The button color is wrong. This affects all users."
+        assert workaround is None
+
+    def test_extract_workaround_empty_description(self):
+        """Test with empty description."""
+        cleaned, workaround = extract_workaround("")
+
+        assert cleaned == ""
+        assert workaround is None
+
+    def test_extract_workaround_none_description(self):
+        """Test with None description."""
+        cleaned, workaround = extract_workaround(None)
+
+        assert cleaned is None
+        assert workaround is None
+
+    def test_extract_workaround_only_workaround_keyword(self):
+        """Test when only 'Workaround:' is present with no text."""
+        description = "Bug exists. Workaround:"
+        cleaned, workaround = extract_workaround(description)
+
+        # Empty workaround should not be extracted
+        assert cleaned == "Bug exists. Workaround:"
+        assert workaround is None
+
+    def test_extract_workaround_in_middle(self):
+        """Test workaround in the middle of text."""
+        description = "Issue with display. Workaround: Refresh the page. This resolves most cases."
+        cleaned, workaround = extract_workaround(description)
+
+        # Workaround captures text until end or next section
+        assert "Issue with display" in cleaned
+        assert "Refresh the page" in workaround
+
+    def test_extract_workaround_with_special_characters(self):
+        """Test workaround with special characters."""
+        description = "SSL error occurs. Workaround: Set SSL_VERIFY=false in config.yaml."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "SSL error occurs."
+        assert workaround == "Set SSL_VERIFY=false in config.yaml."
+
+    def test_extract_workaround_preserves_description(self):
+        """Test that original description is preserved when no workaround."""
+        description = "This is a detailed description with multiple sentences. It describes the bug thoroughly."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == description
+        assert workaround is None
+
+    def test_extract_workaround_replaces_newlines_with_spaces(self):
+        """Test that newlines are replaced with spaces in workaround text."""
+        description = "Bug occurs on startup. Workaround: Step 1: Open settings.\nStep 2: Click reset.\nStep 3: Restart app."
+        cleaned, workaround = extract_workaround(description)
+
+        assert cleaned == "Bug occurs on startup."
+        assert "Step 1: Open settings." in workaround
+        assert "\n" not in workaround  # Newlines should be replaced with spaces
+        assert "Step 2: Click reset." in workaround
+        assert "Step 3: Restart app." in workaround
+
+    def test_extract_workaround_replaces_newlines_in_description(self):
+        """Test that newlines are replaced with spaces in the cleaned description."""
+        description = "First paragraph of description.\n\nSecond paragraph. Workaround: Use alternative method."
+        cleaned, workaround = extract_workaround(description)
+
+        assert "First paragraph" in cleaned
+        assert "\n" not in cleaned  # Newlines should be replaced with spaces
+        assert "Second paragraph" in cleaned
+        assert workaround == "Use alternative method."
+
+
+class TestIssueParsingWithWorkaround:
+    """Tests for issue parsing that includes workaround extraction."""
+
+    def test_parse_issues_table_extracts_workaround(self):
+        """Test that _parse_issues_table extracts workarounds from descriptions."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>GPC-12345</td>
+                    <td>Connection fails on slow networks. Workaround: Increase timeout to 30 seconds.</td>
+                </tr>
+                <tr>
+                    <td>GPC-12346</td>
+                    <td>Button misaligned on mobile devices.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 2
+
+        # First issue should have workaround extracted
+        assert issues[0].bug_id == "GPC-12345"
+        assert "Connection fails on slow networks" in issues[0].description
+        assert "Workaround" not in issues[0].description
+        assert issues[0].workaround == "Increase timeout to 30 seconds."
+
+        # Second issue should have no workaround
+        assert issues[1].bug_id == "GPC-12346"
+        assert issues[1].description == "Button misaligned on mobile devices."
+        assert issues[1].workaround is None
+
+    def test_parse_issues_table_multiple_workarounds(self):
+        """Test parsing multiple issues with workarounds."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Bug ID</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-001</td>
+                    <td>Auth failure. Workaround: Use API key authentication.</td>
+                </tr>
+                <tr>
+                    <td>PAN-002</td>
+                    <td>Slow response. WORKAROUND: Enable caching.</td>
+                </tr>
+                <tr>
+                    <td>PAN-003</td>
+                    <td>UI glitch on Firefox.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 3
+
+        assert issues[0].workaround == "Use API key authentication."
+        assert issues[1].workaround == "Enable caching."
+        assert issues[2].workaround is None

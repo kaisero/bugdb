@@ -115,6 +115,55 @@ def _version_sort_key(version: str) -> tuple:
 # Configure module logger
 logger = logging.getLogger(__name__)
 
+
+def extract_workaround(description: str) -> tuple[str, Optional[str]]:
+    """Extract workaround text from an issue description.
+
+    Looks for patterns like "Workaround: <text>" or "Workaround:<text>" in the
+    description and extracts the workaround text, returning the cleaned description
+    and the workaround separately.
+
+    Args:
+        description: The full issue description that may contain a workaround.
+
+    Returns:
+        Tuple of (cleaned_description, workaround). If no workaround is found,
+        workaround will be None and description is returned unchanged.
+    """
+    if not description:
+        return description, None
+
+    # Pattern to match "Workaround:" followed by text
+    # Handles variations like:
+    # - "Workaround: text here"
+    # - "Workaround:text here"
+    # - "WORKAROUND: text here"
+    # - Multi-line workarounds (until end of string or next section header)
+    pattern = r"(?i)\bworkaround\s*:\s*(.+?)(?=\n(?:[A-Z][a-z]+\s*:|$)|$)"
+
+    match = re.search(pattern, description, re.DOTALL | re.IGNORECASE)
+
+    if match:
+        workaround = match.group(1).strip()
+
+        # Remove the workaround section from description
+        cleaned_description = description[:match.start()].strip()
+
+        # Also remove any text after the workaround that was captured
+        remaining = description[match.end():].strip()
+        if remaining:
+            cleaned_description = f"{cleaned_description} {remaining}".strip() if cleaned_description else remaining
+
+        # Replace newlines with spaces and clean up multiple spaces
+        cleaned_description = re.sub(r'\s+', ' ', cleaned_description).strip()
+        workaround = re.sub(r'\s+', ' ', workaround).strip()
+
+        # Don't return empty workarounds
+        if workaround:
+            return cleaned_description, workaround
+
+    return description, None
+
 BASE_URL = "https://docs.paloaltonetworks.com"
 
 
@@ -793,7 +842,7 @@ class PaloAltoCrawler:
                 continue
 
             bug_id = cells[issue_col].get_text(strip=True)
-            description = (
+            raw_description = (
                 cells[desc_col].get_text(strip=True) if desc_col is not None else ""
             )
 
@@ -802,11 +851,15 @@ class PaloAltoCrawler:
                 logger.debug("Skipping invalid bug ID: %s", bug_id)
                 continue
 
-            logger.debug("Parsed issue: %s", bug_id)
+            # Extract workaround from description if present
+            description, workaround = extract_workaround(raw_description)
+
+            logger.debug("Parsed issue: %s (workaround: %s)", bug_id, workaround is not None)
             issues.append(
                 Issue(
                     bug_id=bug_id,
                     description=description,
+                    workaround=workaround,
                 )
             )
 
@@ -858,7 +911,7 @@ class PaloAltoCrawler:
                         continue
 
                     bug_id = cells[issue_col].get_text(strip=True)
-                    description = (
+                    raw_description = (
                         cells[desc_col].get_text(strip=True)
                         if desc_col is not None
                         else ""
@@ -869,10 +922,14 @@ class PaloAltoCrawler:
                         logger.debug("Skipping invalid bug ID: %s", bug_id)
                         continue
 
+                    # Extract workaround from description if present
+                    description, workaround = extract_workaround(raw_description)
+
                     issues.append(
                         Issue(
                             bug_id=bug_id,
                             description=description,
+                            workaround=workaround,
                         )
                     )
 
