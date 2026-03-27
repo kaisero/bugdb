@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>PAN-OS 12.1.5 Known Issues</title>
+</head>
+<body>
+    <main>
+        <h1>PAN-OS 12.1.5 Known Issues</h1>
+        <p>The following table lists the known issues in PAN-OS 12.1.5.</p>
+
+        <h2>Management Plane Known Issues</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-300001</td>
+                    <td>Panorama may display stale device state information after HA failover.</td>
+                </tr>
+                <tr>
+                    <td>PAN-300002</td>
+                    <td>Configuration push to device groups may timeout with large rule bases.</td>
+                </tr>
+                <tr>
+                    <td>PAN-300003</td>
+                    <td>Log forwarding to external syslog servers may experience delays during high traffic.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Data Plane Known Issues</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-300004</td>
+                    <td>Session distribution may be uneven across dataplane processors under specific conditions.</td>
+                </tr>
+                <tr>
+                    <td>PAN-300005</td>
+                    <td>IPSec tunnel may fail to establish with certain third-party devices.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>GlobalProtect Known Issues</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-300006</td>
+                    <td>GlobalProtect portal may not respond to satellite requests during certificate renewal.</td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+</body>
+</html>

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>PAN-OS 12.1.5 Addressed Issues</title>
+</head>
+<body>
+    <main>
+        <h1>PAN-OS 12.1.5 Addressed Issues</h1>
+        <p>The following table lists the issues addressed in PAN-OS 12.1.5.</p>
+
+        <h2>Management Plane Addressed Issues</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-299001</td>
+                    <td>Fixed an issue where commit operations would hang when objects had circular references.</td>
+                </tr>
+                <tr>
+                    <td>PAN-299002</td>
+                    <td>Resolved memory leak in the management daemon during extended operation.</td>
+                </tr>
+                <tr>
+                    <td>PAN-299003</td>
+                    <td>Fixed SNMP walk returning incomplete interface data.</td>
+                </tr>
+                <tr>
+                    <td>PAN-299004</td>
+                    <td>Corrected API response formatting for certain XML queries.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Data Plane Addressed Issues</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-299005</td>
+                    <td>Fixed packet loss issue during SSL decryption with certain cipher suites.</td>
+                </tr>
+                <tr>
+                    <td>PAN-299006</td>
+                    <td>Resolved NAT session creation failures under high connection rates.</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>Security Addressed Issues</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-299007</td>
+                    <td>Fixed vulnerability in authentication handling (CVE-2024-XXXX).</td>
+                </tr>
+                <tr>
+                    <td>PAN-299008</td>
+                    <td>Resolved cross-site scripting vulnerability in web interface.</td>
+                </tr>
+            </tbody>
+        </table>
+    </main>
+</body>
+</html>
