@@ -305,6 +305,7 @@ def fetch(
         crawl_panos,
         crawl_prisma_access,
         crawl_prisma_access_agent,
+        crawl_prisma_sdwan,
         get_existing_versions,
         merge_databases,
     )
@@ -346,6 +347,7 @@ def fetch(
         "panos": crawl_panos,
         "prisma-access": crawl_prisma_access,
         "prisma-access-agent": crawl_prisma_access_agent,
+        "prisma-sdwan": crawl_prisma_sdwan,
     }
 
     # Determine which products to fetch

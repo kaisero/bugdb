@@ -14,9 +14,11 @@ from bugdb.crawler import (
     crawl_panos,
     crawl_prisma_access,
     crawl_prisma_access_agent,
+    crawl_prisma_sdwan,
     extract_affected_components,
     extract_bug_id_and_fix_info,
     extract_cell_text_with_tables,
+    extract_fix_info_from_description,
     extract_workaround,
     get_existing_versions,
     merge_databases,
@@ -2448,3 +2450,259 @@ class TestPrismaAccessCrawlFunction:
         """Test that crawl_prisma_access can be imported."""
         from bugdb.crawler import crawl_prisma_access
         assert callable(crawl_prisma_access)
+
+
+
+class TestExtractFixInfoFromDescription:
+    """Tests for the extract_fix_info_from_description function."""
+
+    def test_extract_fix_info_simple(self):
+        """Test extracting fix info from a simple description."""
+        description = "Some issue description. This issue is resolved in ION 6.3.3."
+        cleaned, fix_info = extract_fix_info_from_description(description)
+
+        assert cleaned == "Some issue description."
+        assert fix_info == "Resolved in ION 6.3.3"
+
+    def test_extract_fix_info_with_release(self):
+        """Test extracting fix info with release keyword."""
+        description = "A problem occurs. This issue is resolved in release 6.5.1."
+        cleaned, fix_info = extract_fix_info_from_description(description)
+
+        assert cleaned == "A problem occurs."
+        assert fix_info == "Resolved in release 6.5.1"
+
+    def test_extract_fix_info_prisma_sdwan(self):
+        """Test extracting fix info for Prisma SD-WAN."""
+        description = "Connection drops intermittently. This issue is resolved in Prisma SD-WAN ION 6.4.2."
+        cleaned, fix_info = extract_fix_info_from_description(description)
+
+        assert cleaned == "Connection drops intermittently."
+        assert fix_info == "Resolved in Prisma SD-WAN ION 6.4.2"
+
+    def test_extract_fix_info_no_match(self):
+        """Test that description without fix info is unchanged."""
+        description = "Some issue that has no resolution info."
+        cleaned, fix_info = extract_fix_info_from_description(description)
+
+        assert cleaned == description
+        assert fix_info is None
+
+    def test_extract_fix_info_preserves_existing(self):
+        """Test that existing fix_info is preserved and not overwritten."""
+        description = "Issue description. This issue is resolved in 6.5.0."
+        cleaned, fix_info = extract_fix_info_from_description(
+            description, existing_fix_info="Resolved in 6.4.0"
+        )
+
+        assert cleaned == description  # Description unchanged when existing_fix_info
+        assert fix_info == "Resolved in 6.4.0"
+
+    def test_extract_fix_info_reformats_existing(self):
+        """Test that existing fix_info with full sentence is reformatted."""
+        description = "Some issue description."
+        cleaned, fix_info = extract_fix_info_from_description(
+            description, existing_fix_info="This issue is resolved in ION version 6.4.3."
+        )
+
+        assert cleaned == description
+        assert fix_info == "Resolved in ION version 6.4.3"
+
+    def test_extract_fix_info_reformats_existing_no_period(self):
+        """Test reformatting existing fix_info without trailing period."""
+        description = "Some issue."
+        cleaned, fix_info = extract_fix_info_from_description(
+            description, existing_fix_info="This issue is resolved in 6.5.0"
+        )
+
+        assert cleaned == description
+        assert fix_info == "Resolved in 6.5.0"
+
+    def test_extract_fix_info_empty_description(self):
+        """Test with empty description."""
+        cleaned, fix_info = extract_fix_info_from_description("")
+
+        assert cleaned == ""
+        assert fix_info is None
+
+    def test_extract_fix_info_none_description(self):
+        """Test with None description."""
+        cleaned, fix_info = extract_fix_info_from_description(None)
+
+        assert cleaned is None
+        assert fix_info is None
+
+    def test_extract_fix_info_case_insensitive(self):
+        """Test that matching is case insensitive."""
+        description = "Issue desc. THIS ISSUE IS RESOLVED IN version 6.5."
+        cleaned, fix_info = extract_fix_info_from_description(description)
+
+        assert cleaned == "Issue desc."
+        assert fix_info == "Resolved in version 6.5"
+
+    def test_extract_fix_info_at_end(self):
+        """Test fix info at end without period."""
+        description = "Issue description This issue is resolved in 6.5.1"
+        cleaned, fix_info = extract_fix_info_from_description(description)
+
+        assert cleaned == "Issue description"
+        assert fix_info == "Resolved in 6.5.1"
+
+
+class TestPrismaSDWANCrawler:
+    """Tests for Prisma SD-WAN crawler methods."""
+
+    def test_parse_issues_table_extracts_fix_info(self):
+        """Test that _parse_issues_table extracts fix_info from descriptions."""
+        html = """
+        <table>
+            <thead>
+                <tr><th>Issue ID</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CGXSW-1234</td>
+                    <td>Controller failover issue. This issue is resolved in ION 6.4.1.</td>
+                </tr>
+                <tr>
+                    <td>CGXSW-5678</td>
+                    <td>Simple issue without fix info.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 2
+
+        # First issue should have fix_info extracted
+        assert issues[0].bug_id == "CGXSW-1234"
+        assert issues[0].fix_info == "Resolved in ION 6.4.1"
+        assert "This issue is resolved" not in issues[0].description
+
+        # Second issue should not have fix_info
+        assert issues[1].bug_id == "CGXSW-5678"
+        assert issues[1].fix_info is None
+
+
+class TestPrismaSDWANIssuePageParsing:
+    """Tests for Prisma SD-WAN issue page parsing."""
+
+    @pytest.mark.asyncio
+    async def test_parse_prisma_sdwan_issues_page_simple(self):
+        """Test parsing a simple Prisma SD-WAN issues page."""
+        html = """
+        <html>
+        <body>
+            <h2>Addressed Issues in Prisma SD-WAN ION Release 6.5</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>CGXSW-100</td><td>Fixed a connectivity issue.</td></tr>
+                    <tr><td>CGXSW-101</td><td>Fixed a performance bug.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            result = await crawler._parse_prisma_sdwan_issues_page(
+                "/test-url", "addressed", "6-5"
+            )
+
+        assert "6.5" in result
+        assert len(result["6.5"]) == 2
+        assert result["6.5"][0].bug_id == "CGXSW-100"
+        assert result["6.5"][1].bug_id == "CGXSW-101"
+
+    @pytest.mark.asyncio
+    async def test_parse_prisma_sdwan_issues_page_version_sections(self):
+        """Test parsing page with multiple version sections."""
+        html = """
+        <html>
+        <body>
+            <h2>Addressed Issues in Prisma SD-WAN ION Releases</h2>
+
+            <h3>6.5.1 Addressed Issues</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>CGXSW-200</td><td>Fixed in 6.5.1.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>6.5.0 Addressed Issues</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>CGXSW-201</td><td>Fixed in 6.5.0.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            result = await crawler._parse_prisma_sdwan_issues_page(
+                "/test-url", "addressed", "6-5"
+            )
+
+        assert "6.5.1" in result
+        assert "6.5.0" in result
+        assert result["6.5.1"][0].bug_id == "CGXSW-200"
+        assert result["6.5.0"][0].bug_id == "CGXSW-201"
+
+    @pytest.mark.asyncio
+    async def test_parse_prisma_sdwan_issues_page_with_workaround(self):
+        """Test parsing page with workarounds in descriptions."""
+        html = """
+        <html>
+        <body>
+            <h2>Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>CGXSW-300</td>
+                        <td>Connection drops under load. Workaround: Reduce concurrent connections.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            result = await crawler._parse_prisma_sdwan_issues_page(
+                "/test-url", "known", "6-5"
+            )
+
+        assert "6.5" in result
+        issue = result["6.5"][0]
+        assert issue.bug_id == "CGXSW-300"
+        assert issue.workaround == "Reduce concurrent connections."
+        assert "Workaround" not in issue.description
+
+
+class TestPrismaSDWANCrawlFunction:
+    """Tests for the crawl_prisma_sdwan function."""
+
+    def test_crawl_prisma_sdwan_import(self):
+        """Test that crawl_prisma_sdwan can be imported."""
+        from bugdb.crawler import crawl_prisma_sdwan
+        assert callable(crawl_prisma_sdwan)
+

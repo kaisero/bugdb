@@ -165,6 +165,72 @@ def extract_workaround(description: str) -> tuple[str, Optional[str]]:
     return description, None
 
 
+def extract_fix_info_from_description(
+    description: str, existing_fix_info: Optional[str] = None
+) -> tuple[str, Optional[str]]:
+    """Extract fix information from an issue description.
+
+    Looks for patterns like "This issue is resolved in <version>" in the
+    description and extracts it as fix_info. If existing_fix_info is provided
+    (e.g., from the bug ID column), it will be reformatted if it matches the
+    "This issue is resolved in..." pattern.
+
+    Args:
+        description: The issue description that may contain fix information.
+        existing_fix_info: Any fix_info already extracted from the bug ID.
+
+    Returns:
+        Tuple of (cleaned_description, fix_info). If no fix info is found
+        and no existing_fix_info provided, fix_info will be None.
+    """
+    # Reformat existing_fix_info if it matches the "This issue is resolved in..." pattern
+    if existing_fix_info:
+        existing_match = re.match(
+            r"(?i)^This\s+issue\s+is\s+resolved\s+in\s+(.+?)\.?$",
+            existing_fix_info.strip()
+        )
+        if existing_match:
+            existing_fix_info = f"Resolved in {existing_match.group(1).strip()}"
+
+    if not description:
+        return description, existing_fix_info
+
+    # If we already have fix_info from elsewhere, don't extract again
+    if existing_fix_info:
+        return description, existing_fix_info
+
+    # Pattern to match "This issue is resolved in <version/text>"
+    # Handles variations like:
+    # - "This issue is resolved in ION 6.3.3."
+    # - "This issue is resolved in release 6.5.1."
+    # - "This issue is resolved in Prisma SD-WAN ION 6.4.2."
+    pattern = r"(?i)\bThis\s+issue\s+is\s+resolved\s+in\s+(.+?)(?:\.(?:\s|$)|$)"
+
+    match = re.search(pattern, description, re.IGNORECASE)
+
+    if match:
+        fix_info = match.group(1).strip()
+
+        # Remove the fix info sentence from description
+        cleaned_description = description[:match.start()].strip()
+
+        # Add any remaining text after the match
+        remaining = description[match.end():].strip()
+        if remaining:
+            cleaned_description = f"{cleaned_description} {remaining}".strip() if cleaned_description else remaining
+
+        # Clean up multiple spaces
+        cleaned_description = re.sub(r'\s+', ' ', cleaned_description).strip()
+
+        # Format the fix_info consistently
+        fix_info = f"Resolved in {fix_info}"
+
+        if fix_info and cleaned_description:
+            return cleaned_description, fix_info
+
+    return description, existing_fix_info
+
+
 def extract_bug_id_and_fix_info(raw_bug_id: str) -> tuple[str, Optional[str]]:
     """Extract bug ID and additional fix information from a raw bug ID string.
 
@@ -997,6 +1063,9 @@ class PaloAltoCrawler:
             # Extract workaround from description if present
             description, workaround = extract_workaround(raw_description)
 
+            # Extract fix info from description (e.g., "This issue is resolved in...")
+            description, fix_info = extract_fix_info_from_description(description, fix_info)
+
             # Extract affected components from description start (e.g., "(NGFW Clusters)")
             description, affected_components = extract_affected_components(description)
 
@@ -1111,6 +1180,9 @@ class PaloAltoCrawler:
 
                     # Extract workaround from description if present
                     description, workaround = extract_workaround(raw_description)
+
+                    # Extract fix info from description
+                    description, fix_info = extract_fix_info_from_description(description, fix_info)
 
                     # Extract affected components from description start (e.g., "(NGFW Clusters)")
                     description, affected_components = extract_affected_components(description)
@@ -1869,6 +1941,9 @@ class PaloAltoCrawler:
             # Extract workaround
             description, workaround = extract_workaround(raw_description)
 
+            # Extract fix info from description
+            description, fix_info = extract_fix_info_from_description(description, fix_info)
+
             # Extract affected components from description
             description, affected_components = extract_affected_components(description)
 
@@ -1891,6 +1966,253 @@ class PaloAltoCrawler:
             )
 
         return issues
+
+    async def discover_prisma_sdwan_versions(self) -> list[str]:
+        """Discover available Prisma SD-WAN major versions.
+
+        The version dropdown is JavaScript-rendered, so we probe for known
+        version patterns by checking if the URLs exist.
+
+        Returns:
+            List of major version strings (e.g., ["6-5", "6-4", "6-3"]).
+        """
+        logger.debug("Discovering Prisma SD-WAN versions by probing URLs")
+
+        # Known version patterns to check (newest first)
+        # Prisma SD-WAN versions typically follow 6-x or 5-x patterns
+        candidate_versions = [
+            "6-5", "6-4", "6-3", "6-2", "6-1", "6-0",
+            "5-6", "5-5", "5-4", "5-3", "5-2", "5-1", "5-0",
+        ]
+
+        valid_versions = []
+
+        async def check_version(version: str) -> Optional[str]:
+            """Check if a version URL exists."""
+            url = (
+                f"/prisma-sd-wan/release-notes/{version}"
+                f"/prisma-sd-wan-ion-device-release-{version}"
+            )
+            try:
+                soup = await self._fetch_page_with_semaphore(url)
+                # Check if page has actual content (not a 404 or error page)
+                title = soup.find("title")
+                title_text = title.get_text().lower() if title else ""
+                if "404" in title_text or "not found" in title_text or "error" in title_text:
+                    return None
+                # Check for a valid h1 header
+                h1 = soup.find("h1")
+                if h1 and "release" in h1.get_text().lower():
+                    logger.debug("Found valid Prisma SD-WAN version: %s", version)
+                    return version
+                return None
+            except Exception:
+                return None
+
+        # Check versions concurrently
+        tasks = [check_version(v) for v in candidate_versions]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result in results:
+            if isinstance(result, str):
+                valid_versions.append(result)
+
+        # Sort versions in descending order (newest first)
+        sorted_versions = sorted(
+            valid_versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
+        )
+        logger.debug("Discovered %d Prisma SD-WAN versions: %s",
+                     len(sorted_versions), sorted_versions)
+        return sorted_versions
+
+    async def crawl_prisma_sdwan(
+        self,
+        major_versions: Optional[list[str]] = None,
+        skip_versions: Optional[set[str]] = None,
+    ) -> Product:
+        """Crawl Prisma SD-WAN release notes for one or more major versions.
+
+        Args:
+            major_versions: List of major versions to crawl (e.g., ["6-5", "6-4"]).
+                           If None, discovers and crawls all available versions.
+            skip_versions: Set of version strings to skip (e.g., {"6.5.0", "6.4.1"}).
+                          Used for incremental fetching to avoid re-fetching existing versions.
+
+        Returns:
+            Product with all versions and issues.
+        """
+        skip_versions = skip_versions or set()
+
+        # Discover versions if not specified
+        if major_versions is None:
+            self._log("Discovering available Prisma SD-WAN versions...")
+            major_versions = await self.discover_prisma_sdwan_versions()
+            self._log(f"Found versions: {', '.join(major_versions)}")
+
+        all_product_versions = []
+
+        for major_version in major_versions:
+            version_str = major_version.replace("-", ".")
+            self._log(f"Crawling Prisma SD-WAN {version_str}...")
+
+            # Build URLs for this major version
+            # URL patterns differ between versions:
+            # - Newer (6-5): /known-issues-in-prisma-sd-wan-ion-release
+            # - Older (6-4, etc.): /known-issues-in-prisma-sd-wan-ion-release-6-4.html
+            base_path = (
+                f"/prisma-sd-wan/release-notes/{major_version}"
+                f"/prisma-sd-wan-ion-device-release-{major_version}"
+            )
+
+            # Try both URL patterns for each page type
+            known_urls = [
+                f"{base_path}/known-issues-in-prisma-sd-wan-ion-release",
+                f"{base_path}/known-issues-in-prisma-sd-wan-ion-release-{major_version}.html",
+            ]
+            addressed_urls = [
+                f"{base_path}/addressed-issues-in-prisma-sd-wan-ion-release",
+                f"{base_path}/addressed-issues-in-prisma-sd-wan-ion-release-{major_version}.html",
+            ]
+
+            # Fetch pages, trying alternate URLs if primary fails
+            fetch_tasks = [
+                self._parse_prisma_sdwan_issues_page_with_fallback(
+                    known_urls, "known", major_version
+                ),
+                self._parse_prisma_sdwan_issues_page_with_fallback(
+                    addressed_urls, "addressed", major_version
+                ),
+            ]
+            results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+            # Collect issues by version
+            known_by_version: dict[str, list[Issue]] = {}
+            addressed_by_version: dict[str, list[Issue]] = {}
+
+            # Process known issues
+            if not isinstance(results[0], Exception):
+                for version, issues in results[0].items():
+                    if version not in skip_versions:
+                        known_by_version[version] = issues
+
+            # Process addressed issues
+            if not isinstance(results[1], Exception):
+                for version, issues in results[1].items():
+                    if version not in skip_versions:
+                        addressed_by_version[version] = issues
+
+            # Combine into ProductVersion objects
+            all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
+
+            for ver in all_versions_set:
+                known = self._deduplicate_issues(known_by_version.get(ver, []))
+                addressed = self._deduplicate_issues(addressed_by_version.get(ver, []))
+
+                if known or addressed:
+                    all_product_versions.append(
+                        ProductVersion(
+                            version=ver,
+                            known_issues=known,
+                            addressed_issues=addressed,
+                        )
+                    )
+                    self._log(
+                        f"    {ver}: {len(known)} known, {len(addressed)} addressed"
+                    )
+
+        # Sort versions (newest first)
+        all_product_versions.sort(
+            key=lambda v: self._version_sort_key(v.version),
+            reverse=True,
+        )
+
+        return Product(
+            id="prisma-sdwan",
+            name="Prisma SD-WAN",
+            versions=all_product_versions,
+        )
+
+    async def _parse_prisma_sdwan_issues_page_with_fallback(
+        self, urls: list[str], issue_type: str, major_version: str
+    ) -> dict[str, list[Issue]]:
+        """Try multiple URLs to parse Prisma SD-WAN issues page.
+
+        Args:
+            urls: List of URLs to try (in order).
+            issue_type: Either "known" or "addressed".
+            major_version: The major version being parsed (e.g., "6-5").
+
+        Returns:
+            Dict mapping version strings to lists of Issue objects.
+        """
+        for url in urls:
+            result = await self._parse_prisma_sdwan_issues_page(
+                url, issue_type, major_version
+            )
+            # If we got any results, return them
+            if result:
+                return result
+        # No results from any URL
+        return {}
+
+    async def _parse_prisma_sdwan_issues_page(
+        self, url: str, issue_type: str, major_version: str
+    ) -> dict[str, list[Issue]]:
+        """Parse a Prisma SD-WAN issues page.
+
+        The page contains issue tables, potentially with version headers
+        for different minor releases.
+
+        Args:
+            url: URL of the issues page.
+            issue_type: Either "known" or "addressed".
+            major_version: The major version being parsed (e.g., "6-5").
+
+        Returns:
+            Dict mapping version strings to lists of Issue objects.
+        """
+        results: dict[str, list[Issue]] = {}
+        base_version = major_version.replace("-", ".")
+
+        try:
+            soup = await self._fetch_page_with_semaphore(url)
+
+            # Track current version context
+            current_version = base_version
+
+            # Find all headers and tables
+            for element in soup.find_all(["h2", "h3", "h4", "table"]):
+                if element.name in ["h2", "h3", "h4"]:
+                    header_text = element.get_text(strip=True)
+
+                    # Check for version header (e.g., "6.5.1 Addressed Issues", "ION 6.5.0")
+                    version_match = re.search(
+                        r"(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?)",
+                        header_text,
+                    )
+                    if version_match:
+                        current_version = version_match.group(1)
+                        logger.debug("Found version header: %s", current_version)
+                        continue
+
+                elif element.name == "table":
+                    # Skip nested tables
+                    if element.find_parent("table"):
+                        continue
+
+                    # Parse issues from this table
+                    issues = self._parse_issues_table(element)
+
+                    if issues:
+                        if current_version not in results:
+                            results[current_version] = []
+                        results[current_version].extend(issues)
+
+        except Exception as e:
+            logger.error("Error parsing Prisma SD-WAN page %s: %s", url, e)
+            self._log(f"  Error parsing {url}: {e}")
+
+        return results
 
 
 async def _crawl_globalprotect_async(
@@ -2021,6 +2343,37 @@ async def _crawl_panos_async(
         )
 
 
+async def _crawl_prisma_sdwan_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Async implementation of Prisma SD-WAN crawler."""
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        product = await crawler.crawl_prisma_sdwan(major_versions, skip_versions)
+
+        # Build source description
+        if major_versions:
+            versions_str = ", ".join(v.replace("-", ".") for v in major_versions)
+            source = f"Palo Alto Networks Prisma SD-WAN {versions_str} Release Notes"
+        else:
+            source = "Palo Alto Networks Prisma SD-WAN Release Notes (All Versions)"
+
+        return BugDatabase(
+            metadata=Metadata(
+                generated_at=datetime.now(timezone.utc),
+                version="1.0.0",
+                source=source,
+            ),
+            products=[product],
+        )
+
+
 def crawl_globalprotect(
     major_versions: Optional[list[str]] = None,
     headless: bool = True,
@@ -2132,6 +2485,35 @@ def crawl_panos(
     """
     return asyncio.run(
         _crawl_panos_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_prisma_sdwan(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Crawl Prisma SD-WAN release notes and return a BugDatabase.
+
+    Args:
+        major_versions: List of major versions to crawl (e.g., ["6-5", "6-4"]).
+                       If None, discovers and crawls all available versions.
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Set of version strings to skip for incremental fetching.
+
+    Returns:
+        BugDatabase with Prisma SD-WAN issues.
+    """
+    return asyncio.run(
+        _crawl_prisma_sdwan_async(
             major_versions, headless, verbose, debug, max_concurrency, skip_versions
         )
     )
