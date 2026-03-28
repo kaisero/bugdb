@@ -301,6 +301,7 @@ def fetch(
     from datetime import datetime, timezone
 
     from bugdb.crawler import (
+        crawl_cloud_ngfw_azure,
         crawl_globalprotect,
         crawl_panos,
         crawl_prisma_access,
@@ -343,6 +344,7 @@ def fetch(
 
     # Define supported products and their crawlers
     supported_products = {
+        "cloud-ngfw-azure": crawl_cloud_ngfw_azure,
         "globalprotect": crawl_globalprotect,
         "panos": crawl_panos,
         "prisma-access": crawl_prisma_access,

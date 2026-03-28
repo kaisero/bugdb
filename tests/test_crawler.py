@@ -2706,3 +2706,123 @@ class TestPrismaSDWANCrawlFunction:
         from bugdb.crawler import crawl_prisma_sdwan
         assert callable(crawl_prisma_sdwan)
 
+
+class TestCloudNGFWAzureCrawler:
+    """Tests for Cloud NGFW for Azure crawler."""
+
+    @pytest.mark.asyncio
+    async def test_crawl_cloud_ngfw_azure_basic(self):
+        """Test basic Cloud NGFW for Azure crawling."""
+        known_html = """
+        <html>
+        <body>
+            <h2>Cloud NGFW for Azure Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>CNGFWAZR-100</td><td>Known issue in Azure deployment.</td></tr>
+                    <tr><td>CNGFWAZR-101</td><td>Resource limitation issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+        addressed_html = """
+        <html>
+        <body>
+            <h2>Cloud NGFW for Azure Addressed Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>CNGFWAZR-50</td><td>Fixed connectivity issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_cloud_ngfw_azure()
+
+        assert product.id == "cloud-ngfw-azure"
+        assert product.name == "Cloud NGFW for Azure"
+        assert len(product.versions) == 1
+        assert product.versions[0].version == "SaaS"
+        assert len(product.versions[0].known_issues) == 2
+        assert len(product.versions[0].addressed_issues) == 1
+
+    @pytest.mark.asyncio
+    async def test_crawl_cloud_ngfw_azure_with_workaround(self):
+        """Test parsing Cloud NGFW for Azure issues with workarounds."""
+        known_html = """
+        <html>
+        <body>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr>
+                        <td>CNGFWAZR-200</td>
+                        <td>Timeout during deployment. Workaround: Increase timeout value in settings.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+        addressed_html = "<html><body></body></html>"
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_cloud_ngfw_azure()
+
+        issue = product.versions[0].known_issues[0]
+        assert issue.bug_id == "CNGFWAZR-200"
+        assert issue.workaround == "Increase timeout value in settings."
+        assert "Workaround" not in issue.description
+
+    @pytest.mark.asyncio
+    async def test_crawl_cloud_ngfw_azure_empty_pages(self):
+        """Test handling of empty pages."""
+        empty_html = "<html><body></body></html>"
+
+        async def mock_fetch(url):
+            return BeautifulSoup(empty_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_cloud_ngfw_azure()
+
+        assert product.id == "cloud-ngfw-azure"
+        assert len(product.versions) == 0
+
+
+class TestCloudNGFWAzureCrawlFunction:
+    """Tests for the crawl_cloud_ngfw_azure function."""
+
+    def test_crawl_cloud_ngfw_azure_import(self):
+        """Test that crawl_cloud_ngfw_azure can be imported."""
+        from bugdb.crawler import crawl_cloud_ngfw_azure
+        assert callable(crawl_cloud_ngfw_azure)
+
+    def test_crawl_cloud_ngfw_azure_accepts_version_params(self):
+        """Test that crawl_cloud_ngfw_azure accepts version params for API compatibility."""
+        from bugdb.crawler import crawl_cloud_ngfw_azure
+        import inspect
+        sig = inspect.signature(crawl_cloud_ngfw_azure)
+        params = list(sig.parameters.keys())
+        assert "major_versions" in params
+        assert "skip_versions" in params
+

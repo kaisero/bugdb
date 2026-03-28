@@ -2214,6 +2214,105 @@ class PaloAltoCrawler:
 
         return results
 
+    async def crawl_cloud_ngfw_azure(self) -> Product:
+        """Crawl Cloud NGFW for Azure release notes.
+
+        Cloud NGFW for Azure is a SaaS product with no version dropdown.
+        All known and addressed issues are on single pages.
+
+        Returns:
+            Product with a single "SaaS" version containing all issues.
+        """
+        self._log("Crawling Cloud NGFW for Azure...")
+
+        known_issues_url = (
+            "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
+        )
+        addressed_issues_url = (
+            "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
+        )
+
+        # Fetch both pages in parallel
+        fetch_tasks = [
+            self._fetch_page_with_semaphore(known_issues_url),
+            self._fetch_page_with_semaphore(addressed_issues_url),
+        ]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        known_issues: list[Issue] = []
+        addressed_issues: list[Issue] = []
+
+        # Parse known issues
+        if not isinstance(results[0], Exception):
+            soup = results[0]
+            for table in soup.find_all("table"):
+                # Skip nested tables
+                if table.find_parent("table"):
+                    continue
+                issues = self._parse_issues_table(table)
+                known_issues.extend(issues)
+            self._log(f"  Found {len(known_issues)} known issues")
+        else:
+            self._log(f"  Error fetching known issues: {results[0]}")
+
+        # Parse addressed issues
+        if not isinstance(results[1], Exception):
+            soup = results[1]
+            for table in soup.find_all("table"):
+                # Skip nested tables
+                if table.find_parent("table"):
+                    continue
+                issues = self._parse_issues_table(table)
+                addressed_issues.extend(issues)
+            self._log(f"  Found {len(addressed_issues)} addressed issues")
+        else:
+            self._log(f"  Error fetching addressed issues: {results[1]}")
+
+        # Deduplicate issues
+        known_issues = self._deduplicate_issues(known_issues)
+        addressed_issues = self._deduplicate_issues(addressed_issues)
+
+        # Create a single version for SaaS product
+        version = ProductVersion(
+            version="SaaS",
+            known_issues=known_issues,
+            addressed_issues=addressed_issues,
+        )
+
+        return Product(
+            id="cloud-ngfw-azure",
+            name="Cloud NGFW for Azure",
+            versions=[version] if known_issues or addressed_issues else [],
+        )
+
+
+async def _crawl_cloud_ngfw_azure_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Async implementation of Cloud NGFW for Azure crawler.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since Cloud NGFW for Azure is a SaaS product without versions.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        product = await crawler.crawl_cloud_ngfw_azure()
+
+        return BugDatabase(
+            metadata=Metadata(
+                generated_at=datetime.now(timezone.utc),
+                version="1.0.0",
+                source="Palo Alto Networks Cloud NGFW for Azure Release Notes",
+            ),
+            products=[product],
+        )
+
 
 async def _crawl_globalprotect_async(
     major_versions: Optional[list[str]] = None,
@@ -2514,6 +2613,40 @@ def crawl_prisma_sdwan(
     """
     return asyncio.run(
         _crawl_prisma_sdwan_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_cloud_ngfw_azure(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Crawl Cloud NGFW for Azure release notes and return a BugDatabase.
+
+    Cloud NGFW for Azure is a SaaS product without version releases.
+    All issues are on single known/addressed issues pages.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since this is a versionless SaaS product.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Ignored (kept for API compatibility).
+
+    Returns:
+        BugDatabase with Cloud NGFW for Azure issues.
+    """
+    return asyncio.run(
+        _crawl_cloud_ngfw_azure_async(
             major_versions, headless, verbose, debug, max_concurrency, skip_versions
         )
     )
