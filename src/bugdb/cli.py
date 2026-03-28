@@ -303,6 +303,7 @@ def fetch(
     from bugdb.crawler import (
         crawl_globalprotect,
         crawl_panos,
+        crawl_prisma_access,
         crawl_prisma_access_agent,
         get_existing_versions,
         merge_databases,
@@ -343,6 +344,7 @@ def fetch(
     supported_products = {
         "globalprotect": crawl_globalprotect,
         "panos": crawl_panos,
+        "prisma-access": crawl_prisma_access,
         "prisma-access-agent": crawl_prisma_access_agent,
     }
 

@@ -12,10 +12,15 @@ from bugdb.crawler import (
     VersionInfo,
     crawl_globalprotect,
     crawl_panos,
+    crawl_prisma_access,
     crawl_prisma_access_agent,
+    extract_affected_components,
+    extract_bug_id_and_fix_info,
+    extract_cell_text_with_tables,
     extract_workaround,
     get_existing_versions,
     merge_databases,
+    table_to_text,
 )
 from bugdb.models import BugDatabase, Issue, Metadata, Product, ProductVersion
 
@@ -1546,3 +1551,900 @@ class TestIssueParsingWithWorkaround:
         assert issues[0].workaround == "Use API key authentication."
         assert issues[1].workaround == "Enable caching."
         assert issues[2].workaround is None
+
+
+class TestExtractBugIdAndFixInfo:
+    """Tests for the extract_bug_id_and_fix_info function."""
+
+    def test_extract_simple_bug_id(self):
+        """Test extracting a simple bug ID without fix info."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("EPM-4616")
+
+        assert bug_id == "EPM-4616"
+        assert fix_info is None
+
+    def test_extract_bug_id_with_fix_info(self):
+        """Test extracting bug ID with fix info text."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("EPM-4616Resolved in Prisma Access Agent 25.3")
+
+        assert bug_id == "EPM-4616"
+        assert fix_info == "Resolved in Prisma Access Agent 25.3"
+
+    def test_extract_bug_id_with_fix_info_and_spaces(self):
+        """Test extracting bug ID with fix info that has leading spaces."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("PAN-12345 Fixed in version 11.2.3")
+
+        assert bug_id == "PAN-12345"
+        assert fix_info == "Fixed in version 11.2.3"
+
+    def test_extract_bug_id_various_prefixes(self):
+        """Test extracting bug IDs with various prefixes."""
+        test_cases = [
+            ("GPC-999", "GPC-999", None),
+            ("PAN-123456", "PAN-123456", None),
+            ("EPM-1Also in 26.1", "EPM-1", "Also in 26.1"),
+            ("ABC-99999Note: Fixed in patch", "ABC-99999", "Note: Fixed in patch"),
+        ]
+
+        for raw, expected_id, expected_info in test_cases:
+            bug_id, fix_info = extract_bug_id_and_fix_info(raw)
+            assert bug_id == expected_id, f"Failed for {raw}"
+            assert fix_info == expected_info, f"Failed for {raw}"
+
+    def test_extract_bug_id_empty_string(self):
+        """Test with empty string."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("")
+
+        assert bug_id == ""
+        assert fix_info is None
+
+    def test_extract_bug_id_none(self):
+        """Test with None input."""
+        bug_id, fix_info = extract_bug_id_and_fix_info(None)
+
+        assert bug_id is None
+        assert fix_info is None
+
+    def test_extract_bug_id_invalid_format(self):
+        """Test with invalid bug ID format."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("NotABugId")
+
+        # Returns original string if no valid bug ID pattern found
+        assert bug_id == "NotABugId"
+        assert fix_info is None
+
+    def test_extract_bug_id_lowercase_invalid(self):
+        """Test with lowercase bug ID (invalid format)."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("pan-123")
+
+        # Lowercase letters don't match the pattern
+        assert bug_id == "pan-123"
+        assert fix_info is None
+
+    def test_extract_bug_id_with_trailing_whitespace(self):
+        """Test that trailing whitespace is stripped from fix info."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("EPM-4616Fixed in v25.3  ")
+
+        assert bug_id == "EPM-4616"
+        assert fix_info == "Fixed in v25.3"
+
+    def test_extract_bug_id_with_leading_whitespace(self):
+        """Test that leading whitespace is handled."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("  EPM-4616Fixed in v25.3")
+
+        assert bug_id == "EPM-4616"
+        assert fix_info == "Fixed in v25.3"
+
+    def test_extract_bug_id_numbers_only_suffix(self):
+        """Test bug ID with numbers-only suffix."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("PAN-123456789")
+
+        assert bug_id == "PAN-123456789"
+        assert fix_info is None
+
+    def test_extract_bug_id_with_version_numbers(self):
+        """Test fix info containing version numbers."""
+        bug_id, fix_info = extract_bug_id_and_fix_info("EPM-100Resolved in 26.1.2 and 25.3.1")
+
+        assert bug_id == "EPM-100"
+        assert fix_info == "Resolved in 26.1.2 and 25.3.1"
+
+
+class TestIssueParsingWithFixInfo:
+    """Tests for issue parsing that includes fix_info extraction."""
+
+    def test_parse_issues_table_extracts_fix_info(self):
+        """Test that _parse_issues_table extracts fix info from bug IDs."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>EPM-4616Resolved in Prisma Access Agent 25.3</td>
+                    <td>Agent fails to connect on startup.</td>
+                </tr>
+                <tr>
+                    <td>GPC-12345</td>
+                    <td>Button misaligned on mobile devices.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 2
+
+        # First issue should have fix_info extracted
+        assert issues[0].bug_id == "EPM-4616"
+        assert issues[0].description == "Agent fails to connect on startup."
+        assert issues[0].fix_info == "Resolved in Prisma Access Agent 25.3"
+
+        # Second issue should have no fix_info
+        assert issues[1].bug_id == "GPC-12345"
+        assert issues[1].description == "Button misaligned on mobile devices."
+        assert issues[1].fix_info is None
+
+    def test_parse_issues_table_fix_info_and_workaround(self):
+        """Test parsing issues with both fix_info and workaround."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Bug ID</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-001Fixed in 11.2.4</td>
+                    <td>Connection fails on slow networks. Workaround: Increase timeout to 30 seconds.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 1
+
+        # Should have both fix_info and workaround extracted
+        assert issues[0].bug_id == "PAN-001"
+        assert issues[0].fix_info == "Fixed in 11.2.4"
+        assert "Connection fails on slow networks" in issues[0].description
+        assert "Workaround" not in issues[0].description
+        assert issues[0].workaround == "Increase timeout to 30 seconds."
+
+    def test_parse_issues_table_multiple_fix_infos(self):
+        """Test parsing multiple issues with fix_info."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>EPM-100Also fixed in 25.2</td>
+                    <td>Memory leak issue.</td>
+                </tr>
+                <tr>
+                    <td>EPM-200Resolved in Agent 26.1</td>
+                    <td>Crash on Windows 11.</td>
+                </tr>
+                <tr>
+                    <td>EPM-300</td>
+                    <td>UI rendering issue.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 3
+
+        assert issues[0].bug_id == "EPM-100"
+        assert issues[0].fix_info == "Also fixed in 25.2"
+
+        assert issues[1].bug_id == "EPM-200"
+        assert issues[1].fix_info == "Resolved in Agent 26.1"
+
+        assert issues[2].bug_id == "EPM-300"
+        assert issues[2].fix_info is None
+
+
+class TestNestedTableHandling:
+    """Tests for handling nested tables in issue descriptions."""
+
+    def test_nested_table_not_parsed_as_issues(self):
+        """Test that tables nested in description cells are not parsed as separate issues."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-242777</td>
+                    <td>
+                        Fixed platform limits issue. New limits:
+                        <table>
+                            <tr><th>Platform</th><th>Limit</th></tr>
+                            <tr><td>PA-5410</td><td>95K</td></tr>
+                            <tr><td>PA-5420</td><td>95K</td></tr>
+                            <tr><td>PA-5430</td><td>95K</td></tr>
+                        </table>
+                    </td>
+                </tr>
+                <tr>
+                    <td>PAN-123456</td>
+                    <td>Another bug fix.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        # Should only have 2 issues, not 5 (nested table rows should not be parsed)
+        assert len(issues) == 2
+        assert issues[0].bug_id == "PAN-242777"
+        assert issues[1].bug_id == "PAN-123456"
+
+        # Nested table entries should NOT be parsed as bug IDs
+        bug_ids = [i.bug_id for i in issues]
+        assert "PA-5410" not in bug_ids
+        assert "PA-5420" not in bug_ids
+        assert "PA-5430" not in bug_ids
+
+    def test_nested_table_converted_to_text_in_description(self):
+        """Test that nested tables in descriptions are converted to text."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-242777</td>
+                    <td>
+                        Fixed platform limits. See table:
+                        <table>
+                            <tr><th>Platform</th><th>Limit</th></tr>
+                            <tr><td>PA-5410</td><td>95K</td></tr>
+                        </table>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PAN-242777"
+        # Description should contain the table content as text
+        assert "PA-5410" in issues[0].description
+        assert "95K" in issues[0].description
+
+    def test_table_to_text_function(self):
+        """Test the table_to_text helper function."""
+        from bugdb.crawler import table_to_text
+
+        html = """
+        <table>
+            <tr><th>Platform</th><th>Limit</th></tr>
+            <tr><td>PA-5410</td><td>95K</td></tr>
+            <tr><td>PA-5420</td><td>100K</td></tr>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        text = table_to_text(table)
+
+        assert "Platform" in text
+        assert "Limit" in text
+        assert "PA-5410" in text
+        assert "95K" in text
+        assert "PA-5420" in text
+        assert "100K" in text
+
+    def test_extract_cell_text_with_tables_function(self):
+        """Test the extract_cell_text_with_tables helper function."""
+        from bugdb.crawler import extract_cell_text_with_tables
+
+        html = """
+        <td>
+            Some text before.
+            <table>
+                <tr><td>Cell1</td><td>Cell2</td></tr>
+            </table>
+            Some text after.
+        </td>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        cell = soup.find("td")
+
+        text = extract_cell_text_with_tables(cell)
+
+        assert "Some text before" in text
+        assert "Some text after" in text
+        assert "Cell1" in text
+        assert "Cell2" in text
+
+    def test_deeply_nested_tables_skipped(self):
+        """Test that deeply nested tables are also handled correctly."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-111111</td>
+                    <td>
+                        Outer description.
+                        <table>
+                            <tr>
+                                <td>Nested level 1</td>
+                                <td>
+                                    <table>
+                                        <tr><td>PA-NESTED</td><td>Deep value</td></tr>
+                                    </table>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        # Only the main issue should be parsed
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PAN-111111"
+        # Nested table content should NOT create separate issues
+        bug_ids = [i.bug_id for i in issues]
+        assert "PA-NESTED" not in bug_ids
+
+
+class TestExtractAffectedComponents:
+    """Tests for the extract_affected_components function."""
+
+    def test_extract_single_component(self):
+        """Test extracting a single component from description start."""
+        description = "(NGFW Clusters) Fixed an issue with cluster failover."
+        cleaned, components = extract_affected_components(description)
+
+        assert cleaned == "Fixed an issue with cluster failover."
+        assert components == ["NGFW Clusters"]
+
+    def test_extract_platform_component(self):
+        """Test extracting platform-specific component."""
+        description = "(PA-5500 Series firewalls only) Memory leak in packet processing."
+        cleaned, components = extract_affected_components(description)
+
+        assert cleaned == "Memory leak in packet processing."
+        assert components == ["PA-5500 Series firewalls only"]
+
+    def test_extract_multiple_components(self):
+        """Test extracting multiple components."""
+        description = "(NGFW Clusters) (PA-7000 Series) Issue with high availability."
+        cleaned, components = extract_affected_components(description)
+
+        assert cleaned == "Issue with high availability."
+        assert components == ["NGFW Clusters", "PA-7000 Series"]
+
+    def test_no_components(self):
+        """Test when no components are present."""
+        description = "Fixed an issue with the firewall."
+        cleaned, components = extract_affected_components(description)
+
+        assert cleaned == "Fixed an issue with the firewall."
+        assert components is None
+
+    def test_parentheses_in_middle(self):
+        """Test that parentheses in the middle are not extracted."""
+        description = "Fixed an issue (intermittent) with the firewall."
+        cleaned, components = extract_affected_components(description)
+
+        assert cleaned == "Fixed an issue (intermittent) with the firewall."
+        assert components is None
+
+    def test_empty_description(self):
+        """Test with empty description."""
+        cleaned, components = extract_affected_components("")
+
+        assert cleaned == ""
+        assert components is None
+
+    def test_none_description(self):
+        """Test with None description."""
+        cleaned, components = extract_affected_components(None)
+
+        assert cleaned is None
+        assert components is None
+
+    def test_empty_parentheses(self):
+        """Test with empty parentheses at start."""
+        description = "() Fixed an issue."
+        cleaned, components = extract_affected_components(description)
+
+        # Empty parentheses should not be extracted as a component
+        assert cleaned == "() Fixed an issue."
+        assert components is None
+
+    def test_unclosed_parenthesis(self):
+        """Test with unclosed parenthesis at start."""
+        description = "(Incomplete Fixed an issue."
+        cleaned, components = extract_affected_components(description)
+
+        # Unclosed parenthesis should not be extracted
+        assert cleaned == "(Incomplete Fixed an issue."
+        assert components is None
+
+    def test_whitespace_handling(self):
+        """Test that whitespace is handled correctly."""
+        description = "  (PA-5400 Series)   Fixed an issue.  "
+        cleaned, components = extract_affected_components(description)
+
+        assert cleaned == "Fixed an issue."
+        assert components == ["PA-5400 Series"]
+
+    def test_component_with_special_characters(self):
+        """Test component with special characters."""
+        description = "(PA-5400/5500 Series) Fixed an issue."
+        cleaned, components = extract_affected_components(description)
+
+        assert cleaned == "Fixed an issue."
+        assert components == ["PA-5400/5500 Series"]
+
+
+class TestIssueParsingWithAffectedComponents:
+    """Tests for issue parsing that includes affected components extraction."""
+
+    def test_parse_issues_table_extracts_components(self):
+        """Test that _parse_issues_table extracts affected components."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-123456</td>
+                    <td>(NGFW Clusters) Fixed cluster sync issue.</td>
+                </tr>
+                <tr>
+                    <td>PAN-789012</td>
+                    <td>Fixed general firewall issue.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 2
+
+        # First issue should have affected components
+        assert issues[0].bug_id == "PAN-123456"
+        assert issues[0].affected_components == ["NGFW Clusters"]
+        assert "NGFW Clusters" not in issues[0].description
+        assert "Fixed cluster sync issue" in issues[0].description
+
+        # Second issue should have no affected components
+        assert issues[1].bug_id == "PAN-789012"
+        assert issues[1].affected_components is None
+
+    def test_parse_issues_table_all_extractions_combined(self):
+        """Test parsing with workaround, fix_info, and affected components."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Bug ID</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PAN-111Fixed in 11.2.5</td>
+                    <td>(PA-7000 Series) Memory leak detected. Workaround: Restart daily.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table(table)
+
+        assert len(issues) == 1
+
+        issue = issues[0]
+        assert issue.bug_id == "PAN-111"
+        assert issue.fix_info == "Fixed in 11.2.5"
+        assert issue.affected_components == ["PA-7000 Series"]
+        assert issue.workaround == "Restart daily."
+        assert "Memory leak detected" in issue.description
+        assert "Workaround" not in issue.description
+        assert "PA-7000" not in issue.description
+
+
+class TestPrismaAccessCrawler:
+    """Tests for Prisma Access crawler functionality."""
+
+    def test_parse_issues_table_with_feature_no_feature(self):
+        """Test parsing table without feature context."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PA-12345</td>
+                    <td>Fixed connectivity issue.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table_with_feature(table, feature=None)
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PA-12345"
+        assert issues[0].affected_components is None
+
+    def test_parse_issues_table_with_feature_adds_component(self):
+        """Test that feature is added to affected_components."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PA-12345</td>
+                    <td>Fixed connectivity issue.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table_with_feature(
+            table, feature="Dynamic Privileges Access"
+        )
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PA-12345"
+        assert issues[0].affected_components == ["Dynamic Privileges Access"]
+
+    def test_parse_issues_table_with_feature_combines_components(self):
+        """Test that feature is prepended to existing affected_components."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue ID</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PA-12345</td>
+                    <td>(Windows only) Fixed connectivity issue.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table_with_feature(
+            table, feature="Remote Browser Isolation"
+        )
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PA-12345"
+        # Feature should be first, then existing component
+        assert issues[0].affected_components == ["Remote Browser Isolation", "Windows only"]
+        assert "Windows only" not in issues[0].description
+
+    def test_parse_issues_table_with_feature_extracts_all_fields(self):
+        """Test that all fields are extracted correctly with feature."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Bug ID</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PA-99999Fixed in 6.1.2</td>
+                    <td>(macOS) Connection fails. Workaround: Reconnect manually.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table_with_feature(table, feature="GlobalProtect App")
+
+        assert len(issues) == 1
+        issue = issues[0]
+        assert issue.bug_id == "PA-99999"
+        assert issue.fix_info == "Fixed in 6.1.2"
+        assert issue.affected_components == ["GlobalProtect App", "macOS"]
+        assert issue.workaround == "Reconnect manually."
+        assert "Connection fails" in issue.description
+
+    def test_parse_issues_table_with_feature_multiple_rows(self):
+        """Test parsing multiple rows with feature."""
+        html = """
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>PA-001</td>
+                    <td>Issue one.</td>
+                </tr>
+                <tr>
+                    <td>PA-002</td>
+                    <td>Issue two.</td>
+                </tr>
+                <tr>
+                    <td>PA-003</td>
+                    <td>(Linux) Issue three.</td>
+                </tr>
+            </tbody>
+        </table>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        table = soup.find("table")
+
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_issues_table_with_feature(table, feature="ZTNA Connector")
+
+        assert len(issues) == 3
+        assert all(i.affected_components[0] == "ZTNA Connector" for i in issues)
+        # Third issue should have both feature and platform
+        assert issues[2].affected_components == ["ZTNA Connector", "Linux"]
+
+
+class TestPrismaAccessIssuePageParsing:
+    """Tests for parsing Prisma Access issues pages with sections."""
+
+    @pytest.mark.asyncio
+    async def test_parse_prisma_access_issues_page_version_sections(self):
+        """Test parsing page with version sections."""
+        html = """
+        <html>
+        <body>
+            <h2>6.1 Addressed Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-100</td><td>Base version fix.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>6.1.1 Addressed Issues</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-101</td><td>Minor version fix.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>6.1.0-h5 Addressed Issues</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-102</td><td>Hotfix.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            result = await crawler._parse_prisma_access_issues_page(
+                "/test-url", "addressed", "6-1"
+            )
+
+        # Should have issues for three versions
+        assert "6.1" in result
+        assert "6.1.1" in result
+        assert "6.1.0-h5" in result
+
+        assert result["6.1"][0].bug_id == "PA-100"
+        assert result["6.1.1"][0].bug_id == "PA-101"
+        assert result["6.1.0-h5"][0].bug_id == "PA-102"
+
+    @pytest.mark.asyncio
+    async def test_parse_prisma_access_issues_page_feature_sections(self):
+        """Test parsing page with feature sections for known issues."""
+        html = """
+        <html>
+        <body>
+            <h2>Prisma Access 6.1 Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-200</td><td>General issue.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Dynamic Privileges Access Known Issues</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-201</td><td>DPA specific issue.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>Remote Browser Isolation Known Issues</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-202</td><td>RBI specific issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            result = await crawler._parse_prisma_access_issues_page(
+                "/test-url", "known", "6-1"
+            )
+
+        # All issues should be under base version 6.1
+        assert "6.1" in result
+        issues = result["6.1"]
+        assert len(issues) == 3
+
+        # Check that features are in affected_components
+        bug_ids = {i.bug_id: i for i in issues}
+
+        assert bug_ids["PA-200"].affected_components is None  # General, no feature
+        assert bug_ids["PA-201"].affected_components == ["Dynamic Privileges Access"]
+        assert bug_ids["PA-202"].affected_components == ["Remote Browser Isolation"]
+
+    @pytest.mark.asyncio
+    async def test_parse_prisma_access_issues_page_mixed_sections(self):
+        """Test parsing page with both version and feature sections."""
+        html = """
+        <html>
+        <body>
+            <h2>Prisma Access Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-300</td><td>General issue.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>ZTNA Connector Known Issues</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-301</td><td>ZTNA issue.</td></tr>
+                </tbody>
+            </table>
+
+            <h3>6.1.2 Known Issues</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>PA-302</td><td>Version specific issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            result = await crawler._parse_prisma_access_issues_page(
+                "/test-url", "known", "6-1"
+            )
+
+        # Should have issues for base version and specific version
+        assert "6.1" in result
+        assert "6.1.2" in result
+
+        # Base version issues include general and feature-specific
+        base_issues = {i.bug_id: i for i in result["6.1"]}
+        assert "PA-300" in base_issues
+        assert "PA-301" in base_issues
+        assert base_issues["PA-301"].affected_components == ["ZTNA Connector"]
+
+        # Version-specific issue
+        assert result["6.1.2"][0].bug_id == "PA-302"
+
+
+class TestPrismaAccessCrawlFunction:
+    """Tests for the crawl_prisma_access function."""
+
+    def test_crawl_prisma_access_import(self):
+        """Test that crawl_prisma_access can be imported."""
+        from bugdb.crawler import crawl_prisma_access
+        assert callable(crawl_prisma_access)

@@ -164,6 +164,120 @@ def extract_workaround(description: str) -> tuple[str, Optional[str]]:
 
     return description, None
 
+
+def extract_bug_id_and_fix_info(raw_bug_id: str) -> tuple[str, Optional[str]]:
+    """Extract bug ID and additional fix information from a raw bug ID string.
+
+    Some bug IDs include text like "EPM-4616Resolved in Prisma Access Agent 25.3".
+    This function extracts the clean bug ID and any additional fix information.
+
+    Args:
+        raw_bug_id: The raw bug ID string that may contain additional text.
+
+    Returns:
+        Tuple of (bug_id, fix_info). If no fix info is found, fix_info will be None.
+        If the raw string is not a valid bug ID format, returns (raw_bug_id, None).
+    """
+    if not raw_bug_id:
+        return raw_bug_id, None
+
+    # Pattern to extract bug ID (e.g., EPM-4616, PAN-12345) followed by optional text
+    match = re.match(r"^([A-Z]+-\d+)(.*)$", raw_bug_id.strip())
+
+    if match:
+        bug_id = match.group(1)
+        fix_info = match.group(2).strip() if match.group(2) else None
+
+        # Return the cleaned fix_info, or None if empty
+        if fix_info:
+            return bug_id, fix_info
+
+        return bug_id, None
+
+    return raw_bug_id, None
+
+
+def extract_affected_components(description: str) -> tuple[str, Optional[list[str]]]:
+    """Extract affected components from the start of a description.
+
+    Descriptions may start with parenthesized text like "(NGFW Clusters)" or
+    "(PA-5500 Series firewalls only)" indicating affected components/platforms.
+    This function extracts those and returns them as a list.
+
+    Args:
+        description: The issue description that may start with parenthesized components.
+
+    Returns:
+        Tuple of (cleaned_description, affected_components). If no components found,
+        affected_components will be None.
+    """
+    if not description:
+        return description, None
+
+    # Pattern to match one or more parenthesized groups at the start
+    # Examples: "(NGFW Clusters)", "(PA-5500 Series firewalls only)", "(Different ABC) (Another XYZ)"
+    components = []
+    cleaned = description.strip()
+
+    # Keep extracting parenthesized text from the start
+    while cleaned.startswith("("):
+        match = re.match(r"^\(([^)]+)\)\s*", cleaned)
+        if match:
+            component = match.group(1).strip()
+            if component:
+                components.append(component)
+            cleaned = cleaned[match.end():].strip()
+        else:
+            break
+
+    if components:
+        return cleaned, components
+
+    return description, None
+
+
+def table_to_text(table) -> str:
+    """Convert an HTML table element to a plain text representation.
+
+    Args:
+        table: BeautifulSoup table element.
+
+    Returns:
+        Text representation of the table with rows separated by semicolons
+        and cells separated by colons.
+    """
+    rows = []
+    for tr in table.find_all("tr"):
+        cells = [cell.get_text(strip=True) for cell in tr.find_all(["td", "th"])]
+        if cells:
+            rows.append(": ".join(cells))
+    return "; ".join(rows)
+
+
+def extract_cell_text_with_tables(cell) -> str:
+    """Extract text from a table cell, converting any nested tables to text.
+
+    Args:
+        cell: BeautifulSoup td/th element.
+
+    Returns:
+        Text content with nested tables converted to inline text.
+    """
+    # Clone the cell to avoid modifying the original
+    from copy import copy
+    cell_copy = copy(cell)
+
+    # Find all nested tables and replace them with text representation
+    nested_tables = cell_copy.find_all("table")
+    for nested_table in nested_tables:
+        table_text = table_to_text(nested_table)
+        nested_table.replace_with(f" [{table_text}] ")
+
+    # Get the text content
+    text = cell_copy.get_text(strip=True)
+    return text
+
+
 BASE_URL = "https://docs.paloaltonetworks.com"
 
 
@@ -814,7 +928,16 @@ class PaloAltoCrawler:
         issues = []
 
         # Check if this is an issues table by looking at headers
-        headers = [th.get_text(strip=True).lower() for th in table.find_all("th")]
+        # First try to find headers directly in thead or first row
+        headers = []
+        thead = table.find("thead")
+        if thead:
+            headers = [th.get_text(strip=True).lower() for th in thead.find_all("th")]
+        else:
+            first_row = table.find("tr")
+            if first_row:
+                headers = [th.get_text(strip=True).lower() for th in first_row.find_all("th")]
+
         logger.debug("Table headers: %s", headers)
 
         # Look for "issue" or bug ID column
@@ -834,32 +957,59 @@ class PaloAltoCrawler:
         logger.debug("Found issue column at index %d, description at index %s",
                      issue_col, desc_col)
 
-        # Parse rows
-        rows = table.find_all("tr")[1:]  # Skip header row
+        # Parse rows (only direct children, not nested table rows)
+        # If there's a tbody, use rows from there (header is in thead)
+        tbody = table.find("tbody")
+        if tbody:
+            rows = tbody.find_all("tr", recursive=False)
+        else:
+            # No tbody, find all rows and skip header
+            rows = table.find_all("tr", recursive=False)
+            if not rows:
+                rows = table.find_all("tr")
+            # Skip first row if it's the header
+            if rows and rows[0].find("th"):
+                rows = rows[1:]
+
         for row in rows:
-            cells = row.find_all(["td", "th"])
+            # Skip rows that belong to nested tables
+            if row.find_parent("table") != table and row.find_parent("tbody", recursive=False) is None:
+                continue
+
+            cells = row.find_all(["td", "th"], recursive=False)
             if len(cells) <= max(issue_col, desc_col or 0):
                 continue
 
-            bug_id = cells[issue_col].get_text(strip=True)
+            raw_bug_id = cells[issue_col].get_text(strip=True)
+            # Use extract_cell_text_with_tables to convert nested tables to text
             raw_description = (
-                cells[desc_col].get_text(strip=True) if desc_col is not None else ""
+                extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
+
+            # Extract bug ID and fix info (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
+            bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
 
             # Validate bug_id format (e.g., GPC-12345, PAN-12345)
             if not re.match(r"^[A-Z]+-\d+$", bug_id):
-                logger.debug("Skipping invalid bug ID: %s", bug_id)
+                logger.debug("Skipping invalid bug ID: %s", raw_bug_id)
                 continue
 
             # Extract workaround from description if present
             description, workaround = extract_workaround(raw_description)
 
-            logger.debug("Parsed issue: %s (workaround: %s)", bug_id, workaround is not None)
+            # Extract affected components from description start (e.g., "(NGFW Clusters)")
+            description, affected_components = extract_affected_components(description)
+
+            logger.debug("Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
+                        bug_id, fix_info is not None, workaround is not None,
+                        affected_components is not None)
             issues.append(
                 Issue(
                     bug_id=bug_id,
                     description=description,
                     workaround=workaround,
+                    fix_info=fix_info,
+                    affected_components=affected_components,
                 )
             )
 
@@ -881,15 +1031,31 @@ class PaloAltoCrawler:
         try:
             soup = await self._fetch_page_with_semaphore(url)
 
-            # Find tables with issue data
+            # Find tables with issue data (only top-level, not nested tables)
             tables = soup.find_all("table")
             logger.debug("Found %d tables on page: %s", len(tables), url)
 
             for table in tables:
+                # Skip nested tables (tables inside another table's cell)
+                if table.find_parent("table"):
+                    logger.debug("Skipping nested table")
+                    continue
+
                 # Check if this is an issues table by looking at headers
                 headers = [
-                    th.get_text(strip=True).lower() for th in table.find_all("th")
+                    th.get_text(strip=True).lower() for th in table.find_all("th", recursive=False)
+                    if not th.find_parent("table", recursive=False) or th.find_parent("table") == table
                 ]
+                # If no direct headers found, try finding them in thead
+                if not headers:
+                    thead = table.find("thead")
+                    if thead:
+                        headers = [th.get_text(strip=True).lower() for th in thead.find_all("th")]
+                    else:
+                        # Try first row
+                        first_row = table.find("tr")
+                        if first_row:
+                            headers = [th.get_text(strip=True).lower() for th in first_row.find_all("th")]
 
                 # Look for "issue" or bug ID column
                 issue_col = None
@@ -904,32 +1070,58 @@ class PaloAltoCrawler:
                 if issue_col is None:
                     continue
 
-                # Parse rows
-                for row in table.find_all("tr")[1:]:  # Skip header row
-                    cells = row.find_all(["td", "th"])
+                # Parse rows (only direct children, not nested table rows)
+                # If there's a tbody, use rows from there (header is in thead)
+                tbody = table.find("tbody")
+                if tbody:
+                    rows = tbody.find_all("tr", recursive=False)
+                else:
+                    # No tbody, find all rows and skip header
+                    rows = table.find_all("tr", recursive=False)
+                    if not rows:
+                        rows = table.find_all("tr")
+                    # Skip first row if it's the header
+                    if rows and rows[0].find("th"):
+                        rows = rows[1:]
+
+                for row in rows:
+                    # Skip rows from nested tables
+                    if row.find_parent("table") != table:
+                        continue
+
+                    cells = row.find_all(["td", "th"], recursive=False)
                     if len(cells) <= max(issue_col, desc_col or 0):
                         continue
 
-                    bug_id = cells[issue_col].get_text(strip=True)
+                    raw_bug_id = cells[issue_col].get_text(strip=True)
+                    # Use extract_cell_text_with_tables to convert nested tables to text
                     raw_description = (
-                        cells[desc_col].get_text(strip=True)
+                        extract_cell_text_with_tables(cells[desc_col])
                         if desc_col is not None
                         else ""
                     )
 
+                    # Extract bug ID and fix info (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
+                    bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
+
                     # Validate bug_id format (e.g., GPC-12345, PAN-12345)
                     if not re.match(r"^[A-Z]+-\d+$", bug_id):
-                        logger.debug("Skipping invalid bug ID: %s", bug_id)
+                        logger.debug("Skipping invalid bug ID: %s", raw_bug_id)
                         continue
 
                     # Extract workaround from description if present
                     description, workaround = extract_workaround(raw_description)
+
+                    # Extract affected components from description start (e.g., "(NGFW Clusters)")
+                    description, affected_components = extract_affected_components(description)
 
                     issues.append(
                         Issue(
                             bug_id=bug_id,
                             description=description,
                             workaround=workaround,
+                            fix_info=fix_info,
+                            affected_components=affected_components,
                         )
                     )
 
@@ -1387,6 +1579,319 @@ class PaloAltoCrawler:
 
         return None
 
+    async def discover_prisma_access_versions(self) -> list[str]:
+        """Discover available Prisma Access major versions.
+
+        Returns:
+            List of major version strings (e.g., ["6-1", "5-2", "5-1"]).
+        """
+        logger.debug("Discovering Prisma Access versions")
+        page = await self._new_page()
+
+        # Navigate to a Prisma Access release notes page to find version links
+        soup = await self._fetch_page(
+            page, "/prisma-access/release-notes/6-1/prisma-access-about"
+        )
+
+        versions = set()
+        for link in soup.find_all("a", href=True):
+            href = link["href"]
+            if "prisma-access" in href.lower() and "release-notes" in href.lower():
+                # Extract major version pattern like 6-1, 5-2
+                match = re.search(r"/release-notes/(\d+-\d+)(?:/|$)", href)
+                if match:
+                    versions.add(match.group(1))
+                    logger.debug("Found Prisma Access version: %s", match.group(1))
+
+        await page.close()
+
+        # Sort versions in descending order (newest first)
+        sorted_versions = sorted(
+            versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
+        )
+        logger.debug("Discovered %d Prisma Access versions: %s",
+                     len(sorted_versions), sorted_versions)
+        return sorted_versions
+
+    async def crawl_prisma_access(
+        self,
+        major_versions: Optional[list[str]] = None,
+        skip_versions: Optional[set[str]] = None,
+    ) -> Product:
+        """Crawl Prisma Access release notes for one or more major versions.
+
+        Args:
+            major_versions: List of major versions to crawl (e.g., ["6-1", "5-2"]).
+                           If None, discovers and crawls all available versions.
+            skip_versions: Set of version strings to skip (e.g., {"6.1.1", "5.2.0"}).
+                          Used for incremental fetching to avoid re-fetching existing versions.
+
+        Returns:
+            Product with all versions and issues.
+        """
+        skip_versions = skip_versions or set()
+
+        # Discover versions if not specified
+        if major_versions is None:
+            self._log("Discovering available Prisma Access versions...")
+            major_versions = await self.discover_prisma_access_versions()
+            self._log(f"Found versions: {', '.join(major_versions)}")
+
+        all_product_versions = []
+
+        for major_version in major_versions:
+            version_str = major_version.replace("-", ".")
+            self._log(f"Crawling Prisma Access {version_str}...")
+
+            if version_str in skip_versions:
+                self._log(f"  Skipping already-fetched version {version_str}")
+                continue
+
+            # Build URLs for this major version
+            known_issues_url = (
+                f"/prisma-access/release-notes/{major_version}"
+                f"/prisma-access-about/prisma-access-known-issues"
+            )
+            addressed_issues_url = (
+                f"/prisma-access/release-notes/{major_version}"
+                f"/prisma-access-about/prisma-access-addressed-issues"
+            )
+
+            # Fetch both pages
+            fetch_tasks = [
+                self._parse_prisma_access_issues_page(known_issues_url, "known", major_version),
+                self._parse_prisma_access_issues_page(addressed_issues_url, "addressed", major_version),
+            ]
+            results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+            # Collect issues by version
+            known_by_version: dict[str, list[Issue]] = {}
+            addressed_by_version: dict[str, list[Issue]] = {}
+
+            # Process known issues
+            if not isinstance(results[0], Exception):
+                for version, issues in results[0].items():
+                    if version not in skip_versions:
+                        known_by_version[version] = issues
+
+            # Process addressed issues
+            if not isinstance(results[1], Exception):
+                for version, issues in results[1].items():
+                    if version not in skip_versions:
+                        addressed_by_version[version] = issues
+
+            # Combine into ProductVersion objects
+            all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
+
+            for ver in all_versions_set:
+                known = self._deduplicate_issues(known_by_version.get(ver, []))
+                addressed = self._deduplicate_issues(addressed_by_version.get(ver, []))
+
+                if known or addressed:
+                    all_product_versions.append(
+                        ProductVersion(
+                            version=ver,
+                            known_issues=known,
+                            addressed_issues=addressed,
+                        )
+                    )
+                    self._log(
+                        f"    {ver}: {len(known)} known, {len(addressed)} addressed"
+                    )
+
+        # Sort versions (newest first)
+        all_product_versions.sort(
+            key=lambda v: self._version_sort_key(v.version),
+            reverse=True,
+        )
+
+        return Product(
+            id="prisma-access",
+            name="Prisma Access",
+            versions=all_product_versions,
+        )
+
+    async def _parse_prisma_access_issues_page(
+        self, url: str, issue_type: str, major_version: str
+    ) -> dict[str, list[Issue]]:
+        """Parse a Prisma Access issues page with multiple sections.
+
+        The page contains sections for the major version and also for
+        minor versions (addressed) or features (known issues).
+
+        Args:
+            url: URL of the issues page.
+            issue_type: Either "known" or "addressed".
+            major_version: The major version being parsed (e.g., "6-1").
+
+        Returns:
+            Dict mapping version strings to lists of Issue objects.
+        """
+        results: dict[str, list[Issue]] = {}
+        base_version = major_version.replace("-", ".")
+
+        try:
+            soup = await self._fetch_page_with_semaphore(url)
+
+            # Track current context (version or feature)
+            current_version = base_version
+            current_feature = None
+
+            # Find all h2, h3, h4 headers and tables
+            for element in soup.find_all(["h2", "h3", "h4", "table"]):
+                if element.name in ["h2", "h3", "h4"]:
+                    header_text = element.get_text(strip=True)
+
+                    # Check for version header (e.g., "6.1.1 Addressed Issues", "6.1.0-h5")
+                    version_match = re.search(
+                        r"(\d+\.\d+\.\d+(?:-[a-zA-Z0-9]+)?)",
+                        header_text,
+                    )
+                    if version_match:
+                        current_version = version_match.group(1)
+                        current_feature = None
+                        logger.debug("Found version header: %s", current_version)
+                        continue
+
+                    # Check for feature header (for known issues)
+                    # e.g., "Dynamic Privileges Access Known Issues"
+                    if issue_type == "known":
+                        # Common feature patterns
+                        feature_patterns = [
+                            r"^(.+?)\s+Known\s+Issues?$",
+                            r"^Known\s+Issues?\s+(?:for|in|with)\s+(.+)$",
+                            r"^(.+?)\s+Limitations?$",
+                        ]
+                        for pattern in feature_patterns:
+                            feature_match = re.match(pattern, header_text, re.IGNORECASE)
+                            if feature_match:
+                                feature_name = feature_match.group(1).strip()
+                                # Skip generic headers (exact matches and "Prisma Access X.X" patterns)
+                                feature_lower = feature_name.lower()
+                                is_generic = (
+                                    feature_lower in ["prisma access", "general", ""]
+                                    or feature_lower.startswith("prisma access ")
+                                )
+                                if not is_generic:
+                                    current_feature = feature_name
+                                    logger.debug("Found feature header: %s", current_feature)
+                                break
+
+                elif element.name == "table":
+                    # Skip nested tables
+                    if element.find_parent("table"):
+                        continue
+
+                    # Parse issues from this table
+                    issues = self._parse_issues_table_with_feature(element, current_feature)
+
+                    if issues:
+                        if current_version not in results:
+                            results[current_version] = []
+                        results[current_version].extend(issues)
+
+        except Exception as e:
+            logger.error("Error parsing Prisma Access page %s: %s", url, e)
+            self._log(f"  Error parsing {url}: {e}")
+
+        return results
+
+    def _parse_issues_table_with_feature(
+        self, table, feature: Optional[str] = None
+    ) -> list[Issue]:
+        """Parse issues from a table, adding feature as affected_component.
+
+        Args:
+            table: BeautifulSoup table element.
+            feature: Optional feature name to add to affected_components.
+
+        Returns:
+            List of Issue objects.
+        """
+        issues = []
+
+        # Get headers
+        headers = []
+        thead = table.find("thead")
+        if thead:
+            headers = [th.get_text(strip=True).lower() for th in thead.find_all("th")]
+        else:
+            first_row = table.find("tr")
+            if first_row:
+                headers = [th.get_text(strip=True).lower() for th in first_row.find_all("th")]
+
+        # Find column indices
+        issue_col = None
+        desc_col = None
+
+        for i, header in enumerate(headers):
+            if "issue" in header or "bug" in header or "id" in header:
+                issue_col = i
+            elif "description" in header or "summary" in header:
+                desc_col = i
+
+        if issue_col is None:
+            return issues
+
+        # Parse rows
+        tbody = table.find("tbody")
+        if tbody:
+            rows = tbody.find_all("tr", recursive=False)
+        else:
+            rows = table.find_all("tr", recursive=False)
+            if not rows:
+                rows = table.find_all("tr")
+            if rows and rows[0].find("th"):
+                rows = rows[1:]
+
+        for row in rows:
+            if row.find_parent("table") != table and row.find_parent("tbody") is None:
+                continue
+
+            cells = row.find_all(["td", "th"], recursive=False)
+            if len(cells) <= max(issue_col, desc_col or 0):
+                continue
+
+            raw_bug_id = cells[issue_col].get_text(strip=True)
+            raw_description = (
+                extract_cell_text_with_tables(cells[desc_col])
+                if desc_col is not None
+                else ""
+            )
+
+            # Extract bug ID and fix info
+            bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
+
+            # Validate bug_id format
+            if not re.match(r"^[A-Z]+-\d+$", bug_id):
+                continue
+
+            # Extract workaround
+            description, workaround = extract_workaround(raw_description)
+
+            # Extract affected components from description
+            description, affected_components = extract_affected_components(description)
+
+            # Add feature as affected component if present
+            if feature:
+                if affected_components:
+                    # Prepend feature to existing components
+                    affected_components = [feature] + affected_components
+                else:
+                    affected_components = [feature]
+
+            issues.append(
+                Issue(
+                    bug_id=bug_id,
+                    description=description,
+                    workaround=workaround,
+                    fix_info=fix_info,
+                    affected_components=affected_components,
+                )
+            )
+
+        return issues
+
 
 async def _crawl_globalprotect_async(
     major_versions: Optional[list[str]] = None,
@@ -1443,6 +1948,37 @@ async def _crawl_prisma_access_agent_async(
             source = (
                 "Palo Alto Networks Prisma Access Agent Release Notes (All Versions)"
             )
+
+        return BugDatabase(
+            metadata=Metadata(
+                generated_at=datetime.now(timezone.utc),
+                version="1.0.0",
+                source=source,
+            ),
+            products=[product],
+        )
+
+
+async def _crawl_prisma_access_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Async implementation of Prisma Access crawler."""
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        product = await crawler.crawl_prisma_access(major_versions, skip_versions)
+
+        # Build source description
+        if major_versions:
+            versions_str = ", ".join(v.replace("-", ".") for v in major_versions)
+            source = f"Palo Alto Networks Prisma Access {versions_str} Release Notes"
+        else:
+            source = "Palo Alto Networks Prisma Access Release Notes (All Versions)"
 
         return BugDatabase(
             metadata=Metadata(
@@ -1538,6 +2074,35 @@ def crawl_prisma_access_agent(
     """
     return asyncio.run(
         _crawl_prisma_access_agent_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_prisma_access(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Crawl Prisma Access release notes and return a BugDatabase.
+
+    Args:
+        major_versions: List of major versions to crawl (e.g., ["6-1", "5-2"]).
+                       If None, discovers and crawls all available versions.
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Set of version strings to skip for incremental fetching.
+
+    Returns:
+        BugDatabase with Prisma Access issues.
+    """
+    return asyncio.run(
+        _crawl_prisma_access_async(
             major_versions, headless, verbose, debug, max_concurrency, skip_versions
         )
     )

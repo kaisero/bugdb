@@ -13,6 +13,9 @@ class Issue(BaseModel):
     description: str = Field(..., description="Issue description")
     symptoms: Optional[str] = Field(None, description="Observable symptoms")
     workaround: Optional[str] = Field(None, description="Known workaround")
+    fix_info: Optional[str] = Field(
+        None, description="Additional fix information (e.g., 'Resolved in Prisma Access Agent 25.3')"
+    )
     affected_components: Optional[list[str]] = Field(
         None, description="List of affected components"
     )

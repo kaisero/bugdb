@@ -209,7 +209,18 @@ function createIssueCard(issue) {
                 <h3 class="text-lg font-semibold text-gray-900">${escapeHtml(issue.bug_id)}</h3>
                 <p class="text-sm text-gray-500">${escapeHtml(issue.productName)} ${escapeHtml(issue.version)}</p>
             </div>
-            <div class="flex flex-wrap gap-2">
+            <div class="flex flex-wrap gap-2 items-center">
+                ${issue.affected_components && issue.affected_components.length > 0 ?
+                    issue.affected_components.map(comp => `
+                        <span class="px-3 py-1 rounded-full text-xs font-medium bg-violet-100 text-violet-800">
+                            ${escapeHtml(comp)}
+                        </span>
+                    `).join('') : ''}
+                ${issue.fix_info ? `
+                    <span class="px-3 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
+                        ${escapeHtml(issue.fix_info)}
+                    </span>
+                ` : ''}
                 <span class="px-3 py-1 rounded-full text-xs font-medium ${typeClass}">
                     ${typeLabel}
                 </span>
@@ -239,15 +250,6 @@ function createIssueCard(issue) {
             </div>
         ` : ''}
 
-        ${issue.affected_components && issue.affected_components.length > 0 ? `
-            <div class="flex flex-wrap gap-2 mt-4">
-                ${issue.affected_components.map(comp => `
-                    <span class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
-                        ${escapeHtml(comp)}
-                    </span>
-                `).join('')}
-            </div>
-        ` : ''}
     `;
 
     return card;
