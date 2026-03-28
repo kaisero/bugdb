@@ -302,6 +302,26 @@ def extract_affected_components(description: str) -> tuple[str, Optional[list[st
     return description, None
 
 
+def normalize_text(element) -> str:
+    """Extract text from an HTML element preserving spaces between words.
+
+    Uses separator=' ' to ensure spaces between inline elements like <b>, <i>,
+    then collapses multiple spaces into single spaces and strips the result.
+
+    Args:
+        element: BeautifulSoup element.
+
+    Returns:
+        Normalized text with proper spacing.
+    """
+    import re
+    # Use separator to add spaces between text nodes (preserves spaces around <b>, <i>, etc.)
+    text = element.get_text(separator=" ")
+    # Collapse multiple whitespace characters into single spaces
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
 def table_to_text(table) -> str:
     """Convert an HTML table element to a plain text representation.
 
@@ -314,7 +334,7 @@ def table_to_text(table) -> str:
     """
     rows = []
     for tr in table.find_all("tr"):
-        cells = [cell.get_text(strip=True) for cell in tr.find_all(["td", "th"])]
+        cells = [normalize_text(cell) for cell in tr.find_all(["td", "th"])]
         if cells:
             rows.append(": ".join(cells))
     return "; ".join(rows)
@@ -339,8 +359,8 @@ def extract_cell_text_with_tables(cell) -> str:
         table_text = table_to_text(nested_table)
         nested_table.replace_with(f" [{table_text}] ")
 
-    # Get the text content
-    text = cell_copy.get_text(strip=True)
+    # Get the text content with proper spacing
+    text = normalize_text(cell_copy)
     return text
 
 
@@ -1569,27 +1589,34 @@ class PaloAltoCrawler:
                         if version not in version_infos:
                             version_dashed = version.replace(".", "-")
 
+                            # For hotfix versions (e.g., 10.2.0-h3), the parent folder
+                            # uses the base version (10-2-0) while pages use full version
+                            if "-h" in version:
+                                base_version_dashed = version_dashed.rsplit("-h", 1)[0]
+                            else:
+                                base_version_dashed = version_dashed
+
                             # Build URLs based on pattern
                             if url_pattern == "ngfw":
                                 known_url = (
                                     f"/ngfw/release-notes/{major_version}"
-                                    f"/pan-os-{version_dashed}-known-and-addressed-issues"
+                                    f"/pan-os-{base_version_dashed}-known-and-addressed-issues"
                                     f"/pan-os-{version_dashed}-known-issues"
                                 )
                                 addressed_url = (
                                     f"/ngfw/release-notes/{major_version}"
-                                    f"/pan-os-{version_dashed}-known-and-addressed-issues"
+                                    f"/pan-os-{base_version_dashed}-known-and-addressed-issues"
                                     f"/pan-os-{version_dashed}-addressed-issues"
                                 )
                             else:
                                 known_url = (
                                     f"/pan-os/{major_version}/pan-os-release-notes"
-                                    f"/pan-os-{version_dashed}-known-and-addressed-issues"
+                                    f"/pan-os-{base_version_dashed}-known-and-addressed-issues"
                                     f"/pan-os-{version_dashed}-known-issues"
                                 )
                                 addressed_url = (
                                     f"/pan-os/{major_version}/pan-os-release-notes"
-                                    f"/pan-os-{version_dashed}-known-and-addressed-issues"
+                                    f"/pan-os-{base_version_dashed}-known-and-addressed-issues"
                                     f"/pan-os-{version_dashed}-addressed-issues"
                                 )
 
@@ -1638,24 +1665,28 @@ class PaloAltoCrawler:
             major_version: The major version to filter by (e.g., "12-1").
 
         Returns:
-            Version string (e.g., "12.1.5") or None.
+            Version string (e.g., "12.1.5" or "12.1.5-h3") or None.
         """
         # Match patterns like pan-os-12-1-5-known-and-addressed-issues
-        # or pan-os-12-1-5-addressed-issues
+        # or pan-os-12-1-5-h3-addressed-issues (hotfix releases)
         match = re.search(
-            r"pan-os-(\d+)-(\d+)-(\d+)(?:-[a-zA-Z0-9]+)?-(?:known|addressed)", url
+            r"pan-os-(\d+)-(\d+)-(\d+)(?:-(h\d+))?-(?:known|addressed)", url
         )
         if match:
             major = match.group(1)
             minor = match.group(2)
             patch = match.group(3)
+            hotfix = match.group(4)  # e.g., "h3" or None
 
             # Check if this matches the requested major version
             url_major_version = f"{major}-{minor}"
             if url_major_version != major_version:
                 return None
 
-            return f"{major}.{minor}.{patch}"
+            version = f"{major}.{minor}.{patch}"
+            if hotfix:
+                version = f"{version}-{hotfix}"
+            return version
 
         return None
 

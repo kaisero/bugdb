@@ -22,6 +22,7 @@ from bugdb.crawler import (
     extract_workaround,
     get_existing_versions,
     merge_databases,
+    normalize_text,
     table_to_text,
 )
 from bugdb.models import BugDatabase, Issue, Metadata, Product, ProductVersion
@@ -465,15 +466,25 @@ class TestPaloAltoCrawlerPanosVersionExtraction:
         )
         assert result == "12.1.5"
 
-    def test_extract_panos_version_with_suffix(self):
-        """Test extracting PAN-OS version with suffix."""
+    def test_extract_panos_version_with_hotfix(self):
+        """Test extracting PAN-OS version with hotfix suffix."""
         crawler = PaloAltoCrawler()
 
         result = crawler._extract_panos_version_from_url(
             "/pan-os-11-2-4-h1-known-issues",
             "11-2"
         )
-        assert result == "11.2.4"
+        assert result == "11.2.4-h1"
+
+    def test_extract_panos_version_with_hotfix_double_digit(self):
+        """Test extracting PAN-OS version with double-digit hotfix."""
+        crawler = PaloAltoCrawler()
+
+        result = crawler._extract_panos_version_from_url(
+            "/pan-os-10-2-0-h12-addressed-issues",
+            "10-2"
+        )
+        assert result == "10.2.0-h12"
 
     def test_extract_panos_version_wrong_major(self):
         """Test that wrong major version returns None."""
@@ -1932,6 +1943,41 @@ class TestNestedTableHandling:
         assert "Some text after" in text
         assert "Cell1" in text
         assert "Cell2" in text
+
+    def test_normalize_text_preserves_spaces_around_inline_elements(self):
+        """Test that normalize_text preserves spaces around <b>, <i>, etc."""
+        # This is the exact pattern from the bug report
+        html = '<td class="entry relcol">In the<b class="ph b"> Operational Health</b> view of the command center</td>'
+        soup = BeautifulSoup(html, "lxml")
+        cell = soup.find("td")
+
+        text = normalize_text(cell)
+
+        # Verify spaces are preserved
+        assert "In the Operational Health view" in text
+        assert "theOperational" not in text  # Bug: missing space before
+        assert "Healthview" not in text  # Bug: missing space after
+
+    def test_normalize_text_collapses_multiple_spaces(self):
+        """Test that normalize_text collapses multiple spaces into one."""
+        html = "<p>Some    text   with   multiple    spaces</p>"
+        soup = BeautifulSoup(html, "lxml")
+        elem = soup.find("p")
+
+        text = normalize_text(elem)
+
+        assert text == "Some text with multiple spaces"
+        assert "  " not in text  # No double spaces
+
+    def test_normalize_text_handles_nested_formatting(self):
+        """Test normalize_text with nested <b>, <i>, <span> elements."""
+        html = '<td>Before<b> bold<i> and italic</i> text</b> after</td>'
+        soup = BeautifulSoup(html, "lxml")
+        cell = soup.find("td")
+
+        text = normalize_text(cell)
+
+        assert "Before bold and italic text after" in text
 
     def test_deeply_nested_tables_skipped(self):
         """Test that deeply nested tables are also handled correctly."""

@@ -11,6 +11,8 @@ let currentFilters = {
     version: '',
     type: ''
 };
+let fixReleasesMap = {}; // Map of bug_id -> array of fix releases
+let knownIssuesMap = {}; // Map of bug_id -> array of releases where issue is known
 
 // Versions that should not be displayed in issue cards (e.g., SaaS products)
 const HIDDEN_VERSIONS = ['SaaS', 'Unknown'];
@@ -84,6 +86,123 @@ function flattenIssues(data) {
     }
 
     return issues;
+}
+
+// Build a map of bug_id -> releases where the bug is fixed
+function buildFixReleasesMap(data) {
+    const map = {};
+
+    for (const product of data.products) {
+        for (const version of product.versions) {
+            // Each addressed issue represents a fix in this version
+            for (const issue of version.addressed_issues) {
+                if (!map[issue.bug_id]) {
+                    map[issue.bug_id] = [];
+                }
+                map[issue.bug_id].push({
+                    productId: product.id,
+                    productName: product.name,
+                    version: version.version,
+                    releaseDate: version.release_date
+                });
+            }
+        }
+    }
+
+    // Sort each bug's fix releases by version (latest first)
+    for (const bugId in map) {
+        map[bugId].sort((a, b) => compareVersions(b.version, a.version));
+    }
+
+    return map;
+}
+
+// Build a map of bug_id -> releases where the bug is a known issue
+function buildKnownIssuesMap(data) {
+    const map = {};
+
+    for (const product of data.products) {
+        for (const version of product.versions) {
+            // Each known issue represents a release where the bug exists
+            for (const issue of version.known_issues) {
+                if (!map[issue.bug_id]) {
+                    map[issue.bug_id] = [];
+                }
+                map[issue.bug_id].push({
+                    productId: product.id,
+                    productName: product.name,
+                    version: version.version
+                });
+            }
+        }
+    }
+
+    // Sort each bug's known releases by version (latest first)
+    for (const bugId in map) {
+        map[bugId].sort((a, b) => compareVersions(b.version, a.version));
+    }
+
+    return map;
+}
+
+// Check if fix_info should be displayed (hide if it contains certain phrases)
+function shouldShowFixInfo(fixInfo) {
+    if (!fixInfo) return false;
+    const lowerFixInfo = fixInfo.toLowerCase();
+    return !lowerFixInfo.includes('this issue is') && !lowerFixInfo.includes('resolved in');
+}
+
+// Compare versions for sorting (handles 11.2.5, 2025.r5.0, SaaS, -h9 suffixes)
+function compareVersions(a, b) {
+    // Handle special cases
+    if (a === 'SaaS') return 1;
+    if (b === 'SaaS') return -1;
+    if (a === 'Unknown') return -1;
+    if (b === 'Unknown') return 1;
+
+    // Extract base version and hotfix suffix
+    const parseVersion = (v) => {
+        const hotfixMatch = v.match(/^(.+?)-h(\d+)$/i);
+        if (hotfixMatch) {
+            return { base: hotfixMatch[1], hotfix: parseInt(hotfixMatch[2], 10) };
+        }
+        return { base: v, hotfix: 0 };
+    };
+
+    const parsedA = parseVersion(a);
+    const parsedB = parseVersion(b);
+
+    // Normalize version strings (handle 2025.r5.0 format)
+    const normalizeBase = (base) => {
+        return base.replace(/r/gi, '.').split('.').filter(p => p !== '');
+    };
+
+    const partsA = normalizeBase(parsedA.base);
+    const partsB = normalizeBase(parsedB.base);
+
+    // Compare each part numerically
+    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+        const numA = parseInt(partsA[i], 10) || 0;
+        const numB = parseInt(partsB[i], 10) || 0;
+        if (numA !== numB) return numA - numB;
+    }
+
+    // If base versions are equal, compare hotfix numbers
+    return parsedA.hotfix - parsedB.hotfix;
+}
+
+// Get fix releases for an issue (filtered to same product)
+function getFixReleasesForIssue(issue) {
+    const fixes = fixReleasesMap[issue.bug_id] || [];
+    // Filter to same product
+    return fixes.filter(fix => fix.productId === issue.productId);
+}
+
+// Get known issue releases for an issue (filtered to same product, excluding current version)
+function getKnownReleasesForIssue(issue) {
+    const knownReleases = knownIssuesMap[issue.bug_id] || [];
+    // Filter to same product and exclude the current version
+    return knownReleases.filter(rel => rel.productId === issue.productId && rel.version !== issue.version);
 }
 
 // Populate filter dropdowns
@@ -263,6 +382,35 @@ function createIssueCard(issue) {
         ? `${escapeHtml(issue.productName)} ${escapeHtml(issue.version)}`
         : escapeHtml(issue.productName);
 
+    // Check if this known issue has available fixes
+    const fixReleases = getFixReleasesForIssue(issue);
+    const hasFixAvailable = issue.issueType === 'known' && fixReleases.length > 0;
+
+    // Check if this known issue exists in other releases
+    const knownReleases = getKnownReleasesForIssue(issue);
+    const hasOtherKnownReleases = issue.issueType === 'known' && knownReleases.length > 0;
+
+    // Determine if fix_info should be shown
+    const showFixInfo = shouldShowFixInfo(issue.fix_info);
+
+    // Build the type badge HTML
+    let typeBadgeHtml;
+    if (issue.issueType === 'known' && hasOtherKnownReleases) {
+        typeBadgeHtml = `
+            <button class="px-3 py-1 rounded-full text-xs font-medium ${typeClass} hover:bg-amber-200 cursor-pointer transition-colors"
+                    onclick="showKnownIssueModal('${escapeHtml(issue.bug_id)}', '${escapeHtml(issue.productId)}', '${escapeHtml(issue.version)}')"
+                    aria-label="View other releases affected by ${escapeHtml(issue.bug_id)}">
+                ${typeLabel}
+            </button>
+        `;
+    } else {
+        typeBadgeHtml = `
+            <span class="px-3 py-1 rounded-full text-xs font-medium ${typeClass}">
+                ${typeLabel}
+            </span>
+        `;
+    }
+
     card.innerHTML = `
         <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
             <div>
@@ -276,14 +424,19 @@ function createIssueCard(issue) {
                             ${escapeHtml(comp)}
                         </span>
                     `).join('') : ''}
-                ${issue.fix_info ? `
+                ${showFixInfo ? `
                     <span class="px-3 py-1 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
                         ${escapeHtml(issue.fix_info)}
                     </span>
                 ` : ''}
-                <span class="px-3 py-1 rounded-full text-xs font-medium ${typeClass}">
-                    ${typeLabel}
-                </span>
+                ${hasFixAvailable ? `
+                    <button class="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 cursor-pointer transition-colors"
+                            onclick="showFixModal('${escapeHtml(issue.bug_id)}', '${escapeHtml(issue.productId)}')"
+                            aria-label="View fix releases for ${escapeHtml(issue.bug_id)}">
+                        Fix Available
+                    </button>
+                ` : ''}
+                ${typeBadgeHtml}
             </div>
         </div>
 
@@ -321,6 +474,114 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Modal functions
+function showFixModal(bugId, productId) {
+    const fixes = (fixReleasesMap[bugId] || []).filter(fix => fix.productId === productId);
+    if (fixes.length === 0) return;
+
+    const modal = document.getElementById('fix-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBugId = document.getElementById('modal-bug-id');
+    const modalDescription = document.getElementById('modal-description');
+    const modalReleaseList = document.getElementById('modal-release-list');
+
+    modalTitle.textContent = 'Fix Available';
+    modalBugId.textContent = bugId;
+    modalDescription.textContent = 'This issue has been fixed in the following releases:';
+    modalReleaseList.innerHTML = '';
+
+    fixes.forEach(fix => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center py-3 px-4 hover:bg-gray-50 rounded-lg';
+
+        const showVersion = !HIDDEN_VERSIONS.includes(fix.version);
+        const versionText = showVersion ? fix.version : '';
+
+        li.innerHTML = `
+            <div class="flex items-center gap-3">
+                <span class="flex items-center justify-center w-8 h-8 bg-emerald-100 rounded-full">
+                    <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </span>
+                <div class="font-medium text-gray-900">${escapeHtml(fix.productName)}${versionText ? ' ' + escapeHtml(versionText) : ''}</div>
+            </div>
+        `;
+        modalReleaseList.appendChild(li);
+    });
+
+    modal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+}
+
+function showKnownIssueModal(bugId, productId, currentVersion) {
+    const knownReleases = (knownIssuesMap[bugId] || []).filter(rel => rel.productId === productId && rel.version !== currentVersion);
+    if (knownReleases.length === 0) return;
+
+    const modal = document.getElementById('fix-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalBugId = document.getElementById('modal-bug-id');
+    const modalDescription = document.getElementById('modal-description');
+    const modalReleaseList = document.getElementById('modal-release-list');
+
+    modalTitle.textContent = 'Also Affected';
+    modalBugId.textContent = bugId;
+    modalDescription.textContent = 'This issue also affects the following releases:';
+    modalReleaseList.innerHTML = '';
+
+    knownReleases.forEach(rel => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center py-3 px-4 hover:bg-gray-50 rounded-lg';
+
+        const showVersion = !HIDDEN_VERSIONS.includes(rel.version);
+        const versionText = showVersion ? rel.version : '';
+
+        li.innerHTML = `
+            <div class="flex items-center gap-3">
+                <span class="flex items-center justify-center w-8 h-8 bg-amber-100 rounded-full">
+                    <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                </span>
+                <div class="font-medium text-gray-900">${escapeHtml(rel.productName)}${versionText ? ' ' + escapeHtml(versionText) : ''}</div>
+            </div>
+        `;
+        modalReleaseList.appendChild(li);
+    });
+
+    modal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+}
+
+function closeFixModal() {
+    const modal = document.getElementById('fix-modal');
+    modal.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+}
+
+function setupModalEventListeners() {
+    const modal = document.getElementById('fix-modal');
+    const backdrop = document.getElementById('modal-backdrop');
+    const closeBtn = document.getElementById('modal-close-btn');
+    const closeFooterBtn = document.getElementById('modal-close-footer-btn');
+
+    // Close on backdrop click
+    backdrop.addEventListener('click', closeFixModal);
+
+    // Close on X button click
+    closeBtn.addEventListener('click', closeFixModal);
+
+    // Close on footer Close button click
+    closeFooterBtn.addEventListener('click', closeFixModal);
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+            closeFixModal();
+        }
+    });
 }
 
 // Clear all filters
@@ -568,6 +829,12 @@ async function init() {
             elements.schemaVersion.textContent = data.metadata.version;
         }
 
+        // Build fix releases map (must be done before flattening issues)
+        fixReleasesMap = buildFixReleasesMap(data);
+
+        // Build known issues map
+        knownIssuesMap = buildKnownIssuesMap(data);
+
         // Flatten issues for searching
         allIssues = flattenIssues(data);
         filteredIssues = [...allIssues];
@@ -577,6 +844,9 @@ async function init() {
 
         // Setup event listeners
         setupEventListeners(data);
+
+        // Setup modal event listeners
+        setupModalEventListeners();
 
         // Hide loading, show results
         elements.loading.classList.add('hidden');
