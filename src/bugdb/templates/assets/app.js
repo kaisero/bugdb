@@ -16,7 +16,9 @@ let currentFilters = {
 const elements = {
     search: document.getElementById('search'),
     productFilter: document.getElementById('product-filter'),
+    productDropdown: document.getElementById('product-dropdown'),
     versionFilter: document.getElementById('version-filter'),
+    versionDropdown: document.getElementById('version-dropdown'),
     typeFilter: document.getElementById('type-filter'),
     results: document.getElementById('results'),
     resultsCount: document.getElementById('results-count'),
@@ -26,6 +28,12 @@ const elements = {
     generatedDate: document.getElementById('generated-date'),
     schemaVersion: document.getElementById('schema-version')
 };
+
+// Autocomplete state
+let productOptions = [];
+let versionOptions = [];
+let highlightedProductIndex = -1;
+let highlightedVersionIndex = -1;
 
 // Debounce helper
 function debounce(func, wait) {
@@ -77,17 +85,62 @@ function flattenIssues(data) {
 
 // Populate filter dropdowns
 function populateFilters(data) {
-    // Populate products
-    const products = data.products.map(p => ({ id: p.id, name: p.name }));
-    products.forEach(product => {
-        const option = document.createElement('option');
-        option.value = product.id;
-        option.textContent = product.name;
-        elements.productFilter.appendChild(option);
+    // Store product options
+    productOptions = data.products.map(p => ({ id: p.id, name: p.name }));
+
+    // Initialize version filter as disabled
+    updateVersionFilter(data);
+}
+
+// Render autocomplete dropdown
+function renderAutocompleteDropdown(dropdown, options, filterText, selectedValue, onSelect, highlightedIndex) {
+    dropdown.innerHTML = '';
+
+    const filtered = options.filter(opt => {
+        const label = typeof opt === 'string' ? opt : opt.name;
+        return label.toLowerCase().includes(filterText.toLowerCase());
     });
 
-    // Populate versions (will be updated based on product selection)
-    updateVersionFilter(data);
+    if (filtered.length === 0) {
+        const noResults = document.createElement('div');
+        noResults.className = 'autocomplete-no-results';
+        noResults.textContent = 'No matches found';
+        dropdown.appendChild(noResults);
+        return filtered;
+    }
+
+    filtered.forEach((opt, index) => {
+        const value = typeof opt === 'string' ? opt : opt.id;
+        const label = typeof opt === 'string' ? opt : opt.name;
+
+        const div = document.createElement('div');
+        div.className = 'autocomplete-option';
+        if (value === selectedValue) {
+            div.className += ' selected';
+        }
+        if (index === highlightedIndex) {
+            div.className += ' highlighted';
+        }
+        div.textContent = label;
+        div.dataset.value = value;
+        div.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            onSelect(value, label);
+        });
+        dropdown.appendChild(div);
+    });
+
+    return filtered;
+}
+
+// Show dropdown
+function showDropdown(dropdown) {
+    dropdown.classList.remove('hidden');
+}
+
+// Hide dropdown
+function hideDropdown(dropdown) {
+    dropdown.classList.add('hidden');
 }
 
 // Update version filter based on selected product
@@ -96,14 +149,16 @@ function updateVersionFilter(data) {
 
     // If no product is selected, disable version filter
     if (!selectedProduct) {
-        elements.versionFilter.innerHTML = '<option value="">Select a product first</option>';
+        elements.versionFilter.placeholder = 'Select a product first';
         elements.versionFilter.disabled = true;
+        elements.versionFilter.value = '';
+        versionOptions = [];
         return;
     }
 
     // Enable version filter and populate with product-specific versions
     elements.versionFilter.disabled = false;
-    elements.versionFilter.innerHTML = '<option value="">All Versions</option>';
+    elements.versionFilter.placeholder = 'All Versions';
 
     const versions = new Set();
 
@@ -116,7 +171,7 @@ function updateVersionFilter(data) {
     }
 
     // Sort versions in descending order
-    const sortedVersions = Array.from(versions).sort((a, b) => {
+    versionOptions = Array.from(versions).sort((a, b) => {
         const partsA = a.split('.').map(Number);
         const partsB = b.split('.').map(Number);
         for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
@@ -125,13 +180,6 @@ function updateVersionFilter(data) {
             if (numA !== numB) return numB - numA;
         }
         return 0;
-    });
-
-    sortedVersions.forEach(version => {
-        const option = document.createElement('option');
-        option.value = version;
-        option.textContent = version;
-        elements.versionFilter.appendChild(option);
     });
 }
 
@@ -280,6 +328,10 @@ function clearFilters(data) {
     // Reset version filter to disabled state
     updateVersionFilter(data);
 
+    // Hide dropdowns
+    hideDropdown(elements.productDropdown);
+    hideDropdown(elements.versionDropdown);
+
     applyFilters();
 }
 
@@ -291,19 +343,53 @@ function setupEventListeners(data) {
         applyFilters();
     }, 300));
 
-    // Product filter
-    elements.productFilter.addEventListener('change', (e) => {
-        currentFilters.product = e.target.value;
-        currentFilters.version = ''; // Reset version when product changes
-        updateVersionFilter(data);
-        applyFilters();
-    });
+    // Product filter autocomplete
+    setupAutocomplete(
+        elements.productFilter,
+        elements.productDropdown,
+        () => productOptions,
+        () => currentFilters.product,
+        (value, label) => {
+            currentFilters.product = value;
+            elements.productFilter.value = label;
+            currentFilters.version = '';
+            elements.versionFilter.value = '';
+            updateVersionFilter(data);
+            hideDropdown(elements.productDropdown);
+            applyFilters();
+        },
+        () => highlightedProductIndex,
+        (idx) => { highlightedProductIndex = idx; },
+        // Clear callback
+        () => {
+            currentFilters.product = '';
+            currentFilters.version = '';
+            elements.versionFilter.value = '';
+            updateVersionFilter(data);
+            applyFilters();
+        }
+    );
 
-    // Version filter
-    elements.versionFilter.addEventListener('change', (e) => {
-        currentFilters.version = e.target.value;
-        applyFilters();
-    });
+    // Version filter autocomplete
+    setupAutocomplete(
+        elements.versionFilter,
+        elements.versionDropdown,
+        () => versionOptions,
+        () => currentFilters.version,
+        (value, label) => {
+            currentFilters.version = value;
+            elements.versionFilter.value = label;
+            hideDropdown(elements.versionDropdown);
+            applyFilters();
+        },
+        () => highlightedVersionIndex,
+        (idx) => { highlightedVersionIndex = idx; },
+        // Clear callback
+        () => {
+            currentFilters.version = '';
+            applyFilters();
+        }
+    );
 
     // Type filter
     elements.typeFilter.addEventListener('change', (e) => {
@@ -313,6 +399,144 @@ function setupEventListeners(data) {
 
     // Clear filters button
     elements.clearFilters.addEventListener('click', () => clearFilters(data));
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!elements.productFilter.contains(e.target) && !elements.productDropdown.contains(e.target)) {
+            hideDropdown(elements.productDropdown);
+        }
+        if (!elements.versionFilter.contains(e.target) && !elements.versionDropdown.contains(e.target)) {
+            hideDropdown(elements.versionDropdown);
+        }
+    });
+}
+
+// Setup autocomplete for an input element
+function setupAutocomplete(input, dropdown, getOptions, getSelectedValue, onSelect, getHighlightedIndex, setHighlightedIndex, onClear) {
+    let lastFilteredOptions = [];
+
+    const updateDropdown = () => {
+        const options = getOptions();
+        const filterText = input.value;
+        lastFilteredOptions = renderAutocompleteDropdown(
+            dropdown,
+            options,
+            filterText,
+            getSelectedValue(),
+            onSelect,
+            getHighlightedIndex()
+        );
+    };
+
+    // Focus: show dropdown
+    input.addEventListener('focus', () => {
+        if (input.disabled) return;
+        setHighlightedIndex(-1);
+        updateDropdown();
+        showDropdown(dropdown);
+    });
+
+    // Blur: hide dropdown (with small delay for click handling)
+    input.addEventListener('blur', () => {
+        setTimeout(() => {
+            hideDropdown(dropdown);
+            // If no valid selection, clear the input
+            const options = getOptions();
+            const inputValue = input.value.toLowerCase();
+            const match = options.find(opt => {
+                const label = typeof opt === 'string' ? opt : opt.name;
+                return label.toLowerCase() === inputValue;
+            });
+            if (!match && input.value !== '') {
+                // Check if we had a prior selection that's still valid
+                const selectedValue = getSelectedValue();
+                if (selectedValue) {
+                    const selectedOpt = options.find(opt => {
+                        const value = typeof opt === 'string' ? opt : opt.id;
+                        return value === selectedValue;
+                    });
+                    if (selectedOpt) {
+                        const label = typeof selectedOpt === 'string' ? selectedOpt : selectedOpt.name;
+                        input.value = label;
+                    } else {
+                        input.value = '';
+                        onClear();
+                    }
+                } else {
+                    input.value = '';
+                }
+            } else if (!match && input.value === '' && getSelectedValue()) {
+                onClear();
+            }
+        }, 150);
+    });
+
+    // Input: filter dropdown
+    input.addEventListener('input', () => {
+        setHighlightedIndex(-1);
+        updateDropdown();
+        showDropdown(dropdown);
+    });
+
+    // Keyboard navigation
+    input.addEventListener('keydown', (e) => {
+        if (input.disabled) return;
+
+        const options = lastFilteredOptions;
+        const currentIndex = getHighlightedIndex();
+
+        switch (e.key) {
+            case 'ArrowDown':
+                e.preventDefault();
+                if (dropdown.classList.contains('hidden')) {
+                    showDropdown(dropdown);
+                    updateDropdown();
+                } else {
+                    const nextIndex = currentIndex < options.length - 1 ? currentIndex + 1 : 0;
+                    setHighlightedIndex(nextIndex);
+                    updateDropdown();
+                    scrollToHighlighted(dropdown, nextIndex);
+                }
+                break;
+
+            case 'ArrowUp':
+                e.preventDefault();
+                if (!dropdown.classList.contains('hidden')) {
+                    const prevIndex = currentIndex > 0 ? currentIndex - 1 : options.length - 1;
+                    setHighlightedIndex(prevIndex);
+                    updateDropdown();
+                    scrollToHighlighted(dropdown, prevIndex);
+                }
+                break;
+
+            case 'Enter':
+                e.preventDefault();
+                if (currentIndex >= 0 && currentIndex < options.length) {
+                    const opt = options[currentIndex];
+                    const value = typeof opt === 'string' ? opt : opt.id;
+                    const label = typeof opt === 'string' ? opt : opt.name;
+                    onSelect(value, label);
+                }
+                break;
+
+            case 'Escape':
+                hideDropdown(dropdown);
+                input.blur();
+                break;
+
+            case 'Tab':
+                hideDropdown(dropdown);
+                break;
+        }
+    });
+}
+
+// Scroll dropdown to keep highlighted item visible
+function scrollToHighlighted(dropdown, index) {
+    const items = dropdown.querySelectorAll('.autocomplete-option');
+    if (items[index]) {
+        items[index].scrollIntoView({ block: 'nearest' });
+    }
 }
 
 // Initialize the application
