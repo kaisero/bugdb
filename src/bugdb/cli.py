@@ -301,12 +301,15 @@ def fetch(
     from datetime import datetime, timezone
 
     from bugdb.crawler import (
+        crawl_adem,
+        crawl_cloud_ngfw_aws,
         crawl_cloud_ngfw_azure,
         crawl_globalprotect,
         crawl_panos,
         crawl_prisma_access,
         crawl_prisma_access_agent,
         crawl_prisma_sdwan,
+        crawl_scm,
         get_existing_versions,
         merge_databases,
     )
@@ -344,12 +347,15 @@ def fetch(
 
     # Define supported products and their crawlers
     supported_products = {
+        "adem": crawl_adem,
+        "cloud-ngfw-aws": crawl_cloud_ngfw_aws,
         "cloud-ngfw-azure": crawl_cloud_ngfw_azure,
         "globalprotect": crawl_globalprotect,
         "panos": crawl_panos,
         "prisma-access": crawl_prisma_access,
         "prisma-access-agent": crawl_prisma_access_agent,
         "prisma-sdwan": crawl_prisma_sdwan,
+        "scm": crawl_scm,
     }
 
     # Determine which products to fetch

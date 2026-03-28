@@ -12,6 +12,9 @@ let currentFilters = {
     type: ''
 };
 
+// Versions that should not be displayed in issue cards (e.g., SaaS products)
+const HIDDEN_VERSIONS = ['SaaS', 'Unknown'];
+
 // DOM Elements
 const elements = {
     search: document.getElementById('search'),
@@ -165,7 +168,10 @@ function updateVersionFilter(data) {
     for (const product of data.products) {
         if (product.id === selectedProduct) {
             for (const version of product.versions) {
-                versions.add(version.version);
+                // Skip hidden versions (e.g., SaaS, Unknown)
+                if (!HIDDEN_VERSIONS.includes(version.version)) {
+                    versions.add(version.version);
+                }
             }
         }
     }
@@ -251,11 +257,17 @@ function createIssueCard(issue) {
         : 'bg-emerald-100 text-emerald-800';
     const typeLabel = issue.issueType === 'known' ? 'Known Issue' : 'Addressed';
 
+    // Only show version if it's not in the hidden versions list
+    const showVersion = !HIDDEN_VERSIONS.includes(issue.version);
+    const productVersionText = showVersion
+        ? `${escapeHtml(issue.productName)} ${escapeHtml(issue.version)}`
+        : escapeHtml(issue.productName);
+
     card.innerHTML = `
         <div class="flex flex-wrap items-start justify-between gap-4 mb-4">
             <div>
                 <h3 class="text-lg font-semibold text-gray-900">${escapeHtml(issue.bug_id)}</h3>
-                <p class="text-sm text-gray-500">${escapeHtml(issue.productName)} ${escapeHtml(issue.version)}</p>
+                <p class="text-sm text-gray-500">${productVersionText}</p>
             </div>
             <div class="flex flex-wrap gap-2 items-center">
                 ${issue.affected_components && issue.affected_components.length > 0 ?

@@ -1205,7 +1205,11 @@ class PaloAltoCrawler:
         return issues
 
     def _deduplicate_issues(self, issues: list[Issue]) -> list[Issue]:
-        """Remove duplicate issues by bug_id.
+        """Remove duplicate issues by bug_id, release_date, and description.
+
+        Issues with the same bug_id but different release_dates or descriptions
+        are kept. Only true duplicates (same bug_id, release_date, AND description)
+        are removed.
 
         Args:
             issues: List of issues that may contain duplicates.
@@ -1216,8 +1220,12 @@ class PaloAltoCrawler:
         seen = set()
         unique = []
         for issue in issues:
-            if issue.bug_id not in seen:
-                seen.add(issue.bug_id)
+            # Use (bug_id, release_date, description_hash) as the deduplication key
+            # Use first 100 chars of description to handle minor variations
+            desc_key = (issue.description or "")[:100]
+            key = (issue.bug_id, issue.release_date, desc_key)
+            if key not in seen:
+                seen.add(key)
                 unique.append(issue)
         return unique
 
@@ -2285,6 +2293,630 @@ class PaloAltoCrawler:
             versions=[version] if known_issues or addressed_issues else [],
         )
 
+    async def crawl_cloud_ngfw_aws(self) -> Product:
+        """Crawl Cloud NGFW for AWS release notes.
+
+        Cloud NGFW for AWS is a SaaS product with no version dropdown.
+        It only has a known issues page (no addressed issues).
+
+        Returns:
+            Product with a single "SaaS" version containing known issues.
+        """
+        self._log("Crawling Cloud NGFW for AWS...")
+
+        known_issues_url = (
+            "/cloud-ngfw-aws/release-notes/cloud-ngfw-for-aws-known-issues"
+        )
+
+        known_issues: list[Issue] = []
+
+        try:
+            soup = await self._fetch_page_with_semaphore(known_issues_url)
+            for table in soup.find_all("table"):
+                # Skip nested tables
+                if table.find_parent("table"):
+                    continue
+                issues = self._parse_issues_table(table)
+                known_issues.extend(issues)
+            self._log(f"  Found {len(known_issues)} known issues")
+        except Exception as e:
+            self._log(f"  Error fetching known issues: {e}")
+
+        # Deduplicate issues
+        known_issues = self._deduplicate_issues(known_issues)
+
+        # Create a single version for SaaS product
+        version = ProductVersion(
+            version="SaaS",
+            known_issues=known_issues,
+            addressed_issues=[],
+        )
+
+        return Product(
+            id="cloud-ngfw-aws",
+            name="Cloud NGFW for AWS",
+            versions=[version] if known_issues else [],
+        )
+
+    async def crawl_adem(self) -> Product:
+        """Crawl Autonomous DEM (ADEM) release notes.
+
+        ADEM issues are organized by agent version with release dates.
+        The format includes headers like "Autonomous DEM Agent 5.9 Addressed Issues"
+        followed by release dates and issue tables.
+
+        Returns:
+            Product with versions organized by agent version.
+        """
+        self._log("Crawling Autonomous DEM...")
+
+        known_issues_url = (
+            "/autonomous-dem/release-notes/ai-powered-adem-release-notes"
+            "/release-updates-release-notes-doc/known-issues-adem"
+        )
+        addressed_issues_url = (
+            "/autonomous-dem/release-notes/ai-powered-adem-release-notes"
+            "/release-updates-release-notes-doc/addressed-issues-adem"
+        )
+
+        # Fetch both pages in parallel
+        fetch_tasks = [
+            self._fetch_page_with_semaphore(known_issues_url),
+            self._fetch_page_with_semaphore(addressed_issues_url),
+        ]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        # Parse known issues (simpler format - no release dates)
+        known_by_version: dict[str, list[Issue]] = {}
+        if not isinstance(results[0], Exception):
+            known_by_version = self._parse_adem_issues_page(results[0], "known")
+            total_known = sum(len(issues) for issues in known_by_version.values())
+            self._log(f"  Found {total_known} known issues across {len(known_by_version)} versions")
+        else:
+            self._log(f"  Error fetching known issues: {results[0]}")
+
+        # Parse addressed issues (with release dates)
+        addressed_by_version: dict[str, list[Issue]] = {}
+        if not isinstance(results[1], Exception):
+            addressed_by_version = self._parse_adem_issues_page(results[1], "addressed")
+            total_addressed = sum(len(issues) for issues in addressed_by_version.values())
+            self._log(f"  Found {total_addressed} addressed issues across {len(addressed_by_version)} versions")
+        else:
+            self._log(f"  Error fetching addressed issues: {results[1]}")
+
+        # Combine into ProductVersion objects
+        all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
+        all_product_versions = []
+
+        for ver in all_versions_set:
+            known = self._deduplicate_issues(known_by_version.get(ver, []))
+            addressed = self._deduplicate_issues(addressed_by_version.get(ver, []))
+
+            if known or addressed:
+                all_product_versions.append(
+                    ProductVersion(
+                        version=ver,
+                        known_issues=known,
+                        addressed_issues=addressed,
+                    )
+                )
+
+        # Sort versions (newest first)
+        all_product_versions.sort(
+            key=lambda v: self._version_sort_key(v.version),
+            reverse=True,
+        )
+
+        return Product(
+            id="adem",
+            name="Autonomous DEM",
+            versions=all_product_versions,
+        )
+
+    def _parse_adem_issues_page(
+        self, soup: BeautifulSoup, issue_type: str
+    ) -> dict[str, list[Issue]]:
+        """Parse an ADEM issues page organized by agent version.
+
+        The page structure has headers like:
+        - "Autonomous DEM Agent 5.9 Addressed Issues" or "Autonomous DEM Agent 5.9 Known Issues"
+        - Under each, release dates like "March 2024" or specific dates
+        - Then issue tables
+
+        Args:
+            soup: BeautifulSoup parsed page.
+            issue_type: Either "known" or "addressed".
+
+        Returns:
+            Dict mapping version strings to lists of Issue objects.
+        """
+        results: dict[str, list[Issue]] = {}
+        current_version = "Unknown"
+        current_release_date: Optional[str] = None
+
+        # Find all headers and tables
+        for element in soup.find_all(["h2", "h3", "h4", "p", "table"]):
+            if element.name in ["h2", "h3", "h4"]:
+                header_text = element.get_text(strip=True)
+
+                # Check for agent version header (e.g., "Autonomous DEM Agent 5.9 Addressed Issues")
+                version_match = re.search(
+                    r"(?:Autonomous\s+DEM\s+)?Agent\s+(\d+\.\d+)",
+                    header_text,
+                    re.IGNORECASE,
+                )
+                if version_match:
+                    current_version = version_match.group(1)
+                    current_release_date = None  # Reset for new version
+                    logger.debug("Found ADEM version header: %s", current_version)
+                    continue
+
+                # Check for date header (e.g., "March 2024", "March 15, 2024")
+                date_match = self._parse_adem_date(header_text)
+                if date_match:
+                    current_release_date = date_match
+                    logger.debug("Found ADEM release date: %s", current_release_date)
+                    continue
+
+            elif element.name == "p":
+                # Dates might also be in paragraph tags
+                text = element.get_text(strip=True)
+                date_match = self._parse_adem_date(text)
+                if date_match:
+                    current_release_date = date_match
+                    continue
+
+            elif element.name == "table":
+                # Skip nested tables
+                if element.find_parent("table"):
+                    continue
+
+                # Parse issues from this table
+                issues = self._parse_issues_table(element)
+
+                # Add release date to addressed issues
+                if issue_type == "addressed" and current_release_date:
+                    for issue in issues:
+                        issue.release_date = current_release_date
+
+                if issues:
+                    if current_version not in results:
+                        results[current_version] = []
+                    results[current_version].extend(issues)
+
+        return results
+
+    def _parse_adem_date(self, text: str) -> Optional[str]:
+        """Parse a date string from ADEM release notes.
+
+        Handles formats like:
+        - "March 2024" -> "2024-03-01"
+        - "March 15, 2024" -> "2024-03-15"
+        - "2024-03-15" -> "2024-03-15"
+
+        Args:
+            text: Text that may contain a date.
+
+        Returns:
+            Date in YYYY-MM-DD format, or None if not a date.
+        """
+        text = text.strip()
+
+        # Month name to number mapping
+        months = {
+            "january": "01", "february": "02", "march": "03", "april": "04",
+            "may": "05", "june": "06", "july": "07", "august": "08",
+            "september": "09", "october": "10", "november": "11", "december": "12",
+        }
+
+        # Try "Month Day, Year" format (e.g., "March 15, 2024")
+        match = re.match(
+            r"^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$",
+            text,
+        )
+        if match:
+            month_name = match.group(1).lower()
+            day = match.group(2).zfill(2)
+            year = match.group(3)
+            if month_name in months:
+                return f"{year}-{months[month_name]}-{day}"
+
+        # Try "Month Year" format (e.g., "March 2024")
+        match = re.match(
+            r"^([A-Za-z]+)\s+(\d{4})$",
+            text,
+        )
+        if match:
+            month_name = match.group(1).lower()
+            year = match.group(2)
+            if month_name in months:
+                return f"{year}-{months[month_name]}-01"
+
+        # Try ISO format (e.g., "2024-03-15")
+        match = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", text)
+        if match:
+            return text
+
+        return None
+
+    async def crawl_scm(self) -> Product:
+        """Crawl Strata Cloud Manager (SCM) release notes.
+
+        SCM is a SaaS service with versioned releases like 2025.r5.0.
+        Known issues are organized by component (Configuration Management, Command Center, etc.).
+        Addressed issues include version numbers or dates.
+
+        Returns:
+            Product with versions and issues.
+        """
+        self._log("Crawling Strata Cloud Manager...")
+
+        known_issues_url = "/strata-cloud-manager/release-notes/known-issues"
+        addressed_issues_url = "/strata-cloud-manager/release-notes/addressed-issues"
+
+        # Fetch both pages in parallel
+        fetch_tasks = [
+            self._fetch_page_with_semaphore(known_issues_url),
+            self._fetch_page_with_semaphore(addressed_issues_url),
+        ]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        # Parse known issues (organized by component)
+        known_by_version: dict[str, list[Issue]] = {}
+        if not isinstance(results[0], Exception):
+            known_by_version = self._parse_scm_known_issues_page(results[0])
+            total_known = sum(len(issues) for issues in known_by_version.values())
+            self._log(f"  Found {total_known} known issues")
+        else:
+            self._log(f"  Error fetching known issues: {results[0]}")
+
+        # Parse addressed issues (organized by version/date and component)
+        addressed_by_version: dict[str, list[Issue]] = {}
+        if not isinstance(results[1], Exception):
+            addressed_by_version = self._parse_scm_addressed_issues_page(results[1])
+            total_addressed = sum(len(issues) for issues in addressed_by_version.values())
+            self._log(f"  Found {total_addressed} addressed issues")
+        else:
+            self._log(f"  Error fetching addressed issues: {results[1]}")
+
+        # Combine into ProductVersion objects
+        all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
+        all_product_versions = []
+
+        for ver in all_versions_set:
+            known = self._deduplicate_issues(known_by_version.get(ver, []))
+            addressed = self._deduplicate_issues(addressed_by_version.get(ver, []))
+
+            if known or addressed:
+                all_product_versions.append(
+                    ProductVersion(
+                        version=ver,
+                        known_issues=known,
+                        addressed_issues=addressed,
+                    )
+                )
+
+        # Sort versions (newest first) - SCM versions like 2025.r5.0
+        all_product_versions.sort(
+            key=lambda v: self._scm_version_sort_key(v.version),
+            reverse=True,
+        )
+
+        return Product(
+            id="scm",
+            name="Strata Cloud Manager",
+            versions=all_product_versions,
+        )
+
+    def _scm_version_sort_key(self, version: str) -> tuple:
+        """Create a sort key for SCM version strings.
+
+        Handles versions like:
+        - "2025.r5.0" -> (2025, 5, 0)
+        - "2024.r12.1" -> (2024, 12, 1)
+        - "Unknown" -> (0, 0, 0)
+
+        Args:
+            version: Version string.
+
+        Returns:
+            Tuple for sorting.
+        """
+        if version == "Unknown":
+            return (0, 0, 0)
+
+        # Match SCM version pattern: YYYY.rN.M
+        match = re.match(r"(\d{4})\.r(\d+)\.(\d+)", version)
+        if match:
+            return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+        return (0, 0, 0)
+
+    def _parse_scm_known_issues_page(self, soup: BeautifulSoup) -> dict[str, list[Issue]]:
+        """Parse SCM known issues page organized by component.
+
+        The page has component headers like:
+        - "Configuration Management Known Issues"
+        - "Command Center Known Issues"
+
+        Issues are associated with the component that precedes them.
+        All known issues go into a single "SaaS" version bucket.
+
+        Args:
+            soup: BeautifulSoup parsed page.
+
+        Returns:
+            Dict mapping version strings to lists of Issue objects.
+        """
+        results: dict[str, list[Issue]] = {}
+        current_component: Optional[str] = None
+
+        # Component patterns to look for
+        component_pattern = re.compile(
+            r"^(.*?)\s*Known\s*Issues?$",
+            re.IGNORECASE,
+        )
+
+        for element in soup.find_all(["h2", "h3", "h4", "table"]):
+            if element.name in ["h2", "h3", "h4"]:
+                header_text = element.get_text(strip=True)
+
+                # Check for component header
+                comp_match = component_pattern.match(header_text)
+                if comp_match:
+                    component_name = comp_match.group(1).strip()
+                    if component_name:
+                        current_component = component_name
+                        logger.debug("Found SCM component: %s", current_component)
+                    continue
+
+            elif element.name == "table":
+                # Skip nested tables
+                if element.find_parent("table"):
+                    continue
+
+                # Parse issues from this table
+                issues = self._parse_issues_table(element)
+
+                # Add component to affected_components if we have one
+                if current_component:
+                    for issue in issues:
+                        if issue.affected_components:
+                            if current_component not in issue.affected_components:
+                                issue.affected_components.append(current_component)
+                        else:
+                            issue.affected_components = [current_component]
+
+                if issues:
+                    # All known issues go into "SaaS" version
+                    if "SaaS" not in results:
+                        results["SaaS"] = []
+                    results["SaaS"].extend(issues)
+
+        return results
+
+    def _parse_scm_addressed_issues_page(
+        self, soup: BeautifulSoup
+    ) -> dict[str, list[Issue]]:
+        """Parse SCM addressed issues page organized by version and component.
+
+        The page has two types of tables:
+        1. Main table with empty headers and bug IDs concatenated with versions
+           (e.g., "ADI-478552025.r5.0" = bug ID + version concatenated)
+        2. Component-specific tables with "ID" and "Description" headers
+
+        Args:
+            soup: BeautifulSoup parsed page.
+
+        Returns:
+            Dict mapping version strings to lists of Issue objects.
+        """
+        results: dict[str, list[Issue]] = {}
+        current_version = "Unknown"
+        current_component: Optional[str] = None
+        current_release_date: Optional[str] = None
+
+        # Version pattern: YYYY.rN.M
+        version_pattern = re.compile(r"(\d{4}\.r\d+\.\d+)")
+
+        # Component patterns
+        component_keywords = [
+            "Configuration Management",
+            "Command Center",
+            "Insights",
+            "Activity",
+            "Health",
+            "Incidents",
+            "Policy",
+            "Tenancy",
+            "Identity",
+            "Objects",
+            "Workflows",
+            "Network",
+            "SASE",
+        ]
+
+        for element in soup.find_all(["h2", "h3", "h4", "p", "table"]):
+            if element.name in ["h2", "h3", "h4"]:
+                header_text = element.get_text(strip=True)
+
+                # Check for version header (e.g., "2025.r5.0")
+                version_match = version_pattern.search(header_text)
+                if version_match:
+                    current_version = version_match.group(1)
+                    current_component = None  # Reset component for new version
+                    current_release_date = None
+                    logger.debug("Found SCM version: %s", current_version)
+                    continue
+
+                # Check for date header (e.g., "September 2024")
+                date_match = self._parse_adem_date(header_text)
+                if date_match:
+                    # If we find a date without a version, use "Unknown" version
+                    if current_version == "Unknown" or not version_pattern.search(header_text):
+                        current_release_date = date_match
+                        current_version = "Unknown"
+                    logger.debug("Found SCM release date: %s", date_match)
+                    continue
+
+                # Check for component header
+                for comp in component_keywords:
+                    if comp.lower() in header_text.lower():
+                        current_component = comp
+                        logger.debug("Found SCM component: %s", current_component)
+                        break
+
+            elif element.name == "table":
+                # Skip nested tables
+                if element.find_parent("table"):
+                    continue
+
+                # Check if this is the main SCM table with empty headers
+                # and concatenated bug ID/version format
+                issues = self._parse_scm_main_addressed_table(element, results)
+
+                # If not the main table format, try standard parsing
+                if not issues:
+                    issues = self._parse_issues_table(element)
+
+                    # Add component to affected_components
+                    if current_component:
+                        for issue in issues:
+                            if issue.affected_components:
+                                if current_component not in issue.affected_components:
+                                    issue.affected_components.append(current_component)
+                            else:
+                                issue.affected_components = [current_component]
+
+                    # Add release date if available
+                    if current_release_date:
+                        for issue in issues:
+                            issue.release_date = current_release_date
+
+                    if issues:
+                        if current_version not in results:
+                            results[current_version] = []
+                        results[current_version].extend(issues)
+
+        return results
+
+    def _parse_scm_main_addressed_table(
+        self, table, results: dict[str, list[Issue]]
+    ) -> bool:
+        """Parse the main SCM addressed issues table with various bug ID formats.
+
+        This table has:
+        - Empty headers
+        - First column: Bug ID in one of these formats:
+          - Concatenated with version: "ADI-478552025.r5.0"
+          - Concatenated with date: "ADI-38973September 2024"
+          - Bug ID only: "ADI-23167"
+        - Second column: Description
+
+        Args:
+            table: BeautifulSoup table element.
+            results: Dict to add parsed issues to (modified in place).
+
+        Returns:
+            True if this table was the main SCM table and was processed,
+            False otherwise (use standard parsing).
+        """
+        # Check for empty headers
+        headers = []
+        thead = table.find("thead")
+        if thead:
+            headers = [th.get_text(strip=True).lower() for th in thead.find_all("th")]
+        else:
+            first_row = table.find("tr")
+            if first_row:
+                headers = [th.get_text(strip=True).lower() for th in first_row.find_all("th")]
+
+        # Only process tables with empty or no headers
+        if headers and any(h.strip() for h in headers):
+            return False
+
+        # Get rows
+        tbody = table.find("tbody")
+        if tbody:
+            rows = tbody.find_all("tr", recursive=False)
+        else:
+            rows = table.find_all("tr", recursive=False)
+            if not rows:
+                rows = table.find_all("tr")
+            # Skip header row if present
+            if rows and rows[0].find("th"):
+                rows = rows[1:]
+
+        # Patterns for different formats:
+        # 1. Bug ID + version: "ADI-478552025.r5.0"
+        version_pattern = re.compile(r"^([A-Z]+-\d+)(\d{4}\.r\d+\.\d+)$")
+        # 2. Bug ID + date: "ADI-38973September 2024"
+        date_pattern = re.compile(r"^([A-Z]+-\d+)([A-Z][a-z]+\s+\d{4})$")
+        # 3. Bug ID only: "ADI-23167"
+        bug_only_pattern = re.compile(r"^([A-Z]+-\d+)$")
+
+        parsed_any = False
+        for row in rows:
+            cells = row.find_all(["td", "th"], recursive=False)
+            if len(cells) < 2:
+                continue
+
+            raw_id = cells[0].get_text(strip=True)
+            raw_description = extract_cell_text_with_tables(cells[1])
+
+            bug_id = None
+            version = "Unknown"
+            release_date = None
+
+            # Try to match each format
+            match = version_pattern.match(raw_id)
+            if match:
+                bug_id = match.group(1)
+                version = match.group(2)
+            else:
+                match = date_pattern.match(raw_id)
+                if match:
+                    bug_id = match.group(1)
+                    date_str = match.group(2)
+                    release_date = self._parse_adem_date(date_str)
+                else:
+                    match = bug_only_pattern.match(raw_id)
+                    if match:
+                        bug_id = match.group(1)
+
+            if not bug_id:
+                continue
+
+            # Extract workaround from description
+            description, workaround = extract_workaround(raw_description)
+
+            # Extract fix info from description
+            description, fix_info = extract_fix_info_from_description(description, None)
+
+            # Extract affected components from description
+            description, affected_components = extract_affected_components(description)
+
+            logger.debug(
+                "Parsed SCM main table issue: %s (version: %s, release_date: %s)",
+                bug_id, version, release_date
+            )
+
+            issue = Issue(
+                bug_id=bug_id,
+                description=description,
+                workaround=workaround,
+                fix_info=fix_info,
+                affected_components=affected_components,
+                release_date=release_date,
+            )
+
+            if version not in results:
+                results[version] = []
+            results[version].append(issue)
+            parsed_any = True
+
+        return parsed_any
+
 
 async def _crawl_cloud_ngfw_azure_async(
     major_versions: Optional[list[str]] = None,
@@ -2309,6 +2941,90 @@ async def _crawl_cloud_ngfw_azure_async(
                 generated_at=datetime.now(timezone.utc),
                 version="1.0.0",
                 source="Palo Alto Networks Cloud NGFW for Azure Release Notes",
+            ),
+            products=[product],
+        )
+
+
+async def _crawl_cloud_ngfw_aws_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Async implementation of Cloud NGFW for AWS crawler.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since Cloud NGFW for AWS is a SaaS product without versions.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        product = await crawler.crawl_cloud_ngfw_aws()
+
+        return BugDatabase(
+            metadata=Metadata(
+                generated_at=datetime.now(timezone.utc),
+                version="1.0.0",
+                source="Palo Alto Networks Cloud NGFW for AWS Release Notes",
+            ),
+            products=[product],
+        )
+
+
+async def _crawl_adem_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Async implementation of Autonomous DEM crawler.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but currently ignored as ADEM versions are auto-discovered from page structure.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        product = await crawler.crawl_adem()
+
+        return BugDatabase(
+            metadata=Metadata(
+                generated_at=datetime.now(timezone.utc),
+                version="1.0.0",
+                source="Palo Alto Networks Autonomous DEM Release Notes",
+            ),
+            products=[product],
+        )
+
+
+async def _crawl_scm_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Async implementation of Strata Cloud Manager crawler.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but currently ignored as SCM versions are auto-discovered from page structure.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        product = await crawler.crawl_scm()
+
+        return BugDatabase(
+            metadata=Metadata(
+                generated_at=datetime.now(timezone.utc),
+                version="1.0.0",
+                source="Palo Alto Networks Strata Cloud Manager Release Notes",
             ),
             products=[product],
         )
@@ -2647,6 +3363,107 @@ def crawl_cloud_ngfw_azure(
     """
     return asyncio.run(
         _crawl_cloud_ngfw_azure_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_cloud_ngfw_aws(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Crawl Cloud NGFW for AWS release notes and return a BugDatabase.
+
+    Cloud NGFW for AWS is a SaaS product without version releases.
+    It only has a known issues page (no addressed issues).
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since this is a versionless SaaS product.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Ignored (kept for API compatibility).
+
+    Returns:
+        BugDatabase with Cloud NGFW for AWS issues.
+    """
+    return asyncio.run(
+        _crawl_cloud_ngfw_aws_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_adem(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Crawl Autonomous DEM release notes and return a BugDatabase.
+
+    ADEM issues are organized by agent version with release dates for fixes.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but currently ignored as versions are auto-discovered from page structure.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Ignored (kept for API compatibility).
+
+    Returns:
+        BugDatabase with Autonomous DEM issues.
+    """
+    return asyncio.run(
+        _crawl_adem_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_scm(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> BugDatabase:
+    """Crawl Strata Cloud Manager release notes and return a BugDatabase.
+
+    SCM issues are organized by component and version (e.g., 2025.r5.0).
+    Older releases may only have dates instead of version numbers.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but currently ignored as versions are auto-discovered from page structure.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Ignored (kept for API compatibility).
+
+    Returns:
+        BugDatabase with Strata Cloud Manager issues.
+    """
+    return asyncio.run(
+        _crawl_scm_async(
             major_versions, headless, verbose, debug, max_concurrency, skip_versions
         )
     )

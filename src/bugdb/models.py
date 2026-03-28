@@ -19,6 +19,9 @@ class Issue(BaseModel):
     affected_components: Optional[list[str]] = Field(
         None, description="List of affected components"
     )
+    release_date: Optional[str] = Field(
+        None, description="Release date when the fix was deployed (YYYY-MM-DD format)"
+    )
 
 
 class ProductVersion(BaseModel):

@@ -281,25 +281,54 @@ class TestPaloAltoCrawlerVersionExtraction:
 class TestPaloAltoCrawlerDeduplication:
     """Tests for issue deduplication."""
 
-    def test_deduplicate_issues_removes_duplicates(self):
-        """Test that duplicate issues are removed."""
+    def test_deduplicate_issues_removes_true_duplicates(self):
+        """Test that true duplicates (same bug_id, release_date, description) are removed."""
         crawler = PaloAltoCrawler()
 
         issues = [
             Issue(bug_id="GPC-001", description="First description"),
             Issue(bug_id="GPC-002", description="Second description"),
-            Issue(bug_id="GPC-001", description="Duplicate of first"),
+            Issue(bug_id="GPC-001", description="First description"),  # True duplicate
             Issue(bug_id="GPC-003", description="Third description"),
-            Issue(bug_id="GPC-002", description="Duplicate of second"),
+            Issue(bug_id="GPC-002", description="Second description"),  # True duplicate
         ]
 
         deduplicated = crawler._deduplicate_issues(issues)
 
         assert len(deduplicated) == 3
         assert [i.bug_id for i in deduplicated] == ["GPC-001", "GPC-002", "GPC-003"]
-        # First occurrence is kept
+
+    def test_deduplicate_issues_keeps_different_descriptions(self):
+        """Test that issues with same bug_id but different descriptions are kept."""
+        crawler = PaloAltoCrawler()
+
+        issues = [
+            Issue(bug_id="GPC-001", description="First description"),
+            Issue(bug_id="GPC-001", description="Different description"),  # Same bug, different desc
+            Issue(bug_id="GPC-002", description="Second description"),
+        ]
+
+        deduplicated = crawler._deduplicate_issues(issues)
+
+        # Both GPC-001 entries should be kept since they have different descriptions
+        assert len(deduplicated) == 3
         assert deduplicated[0].description == "First description"
-        assert deduplicated[1].description == "Second description"
+        assert deduplicated[1].description == "Different description"
+
+    def test_deduplicate_issues_keeps_different_release_dates(self):
+        """Test that issues with same bug_id but different release_dates are kept."""
+        crawler = PaloAltoCrawler()
+
+        issues = [
+            Issue(bug_id="GPC-001", description="Same description", release_date="2024-01-01"),
+            Issue(bug_id="GPC-001", description="Same description", release_date="2024-02-01"),
+            Issue(bug_id="GPC-002", description="Other issue"),
+        ]
+
+        deduplicated = crawler._deduplicate_issues(issues)
+
+        # Both GPC-001 entries should be kept since they have different release_dates
+        assert len(deduplicated) == 3
 
     def test_deduplicate_issues_empty_list(self):
         """Test deduplication of empty list."""
@@ -881,7 +910,7 @@ class TestEdgeCases:
             Issue(bug_id="C-003", description="Third"),
             Issue(bug_id="A-001", description="First"),
             Issue(bug_id="B-002", description="Second"),
-            Issue(bug_id="A-001", description="Duplicate"),
+            Issue(bug_id="A-001", description="First"),  # True duplicate (same description)
         ]
 
         deduplicated = crawler._deduplicate_issues(issues)
@@ -2822,6 +2851,566 @@ class TestCloudNGFWAzureCrawlFunction:
         from bugdb.crawler import crawl_cloud_ngfw_azure
         import inspect
         sig = inspect.signature(crawl_cloud_ngfw_azure)
+        params = list(sig.parameters.keys())
+        assert "major_versions" in params
+        assert "skip_versions" in params
+
+
+class TestCloudNGFWAWSCrawler:
+    """Tests for Cloud NGFW for AWS crawler."""
+
+    @pytest.mark.asyncio
+    async def test_crawl_cloud_ngfw_aws_basic(self):
+        """Test basic Cloud NGFW for AWS crawling (known issues only)."""
+        known_html = """
+        <html>
+        <body>
+            <h2>Cloud NGFW for AWS Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>CNGFWAWS-100</td><td>Known issue in AWS deployment.</td></tr>
+                    <tr><td>CNGFWAWS-101</td><td>VPC configuration issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(known_html, "lxml")
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_cloud_ngfw_aws()
+
+        assert product.id == "cloud-ngfw-aws"
+        assert product.name == "Cloud NGFW for AWS"
+        assert len(product.versions) == 1
+        assert product.versions[0].version == "SaaS"
+        assert len(product.versions[0].known_issues) == 2
+        assert len(product.versions[0].addressed_issues) == 0
+
+    @pytest.mark.asyncio
+    async def test_crawl_cloud_ngfw_aws_empty_page(self):
+        """Test handling of empty page."""
+        empty_html = "<html><body></body></html>"
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(empty_html, "lxml")
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_cloud_ngfw_aws()
+
+        assert product.id == "cloud-ngfw-aws"
+        assert len(product.versions) == 0
+
+
+class TestCloudNGFWAWSCrawlFunction:
+    """Tests for the crawl_cloud_ngfw_aws function."""
+
+    def test_crawl_cloud_ngfw_aws_import(self):
+        """Test that crawl_cloud_ngfw_aws can be imported."""
+        from bugdb.crawler import crawl_cloud_ngfw_aws
+        assert callable(crawl_cloud_ngfw_aws)
+
+
+class TestADEMDateParsing:
+    """Tests for ADEM date parsing."""
+
+    def test_parse_adem_date_month_year(self):
+        """Test parsing 'Month Year' format."""
+        crawler = PaloAltoCrawler()
+        assert crawler._parse_adem_date("March 2024") == "2024-03-01"
+        assert crawler._parse_adem_date("December 2023") == "2023-12-01"
+        assert crawler._parse_adem_date("January 2025") == "2025-01-01"
+
+    def test_parse_adem_date_month_day_year(self):
+        """Test parsing 'Month Day, Year' format."""
+        crawler = PaloAltoCrawler()
+        assert crawler._parse_adem_date("March 15, 2024") == "2024-03-15"
+        assert crawler._parse_adem_date("December 1, 2023") == "2023-12-01"
+        assert crawler._parse_adem_date("January 31 2025") == "2025-01-31"
+
+    def test_parse_adem_date_iso_format(self):
+        """Test parsing ISO date format."""
+        crawler = PaloAltoCrawler()
+        assert crawler._parse_adem_date("2024-03-15") == "2024-03-15"
+        assert crawler._parse_adem_date("2023-12-01") == "2023-12-01"
+
+    def test_parse_adem_date_invalid(self):
+        """Test that invalid dates return None."""
+        crawler = PaloAltoCrawler()
+        assert crawler._parse_adem_date("Not a date") is None
+        assert crawler._parse_adem_date("Bug ID: ADEM-123") is None
+        assert crawler._parse_adem_date("") is None
+
+
+class TestADEMCrawler:
+    """Tests for Autonomous DEM crawler."""
+
+    @pytest.mark.asyncio
+    async def test_crawl_adem_basic(self):
+        """Test basic ADEM crawling with version headers."""
+        known_html = """
+        <html>
+        <body>
+            <h2>Autonomous DEM Agent 5.9 Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>ADEM-100</td><td>Agent connection issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+        addressed_html = """
+        <html>
+        <body>
+            <h2>Autonomous DEM Agent 5.9 Addressed Issues</h2>
+            <h3>March 2024</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>ADEM-50</td><td>Fixed memory leak.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_adem()
+
+        assert product.id == "adem"
+        assert product.name == "Autonomous DEM"
+        assert len(product.versions) == 1
+        assert product.versions[0].version == "5.9"
+        assert len(product.versions[0].known_issues) == 1
+        assert len(product.versions[0].addressed_issues) == 1
+        assert product.versions[0].addressed_issues[0].release_date == "2024-03-01"
+
+    @pytest.mark.asyncio
+    async def test_crawl_adem_multiple_versions(self):
+        """Test ADEM crawling with multiple agent versions."""
+        known_html = """
+        <html>
+        <body>
+            <h2>Agent 5.9 Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>ADEM-100</td><td>Issue in 5.9.</td></tr>
+                </tbody>
+            </table>
+            <h2>Agent 5.8 Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>ADEM-90</td><td>Issue in 5.8.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+        addressed_html = "<html><body></body></html>"
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_adem()
+
+        assert len(product.versions) == 2
+        versions = {v.version for v in product.versions}
+        assert "5.9" in versions
+        assert "5.8" in versions
+
+    @pytest.mark.asyncio
+    async def test_crawl_adem_release_dates_in_addressed(self):
+        """Test that release dates are captured for addressed issues."""
+        known_html = "<html><body></body></html>"
+        addressed_html = """
+        <html>
+        <body>
+            <h2>Autonomous DEM Agent 5.9 Addressed Issues</h2>
+            <h3>March 15, 2024</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>ADEM-50</td><td>Fixed in March.</td></tr>
+                </tbody>
+            </table>
+            <h3>February 2024</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>ADEM-40</td><td>Fixed in February.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_adem()
+
+        assert len(product.versions) == 1
+        addressed = product.versions[0].addressed_issues
+        assert len(addressed) == 2
+
+        # Check that release dates are captured
+        dates = {issue.release_date for issue in addressed}
+        assert "2024-03-15" in dates
+        assert "2024-02-01" in dates
+
+
+class TestADEMCrawlFunction:
+    """Tests for the crawl_adem function."""
+
+    def test_crawl_adem_import(self):
+        """Test that crawl_adem can be imported."""
+        from bugdb.crawler import crawl_adem
+        assert callable(crawl_adem)
+
+    def test_crawl_adem_accepts_version_params(self):
+        """Test that crawl_adem accepts version params for API compatibility."""
+        from bugdb.crawler import crawl_adem
+        import inspect
+        sig = inspect.signature(crawl_adem)
+        params = list(sig.parameters.keys())
+        assert "major_versions" in params
+        assert "skip_versions" in params
+
+
+class TestSCMVersionSortKey:
+    """Tests for SCM version sort key."""
+
+    def test_scm_version_sort_key_standard(self):
+        """Test sorting standard SCM versions."""
+        crawler = PaloAltoCrawler()
+        assert crawler._scm_version_sort_key("2025.r5.0") == (2025, 5, 0)
+        assert crawler._scm_version_sort_key("2024.r12.1") == (2024, 12, 1)
+        assert crawler._scm_version_sort_key("2023.r1.0") == (2023, 1, 0)
+
+    def test_scm_version_sort_key_unknown(self):
+        """Test sorting Unknown version."""
+        crawler = PaloAltoCrawler()
+        assert crawler._scm_version_sort_key("Unknown") == (0, 0, 0)
+
+    def test_scm_version_sort_key_invalid(self):
+        """Test sorting invalid version."""
+        crawler = PaloAltoCrawler()
+        assert crawler._scm_version_sort_key("invalid") == (0, 0, 0)
+
+
+class TestSCMCrawler:
+    """Tests for Strata Cloud Manager crawler."""
+
+    @pytest.mark.asyncio
+    async def test_crawl_scm_known_issues_with_components(self):
+        """Test SCM known issues parsing with component headers."""
+        known_html = """
+        <html>
+        <body>
+            <h2>Configuration Management Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>SCM-100</td><td>Config issue.</td></tr>
+                </tbody>
+            </table>
+            <h2>Command Center Known Issues</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>SCM-200</td><td>Command Center issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+        addressed_html = "<html><body></body></html>"
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_scm()
+
+        assert product.id == "scm"
+        assert product.name == "Strata Cloud Manager"
+        assert len(product.versions) == 1
+        assert product.versions[0].version == "SaaS"
+
+        known = product.versions[0].known_issues
+        assert len(known) == 2
+
+        # Check component association
+        config_issue = next(i for i in known if i.bug_id == "SCM-100")
+        assert "Configuration Management" in config_issue.affected_components
+
+        cc_issue = next(i for i in known if i.bug_id == "SCM-200")
+        assert "Command Center" in cc_issue.affected_components
+
+    @pytest.mark.asyncio
+    async def test_crawl_scm_addressed_issues_with_versions(self):
+        """Test SCM addressed issues parsing with version headers."""
+        known_html = "<html><body></body></html>"
+        addressed_html = """
+        <html>
+        <body>
+            <h2>2025.r5.0</h2>
+            <h3>Command Center</h3>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>SCM-50</td><td>Fixed in r5.</td></tr>
+                </tbody>
+            </table>
+            <h2>2025.r4.0</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>SCM-40</td><td>Fixed in r4.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_scm()
+
+        assert len(product.versions) == 2
+        versions = {v.version for v in product.versions}
+        assert "2025.r5.0" in versions
+        assert "2025.r4.0" in versions
+
+        # Check component association for r5 issue
+        r5_version = next(v for v in product.versions if v.version == "2025.r5.0")
+        assert len(r5_version.addressed_issues) == 1
+        assert "Command Center" in r5_version.addressed_issues[0].affected_components
+
+    @pytest.mark.asyncio
+    async def test_crawl_scm_addressed_issues_with_date_only(self):
+        """Test SCM addressed issues with date-only releases (no version)."""
+        known_html = "<html><body></body></html>"
+        addressed_html = """
+        <html>
+        <body>
+            <h2>September 2024</h2>
+            <table>
+                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>SCM-30</td><td>Fixed in September.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_scm()
+
+        assert len(product.versions) == 1
+        assert product.versions[0].version == "Unknown"
+        assert len(product.versions[0].addressed_issues) == 1
+        assert product.versions[0].addressed_issues[0].release_date == "2024-09-01"
+
+
+class TestSCMMainAddressedTable:
+    """Tests for parsing SCM main addressed issues table with concatenated bug ID/version."""
+
+    @pytest.mark.asyncio
+    async def test_parse_scm_main_addressed_table_concat_format(self):
+        """Test parsing table with concatenated bug ID and version (e.g., ADI-478552025.r5.0)."""
+        known_html = "<html><body></body></html>"
+        addressed_html = """
+        <html>
+        <body>
+            <h3>Addressed Issues</h3>
+            <table>
+                <thead><tr><th></th><th></th></tr></thead>
+                <tbody>
+                    <tr><td></td><td></td></tr>
+                    <tr><td>ADI-478552025.r5.0</td><td>Fixed an issue with configuration push.</td></tr>
+                    <tr><td>ADI-491212025.r5.0</td><td>Fixed View Only role permissions.</td></tr>
+                    <tr><td>ADI-482732025.r4.0</td><td>Fixed authentication issue.</td></tr>
+                </tbody>
+            </table>
+            <h3>Command Center Addressed Issues</h3>
+            <table>
+                <thead><tr><th>ID</th><th>Description</th></tr></thead>
+                <tbody>
+                    <tr><td>NETVIS-2017</td><td>Fixed DLP redirect issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_scm()
+
+        # Should have 3 versions: 2025.r5.0, 2025.r4.0, Unknown
+        assert len(product.versions) == 3
+        versions = {v.version for v in product.versions}
+        assert "2025.r5.0" in versions
+        assert "2025.r4.0" in versions
+        assert "Unknown" in versions
+
+        # Check 2025.r5.0 version has 2 ADI issues
+        r5_version = next(v for v in product.versions if v.version == "2025.r5.0")
+        assert len(r5_version.addressed_issues) == 2
+        bug_ids = {i.bug_id for i in r5_version.addressed_issues}
+        assert "ADI-47855" in bug_ids
+        assert "ADI-49121" in bug_ids
+
+        # Check 2025.r4.0 version has 1 ADI issue
+        r4_version = next(v for v in product.versions if v.version == "2025.r4.0")
+        assert len(r4_version.addressed_issues) == 1
+        assert r4_version.addressed_issues[0].bug_id == "ADI-48273"
+
+        # Check Unknown version has NETVIS issue from Command Center
+        unknown_version = next(v for v in product.versions if v.version == "Unknown")
+        assert len(unknown_version.addressed_issues) == 1
+        assert unknown_version.addressed_issues[0].bug_id == "NETVIS-2017"
+        assert "Command Center" in unknown_version.addressed_issues[0].affected_components
+
+    @pytest.mark.asyncio
+    async def test_parse_scm_main_addressed_table_date_format(self):
+        """Test parsing table with date concatenated format (e.g., ADI-38973September 2024)."""
+        known_html = "<html><body></body></html>"
+        addressed_html = """
+        <html>
+        <body>
+            <table>
+                <thead><tr><th></th><th></th></tr></thead>
+                <tbody>
+                    <tr><td>ADI-38973September 2024</td><td>Fixed in September.</td></tr>
+                    <tr><td>ADI-34609June 2024</td><td>Fixed in June.</td></tr>
+                    <tr><td>ADI-36846</td><td>Bug only format.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_scm()
+
+        # All should be in Unknown version
+        assert len(product.versions) == 1
+        assert product.versions[0].version == "Unknown"
+        assert len(product.versions[0].addressed_issues) == 3
+
+        # Check bug IDs
+        bug_ids = {i.bug_id for i in product.versions[0].addressed_issues}
+        assert bug_ids == {"ADI-38973", "ADI-34609", "ADI-36846"}
+
+        # Check release dates for date-formatted entries
+        issues_by_id = {i.bug_id: i for i in product.versions[0].addressed_issues}
+        assert issues_by_id["ADI-38973"].release_date == "2024-09-01"
+        assert issues_by_id["ADI-34609"].release_date == "2024-06-01"
+        assert issues_by_id["ADI-36846"].release_date is None
+
+    @pytest.mark.asyncio
+    async def test_parse_scm_main_addressed_table_empty_rows_skipped(self):
+        """Test that empty rows in the main table are skipped."""
+        known_html = "<html><body></body></html>"
+        addressed_html = """
+        <html>
+        <body>
+            <table>
+                <thead><tr><th></th><th></th></tr></thead>
+                <tbody>
+                    <tr><td></td><td></td></tr>
+                    <tr><td></td><td></td></tr>
+                    <tr><td>ADI-123452025.r1.0</td><td>Valid issue.</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "known-issues" in url:
+                return BeautifulSoup(known_html, "lxml")
+            else:
+                return BeautifulSoup(addressed_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with PaloAltoCrawler() as crawler:
+                product = await crawler.crawl_scm()
+
+        assert len(product.versions) == 1
+        assert product.versions[0].version == "2025.r1.0"
+        assert len(product.versions[0].addressed_issues) == 1
+        assert product.versions[0].addressed_issues[0].bug_id == "ADI-12345"
+
+
+class TestSCMCrawlFunction:
+    """Tests for the crawl_scm function."""
+
+    def test_crawl_scm_import(self):
+        """Test that crawl_scm can be imported."""
+        from bugdb.crawler import crawl_scm
+        assert callable(crawl_scm)
+
+    def test_crawl_scm_accepts_version_params(self):
+        """Test that crawl_scm accepts version params for API compatibility."""
+        from bugdb.crawler import crawl_scm
+        import inspect
+        sig = inspect.signature(crawl_scm)
         params = list(sig.parameters.keys())
         assert "major_versions" in params
         assert "skip_versions" in params
