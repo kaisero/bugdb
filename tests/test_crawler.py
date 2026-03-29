@@ -3941,3 +3941,293 @@ class TestSdwanPluginCrawlFunction:
         assert "headless" in params
         assert "debug" in params
 
+
+class TestPluginConfig:
+    """Tests for PluginConfig dataclass and PLUGIN_CONFIGS."""
+
+    def test_plugin_configs_exist(self):
+        """Test that PLUGIN_CONFIGS contains all expected plugins."""
+        from bugdb.crawler import PLUGIN_CONFIGS
+
+        expected_plugins = [
+            "vm-series-plugin",
+            "plugin-aws",
+            "plugin-azure",
+            "plugin-gcp",
+            "plugin-vmware-nsx",
+            "plugin-vmware-vcenter",
+            "plugin-kubernetes",
+            "plugin-cisco-aci",
+            "plugin-cisco-trustsec",
+            "plugin-ztp",
+            "plugin-clustering",
+        ]
+
+        for plugin_id in expected_plugins:
+            assert plugin_id in PLUGIN_CONFIGS, f"Missing plugin: {plugin_id}"
+
+    def test_plugin_config_attributes(self):
+        """Test that plugin configs have required attributes."""
+        from bugdb.crawler import PLUGIN_CONFIGS
+
+        for plugin_id, config in PLUGIN_CONFIGS.items():
+            assert config.product_id, f"{plugin_id}: missing product_id"
+            assert config.product_name, f"{plugin_id}: missing product_name"
+            assert config.base_url, f"{plugin_id}: missing base_url"
+            assert config.version_link_patterns, f"{plugin_id}: missing version_link_patterns"
+            assert config.known_issues_keywords, f"{plugin_id}: missing known_issues_keywords"
+            assert config.addressed_issues_keywords, f"{plugin_id}: missing addressed_issues_keywords"
+
+
+class TestPluginCrawlerFunctions:
+    """Tests for plugin crawler entry point functions."""
+
+    def test_crawl_functions_exist(self):
+        """Test that all plugin crawler functions exist and are callable."""
+        from bugdb.crawler import (
+            crawl_vm_series_plugin,
+            crawl_plugin_aws,
+            crawl_plugin_azure,
+            crawl_plugin_gcp,
+            crawl_plugin_vmware_nsx,
+            crawl_plugin_vmware_vcenter,
+            crawl_plugin_kubernetes,
+            crawl_plugin_cisco_aci,
+            crawl_plugin_cisco_trustsec,
+            crawl_plugin_ztp,
+            crawl_plugin_clustering,
+        )
+
+        functions = [
+            crawl_vm_series_plugin,
+            crawl_plugin_aws,
+            crawl_plugin_azure,
+            crawl_plugin_gcp,
+            crawl_plugin_vmware_nsx,
+            crawl_plugin_vmware_vcenter,
+            crawl_plugin_kubernetes,
+            crawl_plugin_cisco_aci,
+            crawl_plugin_cisco_trustsec,
+            crawl_plugin_ztp,
+            crawl_plugin_clustering,
+        ]
+
+        for func in functions:
+            assert callable(func), f"{func.__name__} is not callable"
+
+    def test_crawl_functions_have_correct_signature(self):
+        """Test that plugin crawler functions have expected parameters."""
+        import inspect
+        from bugdb.crawler import crawl_plugin_aws
+
+        sig = inspect.signature(crawl_plugin_aws)
+        params = list(sig.parameters.keys())
+
+        expected_params = [
+            "major_versions",
+            "headless",
+            "verbose",
+            "debug",
+            "max_concurrency",
+            "skip_versions",
+        ]
+
+        for param in expected_params:
+            assert param in params, f"Missing parameter: {param}"
+
+
+class TestTopicFormatParsing:
+    """Tests for parsing div.topic format issues (used by Panorama plugins)."""
+
+    def test_parse_topic_format_single_issue(self):
+        """Test parsing a single issue from div.topic format."""
+        html = """
+        <html>
+        <body>
+            <div class="topic">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="shortdesc">This is the issue description.</div>
+            </div>
+        </body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_topic_format_issues(soup)
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PLUG-12345"
+        assert "issue description" in issues[0].description
+
+    def test_parse_topic_format_multiple_issues(self):
+        """Test parsing multiple issues from div.topic format."""
+        html = """
+        <html>
+        <body>
+            <div class="topic">
+                <h2 class="title">PLUG-11111</h2>
+                <div class="shortdesc">First issue.</div>
+            </div>
+            <div class="topic">
+                <h2 class="title">PLUG-22222</h2>
+                <div class="shortdesc">Second issue.</div>
+            </div>
+            <div class="topic">
+                <h2 class="title">PAN-33333</h2>
+                <div class="shortdesc">Third issue with PAN prefix.</div>
+            </div>
+        </body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_topic_format_issues(soup)
+
+        assert len(issues) == 3
+        assert issues[0].bug_id == "PLUG-11111"
+        assert issues[1].bug_id == "PLUG-22222"
+        assert issues[2].bug_id == "PAN-33333"
+
+    def test_parse_topic_format_with_workaround(self):
+        """Test parsing issue with workaround from div.topic format."""
+        html = """
+        <html>
+        <body>
+            <div class="topic">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="shortdesc">Issue description.</div>
+                <div class="p"><b>Workaround</b>: Restart the service.</div>
+            </div>
+        </body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_topic_format_issues(soup)
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PLUG-12345"
+        assert issues[0].workaround is not None
+        assert "Restart" in issues[0].workaround
+
+    def test_parse_topic_format_with_fix_info(self):
+        """Test parsing issue with fix info from div.topic format."""
+        html = """
+        <html>
+        <body>
+            <div class="topic">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="shortdesc">Issue description.</div>
+                <div class="p"><tt>This issue is addressed in version 5.3.1.</tt></div>
+            </div>
+        </body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_topic_format_issues(soup)
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PLUG-12345"
+        assert issues[0].fix_info is not None
+        assert "5.3.1" in issues[0].fix_info
+
+    def test_parse_topic_format_skips_invalid_bug_ids(self):
+        """Test that invalid bug IDs are skipped."""
+        html = """
+        <html>
+        <body>
+            <div class="topic">
+                <h2 class="title">Introduction</h2>
+                <div class="shortdesc">This is not a bug.</div>
+            </div>
+            <div class="topic">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="shortdesc">Valid bug.</div>
+            </div>
+        </body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_topic_format_issues(soup)
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PLUG-12345"
+
+    def test_parse_topic_format_with_affected_components(self):
+        """Test parsing issue with affected components."""
+        html = """
+        <html>
+        <body>
+            <div class="topic">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="shortdesc">Issue description.</div>
+                <div class="p">(AWS Integration) This affects AWS deployments.</div>
+            </div>
+        </body>
+        </html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = PaloAltoCrawler()
+        issues = crawler._parse_topic_format_issues(soup)
+
+        assert len(issues) == 1
+        assert issues[0].bug_id == "PLUG-12345"
+        assert issues[0].affected_components is not None
+        assert "AWS Integration" in issues[0].affected_components
+
+
+class TestPluginVersionDiscovery:
+    """Tests for plugin version discovery."""
+
+    @pytest.mark.asyncio
+    async def test_discover_plugin_versions_extracts_versions(self):
+        """Test that version discovery extracts versions from URLs."""
+        html = """
+        <html>
+        <body>
+            <a href="/content/techdocs/en_US/.../aws-plugin-530/known-issues-in-aws-530.html">Known</a>
+            <a href="/content/techdocs/en_US/.../aws-plugin-530/addressed-issues-in-aws-530.html">Addressed</a>
+            <a href="/content/techdocs/en_US/.../aws-plugin-520/known-issues-in-aws-520.html">Known</a>
+        </body>
+        </html>
+        """
+        from bugdb.crawler import PLUGIN_CONFIGS
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            async with PaloAltoCrawler() as crawler:
+                config = PLUGIN_CONFIGS["plugin-aws"]
+                versions = await crawler.discover_plugin_versions(config)
+
+        # Should find versions 5.3.0 and 5.2.0
+        version_strs = [v.version for v in versions]
+        assert "5.3.0" in version_strs
+        assert "5.2.0" in version_strs
+
+    @pytest.mark.asyncio
+    async def test_discover_plugin_versions_handles_dashed_versions(self):
+        """Test that version discovery handles dashed version formats (e.g., vm-series-plugin-6-1-2)."""
+        html = """
+        <html>
+        <body>
+            <a href="/content/.../vm-series-plugin-6-1-2/known-issues-in-vm-series-plugin-612.html">Known</a>
+            <a href="/content/.../vm-series-plugin-6-1-1/addressed-issues-in-vm-series-plugin-611.html">Addressed</a>
+        </body>
+        </html>
+        """
+        from bugdb.crawler import PLUGIN_CONFIGS
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            async with PaloAltoCrawler() as crawler:
+                config = PLUGIN_CONFIGS["vm-series-plugin"]
+                versions = await crawler.discover_plugin_versions(config)
+
+        version_strs = [v.version for v in versions]
+        assert "6.1.2" in version_strs
+        assert "6.1.1" in version_strs
+

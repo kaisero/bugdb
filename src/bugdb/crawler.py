@@ -432,6 +432,106 @@ class FetchResult:
     failed_fetches: list[FailedFetch]
 
 
+@dataclass
+class PluginConfig:
+    """Configuration for a Panorama/VM-Series plugin crawler.
+
+    This allows a single generic crawler implementation to handle
+    all plugin products with different URL structures.
+    """
+
+    # Product identifiers
+    product_id: str  # e.g., "vm-series-plugin", "plugin-aws"
+    product_name: str  # e.g., "VM-Series Plugin", "Panorama Plugin for AWS"
+
+    # URL path to the main plugin page (relative to docs.paloaltonetworks.com)
+    base_url: str  # e.g., "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-aws"
+
+    # Keywords to identify version links (used for version extraction from URLs)
+    version_link_patterns: list[str]  # e.g., ["aws-plugin-", "panorama-plugin-for-aws-"]
+
+    # Keywords to identify known/addressed issues links
+    known_issues_keywords: list[str] = None  # Default: ["known-issues"]
+    addressed_issues_keywords: list[str] = None  # Default: ["addressed-issues", "fixed-issues"]
+
+    def __post_init__(self):
+        if self.known_issues_keywords is None:
+            self.known_issues_keywords = ["known-issues"]
+        if self.addressed_issues_keywords is None:
+            self.addressed_issues_keywords = ["addressed-issues", "fixed-issues"]
+
+
+# Plugin configurations for all Panorama/VM-Series plugins
+PLUGIN_CONFIGS: dict[str, PluginConfig] = {
+    "vm-series-plugin": PluginConfig(
+        product_id="vm-series-plugin",
+        product_name="VM-Series Plugin",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/vm-series-plugin",
+        version_link_patterns=["vm-series-plugin-"],
+    ),
+    "plugin-aws": PluginConfig(
+        product_id="plugin-aws",
+        product_name="Panorama Plugin for AWS",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-aws",
+        version_link_patterns=["aws-plugin-", "panorama-plugin-for-aws-", "panorma-plugin-for-aws-"],
+    ),
+    "plugin-azure": PluginConfig(
+        product_id="plugin-azure",
+        product_name="Panorama Plugin for Azure",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-azure",
+        version_link_patterns=["azure-plugin-", "panorama-plugin-for-azure-"],
+    ),
+    "plugin-gcp": PluginConfig(
+        product_id="plugin-gcp",
+        product_name="Panorama Plugin for GCP",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-gcp",
+        version_link_patterns=["gcp-plugin-", "panorama-plugin-for-gcp-"],
+    ),
+    "plugin-vmware-nsx": PluginConfig(
+        product_id="plugin-vmware-nsx",
+        product_name="Panorama Plugin for VMware NSX",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-vmware-nsx",
+        version_link_patterns=["vmware-nsx-plugin-", "panorama-plugin-for-vmware-nsx-"],
+    ),
+    "plugin-vmware-vcenter": PluginConfig(
+        product_id="plugin-vmware-vcenter",
+        product_name="Panorama Plugin for VMware vCenter",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-vmware-vcenter",
+        version_link_patterns=["panorama-plugin-for-vmware-vcenter-", "vmware-vcenter-plugin-"],
+    ),
+    "plugin-kubernetes": PluginConfig(
+        product_id="plugin-kubernetes",
+        product_name="Panorama Plugin for Kubernetes",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-kubernetes",
+        version_link_patterns=["panorama-plugin-for-kubernetes-", "kubernetes-plugin-"],
+    ),
+    "plugin-cisco-aci": PluginConfig(
+        product_id="plugin-cisco-aci",
+        product_name="Panorama Plugin for Cisco ACI",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-cisco-aci",
+        version_link_patterns=["cisco-aci-plugin-", "panorama-plugin-for-cisco-aci-"],
+    ),
+    "plugin-cisco-trustsec": PluginConfig(
+        product_id="plugin-cisco-trustsec",
+        product_name="Panorama Plugin for Cisco TrustSec",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-cisco-trustsec",
+        version_link_patterns=["panorama-plugin-for-cisco-trustsec-", "cisco-trustsec-plugin-"],
+    ),
+    "plugin-ztp": PluginConfig(
+        product_id="plugin-ztp",
+        product_name="Panorama Plugin for Zero Touch Provisioning",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-zero-touch-provisioning",
+        version_link_patterns=["panorama-plugin-for-zero-touch-provisioning-", "zero-touch-provisioning-"],
+    ),
+    "plugin-clustering": PluginConfig(
+        product_id="plugin-clustering",
+        product_name="Panorama Plugin for Clustering",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-clustering",
+        version_link_patterns=["clustering-plugin-", "panorama-plugin-for-clustering-"],
+    ),
+}
+
+
 class PaloAltoCrawler:
     """Async crawler for Palo Alto Networks release notes."""
 
@@ -1244,13 +1344,26 @@ class PaloAltoCrawler:
         # Check if this is an issues table by looking at headers
         # First try to find headers directly in thead or first row
         headers = []
+        skip_first_row = False
         thead = table.find("thead")
         if thead:
             headers = [th.get_text(strip=True).lower() for th in thead.find_all("th")]
         else:
             first_row = table.find("tr")
             if first_row:
+                # Try th elements first
                 headers = [th.get_text(strip=True).lower() for th in first_row.find_all("th")]
+
+                # If no th headers found, check if first row has td elements that look like headers
+                # Some tables use <td><b>ISSUE ID</b></td> format instead of <th>
+                if not headers:
+                    first_row_cells = first_row.find_all("td")
+                    if first_row_cells:
+                        # Check if cells contain header-like text (ISSUE ID, DESCRIPTION, etc.)
+                        cell_texts = [cell.get_text(strip=True).lower() for cell in first_row_cells]
+                        if any("issue" in t or "id" in t for t in cell_texts):
+                            headers = cell_texts
+                            skip_first_row = True
 
         logger.debug("Table headers: %s", headers)
 
@@ -1276,13 +1389,16 @@ class PaloAltoCrawler:
         tbody = table.find("tbody")
         if tbody:
             rows = tbody.find_all("tr", recursive=False)
+            # Skip first row if we detected it as a header row with td elements
+            if skip_first_row and rows:
+                rows = rows[1:]
         else:
             # No tbody, find all rows and skip header
             rows = table.find_all("tr", recursive=False)
             if not rows:
                 rows = table.find_all("tr")
-            # Skip first row if it's the header
-            if rows and rows[0].find("th"):
+            # Skip first row if it's the header (either th elements or detected td headers)
+            if rows and (rows[0].find("th") or skip_first_row):
                 rows = rows[1:]
 
         for row in rows:
@@ -1358,98 +1474,147 @@ class PaloAltoCrawler:
                     logger.debug("Skipping nested table")
                     continue
 
-                # Check if this is an issues table by looking at headers
-                headers = [
-                    th.get_text(strip=True).lower() for th in table.find_all("th", recursive=False)
-                    if not th.find_parent("table", recursive=False) or th.find_parent("table") == table
-                ]
-                # If no direct headers found, try finding them in thead
-                if not headers:
-                    thead = table.find("thead")
-                    if thead:
-                        headers = [th.get_text(strip=True).lower() for th in thead.find_all("th")]
-                    else:
-                        # Try first row
-                        first_row = table.find("tr")
-                        if first_row:
-                            headers = [th.get_text(strip=True).lower() for th in first_row.find_all("th")]
+                # Reuse _parse_issues_table for actual parsing
+                table_issues = self._parse_issues_table(table)
+                issues.extend(table_issues)
 
-                # Look for "issue" or bug ID column
-                issue_col = None
-                desc_col = None
-
-                for i, header in enumerate(headers):
-                    if "issue" in header or "bug" in header or "id" in header:
-                        issue_col = i
-                    elif "description" in header or "summary" in header:
-                        desc_col = i
-
-                if issue_col is None:
-                    continue
-
-                # Parse rows (only direct children, not nested table rows)
-                # If there's a tbody, use rows from there (header is in thead)
-                tbody = table.find("tbody")
-                if tbody:
-                    rows = tbody.find_all("tr", recursive=False)
-                else:
-                    # No tbody, find all rows and skip header
-                    rows = table.find_all("tr", recursive=False)
-                    if not rows:
-                        rows = table.find_all("tr")
-                    # Skip first row if it's the header
-                    if rows and rows[0].find("th"):
-                        rows = rows[1:]
-
-                for row in rows:
-                    # Skip rows from nested tables
-                    if row.find_parent("table") != table:
-                        continue
-
-                    cells = row.find_all(["td", "th"], recursive=False)
-                    if len(cells) <= max(issue_col, desc_col or 0):
-                        continue
-
-                    raw_bug_id = cells[issue_col].get_text(strip=True)
-                    # Use extract_cell_text_with_tables to convert nested tables to text
-                    raw_description = (
-                        extract_cell_text_with_tables(cells[desc_col])
-                        if desc_col is not None
-                        else ""
-                    )
-
-                    # Extract bug ID and fix info (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
-                    bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
-
-                    # Validate bug_id format (e.g., GPC-12345, PAN-12345)
-                    if not re.match(r"^[A-Z]+-\d+$", bug_id):
-                        logger.debug("Skipping invalid bug ID: %s", raw_bug_id)
-                        continue
-
-                    # Extract workaround from description if present
-                    description, workaround = extract_workaround(raw_description)
-
-                    # Extract fix info from description
-                    description, fix_info = extract_fix_info_from_description(description, fix_info)
-
-                    # Extract affected components from description start (e.g., "(NGFW Clusters)")
-                    description, affected_components = extract_affected_components(description)
-
-                    issues.append(
-                        Issue(
-                            bug_id=bug_id,
-                            description=description,
-                            workaround=workaround,
-                            fix_info=fix_info,
-                            affected_components=affected_components,
-                        )
-                    )
+            # If no issues found in tables, try div.topic format (used by plugins)
+            if not issues:
+                issues = self._parse_topic_format_issues(soup)
 
         except Exception as e:
             logger.error("Error parsing %s: %s", url, e)
             self._log(f"Error parsing {url}: {e}")
 
         logger.debug("Parsed %d issues from page: %s", len(issues), url)
+        return issues
+
+    def _parse_topic_format_issues(self, soup: BeautifulSoup) -> list[Issue]:
+        """Parse issues from div.topic format (used by Panorama plugins).
+
+        This format has issues in div.topic containers with:
+        - Bug ID in h2.title or h3.title
+        - Description in div.shortdesc and div.p elements
+        - Workaround after <b>Workaround</b> marker
+        - Fix info in text like "This issue is addressed in..."
+
+        Args:
+            soup: BeautifulSoup object of the page.
+
+        Returns:
+            List of Issue objects.
+        """
+        issues = []
+
+        for topic in soup.find_all("div", class_="topic"):
+            # Extract bug ID from h2.title or h3.title
+            title_elem = topic.find(["h2", "h3"], class_="title")
+            if not title_elem:
+                continue
+
+            bug_id = title_elem.get_text(strip=True)
+
+            # Validate bug ID format (e.g., PAN-XXXXX, PLUG-XXXXX)
+            if not re.match(r"^[A-Z]+-\d+$", bug_id):
+                continue
+
+            # Build description from shortdesc and p elements
+            description_parts = []
+            affected_components = None
+            workaround_text = None
+            fix_info_text = None
+
+            # Get shortdesc if present
+            shortdesc = topic.find("div", class_="shortdesc")
+            if shortdesc:
+                description_parts.append(normalize_text(shortdesc))
+
+            # Process div.p elements
+            in_workaround = False
+            first_p_processed = False
+
+            for p_elem in topic.find_all("div", class_="p"):
+                p_text = normalize_text(p_elem)
+
+                # Check for workaround marker
+                b_elem = p_elem.find("b")
+                if b_elem and "workaround" in b_elem.get_text().lower():
+                    in_workaround = True
+                    # Extract workaround text after the bold element
+                    workaround_parts = []
+                    for sibling in b_elem.next_siblings:
+                        if hasattr(sibling, 'get_text'):
+                            workaround_parts.append(sibling.get_text(strip=True))
+                        elif isinstance(sibling, str):
+                            workaround_parts.append(sibling.strip())
+                    if workaround_parts:
+                        workaround_text = " ".join(workaround_parts).strip()
+                        workaround_text = re.sub(r"\s+", " ", workaround_text).strip()
+                        workaround_text = re.sub(r"^[:\-]\s*", "", workaround_text)
+                    continue
+
+                # Check for fix info (in <tt> element or plain text)
+                tt_elem = p_elem.find("tt")
+                if tt_elem:
+                    tt_text = normalize_text(tt_elem)
+                    if "this issue is addressed" in tt_text.lower() or "this issue is fixed" in tt_text.lower():
+                        fix_info_text = tt_text
+                        continue
+
+                # Check plain text for fix info
+                if "this issue is addressed" in p_text.lower() or "this issue is fixed" in p_text.lower():
+                    fix_info_text = p_text
+                    continue
+
+                # Check for affected component in first p element
+                if not in_workaround and not first_p_processed:
+                    first_p_processed = True
+                    component_match = re.match(r"^\(\s*([^)]+?)\s*\)\s*", p_text)
+                    if component_match:
+                        affected_components = [component_match.group(1).strip()]
+                        remaining = p_text[component_match.end():].strip()
+                        if remaining:
+                            description_parts.append(remaining)
+                        continue
+
+                if not in_workaround:
+                    description_parts.append(p_text)
+
+            # Combine description
+            full_description = " ".join(description_parts)
+            desc_cleaned = re.sub(r"\s+", " ", full_description).strip()
+
+            # Strip "Description of <issue-id>" prefix
+            desc_prefix_match = re.match(
+                r"^Description\s+of\s+" + re.escape(bug_id) + r"[\s:.\-]*",
+                desc_cleaned,
+                re.IGNORECASE
+            )
+            if desc_prefix_match:
+                desc_cleaned = desc_cleaned[desc_prefix_match.end():].strip()
+
+            # Skip empty descriptions
+            if not desc_cleaned:
+                continue
+
+            # Extract fix info from description if not found
+            if not fix_info_text:
+                desc_cleaned, fix_info_text = extract_fix_info_from_description(desc_cleaned, None)
+
+            # Create the issue
+            issues.append(
+                Issue(
+                    bug_id=bug_id,
+                    description=desc_cleaned,
+                    workaround=workaround_text,
+                    fix_info=fix_info_text,
+                    affected_components=affected_components,
+                )
+            )
+
+            logger.debug("Parsed topic issue: %s", bug_id)
+
+        logger.debug("Parsed %d issues from div.topic format", len(issues))
         return issues
 
     def _deduplicate_issues(self, issues: list[Issue]) -> list[Issue]:
@@ -2798,6 +2963,273 @@ class PaloAltoCrawler:
             failed_fetches=failed_fetches,
         )
 
+    async def crawl_remote_browser_isolation(self) -> CrawlResult:
+        """Crawl Remote Browser Isolation release notes.
+
+        Remote Browser Isolation is a SaaS product with no version dropdown.
+        It only has a known issues page (no addressed issues).
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        self._log("Crawling Remote Browser Isolation...")
+
+        known_issues_url = (
+            "/remote-browser-isolation/release-notes"
+            "/remote-browser-isolation-release-information"
+            "/remote-browser-isolation-known-issues"
+        )
+
+        known_issues: list[Issue] = []
+        failed_fetches: list[FailedFetch] = []
+
+        try:
+            soup = await self._fetch_page_with_semaphore(known_issues_url)
+
+            # Try table format first
+            for table in soup.find_all("table"):
+                if table.find_parent("table"):
+                    continue
+                issues = self._parse_issues_table(table)
+                known_issues.extend(issues)
+
+            # Fall back to div.topic format if no table issues found
+            if not known_issues:
+                known_issues = self._parse_topic_format_issues(soup)
+
+            self._log(f"  Found {len(known_issues)} known issues")
+        except Exception as e:
+            self._log(f"  Error fetching known issues: {e}")
+            failed_fetches.append(FailedFetch(
+                url=known_issues_url,
+                error=str(e),
+                product="remote-browser-isolation",
+                version="SaaS",
+                issue_type="known",
+            ))
+
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
+        # Deduplicate issues
+        known_issues = self._deduplicate_issues(known_issues)
+
+        # Create a single version for SaaS product
+        version = ProductVersion(
+            version="SaaS",
+            known_issues=known_issues,
+            addressed_issues=[],
+        )
+
+        return CrawlResult(
+            product=Product(
+                id="remote-browser-isolation",
+                name="Remote Browser Isolation",
+                versions=[version] if known_issues else [],
+            ),
+            failed_fetches=failed_fetches,
+        )
+
+    async def crawl_ai_runtime_security(self) -> CrawlResult:
+        """Crawl AI Runtime Security (Prisma AIRS) release notes.
+
+        AI Runtime Security is a SaaS product with no version dropdown.
+        It has both known and addressed issues pages.
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        self._log("Crawling AI Runtime Security...")
+
+        known_issues_url = "/ai-runtime-security/release-notes/known-issues"
+        addressed_issues_url = "/ai-runtime-security/release-notes/addressed-issues"
+
+        # Fetch both pages in parallel
+        fetch_tasks = [
+            self._fetch_page_with_semaphore(known_issues_url),
+            self._fetch_page_with_semaphore(addressed_issues_url),
+        ]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        known_issues: list[Issue] = []
+        addressed_issues: list[Issue] = []
+        failed_fetches: list[FailedFetch] = []
+
+        # Parse known issues
+        if not isinstance(results[0], Exception):
+            soup = results[0]
+            # Try table format first
+            for table in soup.find_all("table"):
+                if table.find_parent("table"):
+                    continue
+                issues = self._parse_issues_table(table)
+                known_issues.extend(issues)
+            # Fall back to div.topic format
+            if not known_issues:
+                known_issues = self._parse_topic_format_issues(soup)
+            self._log(f"  Found {len(known_issues)} known issues")
+        else:
+            self._log(f"  Error fetching known issues: {results[0]}")
+            failed_fetches.append(FailedFetch(
+                url=known_issues_url,
+                error=str(results[0]),
+                product="ai-runtime-security",
+                version="SaaS",
+                issue_type="known",
+            ))
+
+        # Parse addressed issues
+        if not isinstance(results[1], Exception):
+            soup = results[1]
+            # Try table format first
+            for table in soup.find_all("table"):
+                if table.find_parent("table"):
+                    continue
+                issues = self._parse_issues_table(table)
+                addressed_issues.extend(issues)
+            # Fall back to div.topic format
+            if not addressed_issues:
+                addressed_issues = self._parse_topic_format_issues(soup)
+            self._log(f"  Found {len(addressed_issues)} addressed issues")
+        else:
+            self._log(f"  Error fetching addressed issues: {results[1]}")
+            failed_fetches.append(FailedFetch(
+                url=addressed_issues_url,
+                error=str(results[1]),
+                product="ai-runtime-security",
+                version="SaaS",
+                issue_type="addressed",
+            ))
+
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
+        # Deduplicate issues
+        known_issues = self._deduplicate_issues(known_issues)
+        addressed_issues = self._deduplicate_issues(addressed_issues)
+
+        # Create a single version for SaaS product
+        version = ProductVersion(
+            version="SaaS",
+            known_issues=known_issues,
+            addressed_issues=addressed_issues,
+        )
+
+        return CrawlResult(
+            product=Product(
+                id="ai-runtime-security",
+                name="AI Runtime Security",
+                versions=[version] if known_issues or addressed_issues else [],
+            ),
+            failed_fetches=failed_fetches,
+        )
+
+    async def crawl_strata_logging_service(self) -> CrawlResult:
+        """Crawl Strata Logging Service release notes.
+
+        Strata Logging Service is a SaaS product with no version dropdown.
+        It has both known and addressed issues pages.
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        self._log("Crawling Strata Logging Service...")
+
+        known_issues_url = "/strata-logging-service/release-notes/known-issues"
+        addressed_issues_url = "/strata-logging-service/release-notes/addressed-issues"
+
+        # Fetch both pages in parallel
+        fetch_tasks = [
+            self._fetch_page_with_semaphore(known_issues_url),
+            self._fetch_page_with_semaphore(addressed_issues_url),
+        ]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        known_issues: list[Issue] = []
+        addressed_issues: list[Issue] = []
+        failed_fetches: list[FailedFetch] = []
+
+        # Parse known issues
+        if not isinstance(results[0], Exception):
+            soup = results[0]
+            # Try table format first
+            for table in soup.find_all("table"):
+                if table.find_parent("table"):
+                    continue
+                issues = self._parse_issues_table(table)
+                known_issues.extend(issues)
+            # Fall back to div.topic format
+            if not known_issues:
+                known_issues = self._parse_topic_format_issues(soup)
+            self._log(f"  Found {len(known_issues)} known issues")
+        else:
+            self._log(f"  Error fetching known issues: {results[0]}")
+            failed_fetches.append(FailedFetch(
+                url=known_issues_url,
+                error=str(results[0]),
+                product="strata-logging-service",
+                version="SaaS",
+                issue_type="known",
+            ))
+
+        # Parse addressed issues
+        if not isinstance(results[1], Exception):
+            soup = results[1]
+            # Try table format first
+            for table in soup.find_all("table"):
+                if table.find_parent("table"):
+                    continue
+                issues = self._parse_issues_table(table)
+                addressed_issues.extend(issues)
+            # Fall back to div.topic format
+            if not addressed_issues:
+                addressed_issues = self._parse_topic_format_issues(soup)
+            self._log(f"  Found {len(addressed_issues)} addressed issues")
+        else:
+            self._log(f"  Error fetching addressed issues: {results[1]}")
+            failed_fetches.append(FailedFetch(
+                url=addressed_issues_url,
+                error=str(results[1]),
+                product="strata-logging-service",
+                version="SaaS",
+                issue_type="addressed",
+            ))
+
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
+        # Deduplicate issues
+        known_issues = self._deduplicate_issues(known_issues)
+        addressed_issues = self._deduplicate_issues(addressed_issues)
+
+        # Create a single version for SaaS product
+        version = ProductVersion(
+            version="SaaS",
+            known_issues=known_issues,
+            addressed_issues=addressed_issues,
+        )
+
+        return CrawlResult(
+            product=Product(
+                id="strata-logging-service",
+                name="Strata Logging Service",
+                versions=[version] if known_issues or addressed_issues else [],
+            ),
+            failed_fetches=failed_fetches,
+        )
+
     async def crawl_adem(self) -> CrawlResult:
         """Crawl Autonomous DEM (ADEM) release notes.
 
@@ -3779,6 +4211,252 @@ class PaloAltoCrawler:
 
         return known_issues, addressed_by_version
 
+    async def discover_plugin_versions(
+        self, config: PluginConfig
+    ) -> list[VersionInfo]:
+        """Discover available versions for a Panorama/VM-Series plugin.
+
+        Fetches the main plugin page and directly extracts all known issues
+        and addressed issues URLs. Groups them by version.
+
+        Args:
+            config: Plugin configuration.
+
+        Returns:
+            List of VersionInfo with version strings and issue page URLs.
+        """
+        logger.debug("Discovering %s versions from %s", config.product_name, config.base_url)
+
+        version_infos: dict[str, VersionInfo] = {}
+
+        def normalize_url(href: str) -> str:
+            """Normalize a URL to a usable path."""
+            # Remove /content/techdocs/en_US prefix if present
+            href = re.sub(r"^/content/techdocs/en_US", "", href)
+            # Remove .html extension
+            href = re.sub(r"\.html$", "", href)
+            return href
+
+        def extract_version_from_url(href: str) -> Optional[str]:
+            """Extract version number from a URL."""
+            # Try different version patterns
+            for pattern in config.version_link_patterns:
+                if pattern in href.lower():
+                    # Get the part after the pattern
+                    after_pattern = href.lower().split(pattern)[-1]
+
+                    # Try to match version numbers in various formats
+                    # Pattern: 6-1-2 or 6-1-2-h1 (with dashes)
+                    match = re.match(r"(\d+)-(\d+)-(\d+)(?:-h\d+)?(?:[/-]|$|\.html)", after_pattern)
+                    if match:
+                        return f"{match.group(1)}.{match.group(2)}.{match.group(3)}"
+
+                    # Pattern: 543 (concatenated digits)
+                    match = re.match(r"(\d)(\d)(\d)(?:[/-]|$|\.html)", after_pattern)
+                    if match:
+                        return f"{match.group(1)}.{match.group(2)}.{match.group(3)}"
+
+                    # Pattern: 53 or 5-3 (two digit versions)
+                    match = re.match(r"(\d)-?(\d)(?:[/-]|$|\.html)", after_pattern)
+                    if match:
+                        return f"{match.group(1)}.{match.group(2)}.0"
+
+            return None
+
+        try:
+            # Fetch the main plugin index page
+            soup = await self._fetch_page_with_semaphore(config.base_url)
+
+            # Check for valid page
+            title = soup.find("title")
+            title_text = title.get_text().lower() if title else ""
+            if "404" in title_text or "not found" in title_text:
+                logger.warning("Plugin index page not found: %s", config.base_url)
+                return []
+
+            # Directly find all known issues and addressed issues links
+            for link in soup.find_all("a", href=True):
+                href = link["href"]
+                href_lower = href.lower()
+
+                # Check if this is a known issues or addressed issues link
+                is_known = any(kw in href_lower for kw in config.known_issues_keywords)
+                is_addressed = any(kw in href_lower for kw in config.addressed_issues_keywords)
+
+                if not is_known and not is_addressed:
+                    continue
+
+                # Check if URL matches our version patterns
+                if not any(p in href_lower for p in config.version_link_patterns):
+                    continue
+
+                # Extract version from URL
+                version = extract_version_from_url(href)
+                if not version:
+                    continue
+
+                # Normalize URL
+                normalized_url = normalize_url(href)
+
+                # Create or update VersionInfo
+                if version not in version_infos:
+                    version_infos[version] = VersionInfo(
+                        version=version,
+                        known_issues_urls=[],
+                        addressed_issues_urls=[],
+                    )
+
+                # Add URL to appropriate list
+                if is_known and normalized_url not in version_infos[version].known_issues_urls:
+                    version_infos[version].known_issues_urls.append(normalized_url)
+                    logger.debug("Found known issues URL for %s: %s", version, normalized_url)
+                elif is_addressed and normalized_url not in version_infos[version].addressed_issues_urls:
+                    version_infos[version].addressed_issues_urls.append(normalized_url)
+                    logger.debug("Found addressed issues URL for %s: %s", version, normalized_url)
+
+        except Exception as e:
+            logger.error("Error discovering %s versions: %s", config.product_name, e)
+            self._log(f"  Error discovering versions: {e}")
+
+        # Sort by version (newest first) and return as list
+        sorted_versions = sorted(
+            version_infos.values(),
+            key=lambda v: self._version_sort_key(v.version),
+            reverse=True,
+        )
+
+        logger.debug("Discovered %d %s versions", len(sorted_versions), config.product_name)
+        return sorted_versions
+
+    async def crawl_panorama_plugin(
+        self,
+        config: PluginConfig,
+        major_versions: Optional[list[str]] = None,
+        skip_versions: Optional[set[str]] = None,
+    ) -> CrawlResult:
+        """Generic crawler for Panorama/VM-Series plugins.
+
+        This handles all plugins that follow the standard table-based format
+        with known issues and addressed issues pages.
+
+        Args:
+            config: Plugin configuration with URL patterns.
+            major_versions: List of major versions to crawl (e.g., ["5-3", "5-2"]).
+                           If None, discovers all available versions.
+            skip_versions: Set of version strings to skip for incremental fetching.
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        skip_versions = skip_versions or set()
+        failed_fetches: list[FailedFetch] = []
+
+        # Discover versions
+        self._log(f"Discovering available {config.product_name} versions...")
+        discovered_versions = await self.discover_plugin_versions(config)
+
+        # Filter by major versions if specified
+        if major_versions is not None:
+            major_version_prefixes = [mv.replace("-", ".") for mv in major_versions]
+            discovered_versions = [
+                v for v in discovered_versions
+                if any(v.version.startswith(prefix) for prefix in major_version_prefixes)
+            ]
+
+        if discovered_versions:
+            versions_str = ", ".join(v.version for v in discovered_versions[:5])
+            if len(discovered_versions) > 5:
+                versions_str += f" (+{len(discovered_versions) - 5} more)"
+            self._log(f"Found {len(discovered_versions)} versions: {versions_str}")
+
+        all_product_versions: list[ProductVersion] = []
+
+        # Filter out already-fetched versions
+        versions_to_fetch = [
+            v for v in discovered_versions
+            if v.version not in skip_versions
+        ]
+        skipped_count = len(discovered_versions) - len(versions_to_fetch)
+        if skipped_count > 0:
+            self._log(f"  Skipping {skipped_count} already-fetched versions")
+
+        # Crawl each version - fetch known and addressed issues in parallel
+        for version_info in versions_to_fetch:
+            self._log(f"  Crawling {config.product_name} {version_info.version}...")
+
+            # Build list of all URLs to fetch with their types
+            fetch_tasks = []
+            url_types = []
+
+            for known_url in version_info.known_issues_urls:
+                fetch_tasks.append(self._parse_issues_page(known_url))
+                url_types.append(("known", known_url))
+
+            for addressed_url in version_info.addressed_issues_urls:
+                fetch_tasks.append(self._parse_issues_page(addressed_url))
+                url_types.append(("addressed", addressed_url))
+
+            # Fetch all pages in parallel
+            results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+            known_issues = []
+            addressed_issues = []
+
+            for i, result in enumerate(results):
+                issue_type, url = url_types[i]
+                if isinstance(result, Exception):
+                    if issue_type == "known":
+                        failed_fetches.append(FailedFetch(
+                            url=url,
+                            error=str(result),
+                            product=config.product_id,
+                            version=version_info.version,
+                            issue_type="known",
+                        ))
+                    logger.debug("Error fetching %s issues %s: %s", issue_type, url, result)
+                else:
+                    if issue_type == "known":
+                        known_issues.extend(result)
+                    else:
+                        addressed_issues.extend(result)
+
+            # Deduplicate
+            known_issues = self._deduplicate_issues(known_issues)
+            addressed_issues = self._deduplicate_issues(addressed_issues)
+
+            if known_issues or addressed_issues:
+                all_product_versions.append(
+                    ProductVersion(
+                        version=version_info.version,
+                        known_issues=known_issues,
+                        addressed_issues=addressed_issues,
+                    )
+                )
+                self._log(f"    {version_info.version}: {len(known_issues)} known, "
+                         f"{len(addressed_issues)} addressed")
+
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
+        # Sort versions (newest first)
+        all_product_versions.sort(
+            key=lambda v: self._version_sort_key(v.version),
+            reverse=True,
+        )
+
+        return CrawlResult(
+            product=Product(
+                id=config.product_id,
+                name=config.product_name,
+                versions=all_product_versions,
+            ),
+            failed_fetches=failed_fetches,
+        )
+
 
 async def _crawl_cloud_ngfw_azure_async(
     major_versions: Optional[list[str]] = None,
@@ -3835,6 +4513,99 @@ async def _crawl_cloud_ngfw_aws_async(
                     generated_at=datetime.now(timezone.utc),
                     version="1.0.0",
                     source="Palo Alto Networks Cloud NGFW for AWS Release Notes",
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
+async def _crawl_remote_browser_isolation_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Async implementation of Remote Browser Isolation crawler.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since RBI is a SaaS product without versions.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        result = await crawler.crawl_remote_browser_isolation()
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Remote Browser Isolation Release Notes",
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
+async def _crawl_ai_runtime_security_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Async implementation of AI Runtime Security crawler.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since AIRS is a SaaS product without versions.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        result = await crawler.crawl_ai_runtime_security()
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks AI Runtime Security Release Notes",
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
+async def _crawl_strata_logging_service_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Async implementation of Strata Logging Service crawler.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since SLS is a SaaS product without versions.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        result = await crawler.crawl_strata_logging_service()
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Strata Logging Service Release Notes",
                 ),
                 products=[result.product],
             ),
@@ -4325,6 +5096,108 @@ def crawl_cloud_ngfw_aws(
     )
 
 
+def crawl_remote_browser_isolation(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Crawl Remote Browser Isolation release notes and return a FetchResult.
+
+    Remote Browser Isolation is a SaaS product without version releases.
+    It only has a known issues page (no addressed issues).
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since this is a versionless SaaS product.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Ignored (kept for API compatibility).
+
+    Returns:
+        FetchResult with BugDatabase and any failed fetches.
+    """
+    return asyncio.run(
+        _crawl_remote_browser_isolation_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_ai_runtime_security(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Crawl AI Runtime Security release notes and return a FetchResult.
+
+    AI Runtime Security (Prisma AIRS) is a SaaS product without version releases.
+    It has both known and addressed issues pages.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since this is a versionless SaaS product.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Ignored (kept for API compatibility).
+
+    Returns:
+        FetchResult with BugDatabase and any failed fetches.
+    """
+    return asyncio.run(
+        _crawl_ai_runtime_security_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_strata_logging_service(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Crawl Strata Logging Service release notes and return a FetchResult.
+
+    Strata Logging Service is a SaaS product without version releases.
+    It has both known and addressed issues pages.
+
+    Note: major_versions and skip_versions are accepted for API compatibility
+    but ignored since this is a versionless SaaS product.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Ignored (kept for API compatibility).
+
+    Returns:
+        FetchResult with BugDatabase and any failed fetches.
+    """
+    return asyncio.run(
+        _crawl_strata_logging_service_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
 def crawl_adem(
     major_versions: Optional[list[str]] = None,
     headless: bool = True,
@@ -4423,3 +5296,92 @@ def crawl_sdwan_plugin(
             major_versions, headless, verbose, debug, max_concurrency, skip_versions
         )
     )
+
+
+# Generic plugin crawler async wrapper and sync entry points
+async def _crawl_plugin_async(
+    plugin_id: str,
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Generic async implementation for Panorama/VM-Series plugin crawlers."""
+    config = PLUGIN_CONFIGS[plugin_id]
+
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        result = await crawler.crawl_panorama_plugin(config, major_versions, skip_versions)
+
+        # Build source description
+        if major_versions:
+            versions_str = ", ".join(v.replace("-", ".") for v in major_versions)
+            source = f"Palo Alto Networks {config.product_name} {versions_str} Release Notes"
+        else:
+            source = f"Palo Alto Networks {config.product_name} Release Notes (All Versions)"
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source=source,
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
+def _make_plugin_crawler(plugin_id: str):
+    """Factory function to create a plugin crawler function."""
+    config = PLUGIN_CONFIGS[plugin_id]
+
+    def crawl_func(
+        major_versions: Optional[list[str]] = None,
+        headless: bool = True,
+        verbose: bool = False,
+        debug: bool = False,
+        max_concurrency: int = 3,
+        skip_versions: Optional[set[str]] = None,
+    ) -> FetchResult:
+        return asyncio.run(
+            _crawl_plugin_async(
+                plugin_id, major_versions, headless, verbose, debug,
+                max_concurrency, skip_versions
+            )
+        )
+
+    crawl_func.__name__ = f"crawl_{plugin_id.replace('-', '_')}"
+    crawl_func.__doc__ = f"""Crawl {config.product_name} release notes and return a FetchResult.
+
+    Args:
+        major_versions: List of major versions to crawl (e.g., ["5-3", "5-2"]).
+                       If None, discovers and crawls all available versions.
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Set of version strings to skip for incremental fetching.
+
+    Returns:
+        FetchResult with BugDatabase and any failed fetches.
+    """
+    return crawl_func
+
+
+# Create crawler functions for all plugins
+crawl_vm_series_plugin = _make_plugin_crawler("vm-series-plugin")
+crawl_plugin_aws = _make_plugin_crawler("plugin-aws")
+crawl_plugin_azure = _make_plugin_crawler("plugin-azure")
+crawl_plugin_gcp = _make_plugin_crawler("plugin-gcp")
+crawl_plugin_vmware_nsx = _make_plugin_crawler("plugin-vmware-nsx")
+crawl_plugin_vmware_vcenter = _make_plugin_crawler("plugin-vmware-vcenter")
+crawl_plugin_kubernetes = _make_plugin_crawler("plugin-kubernetes")
+crawl_plugin_cisco_aci = _make_plugin_crawler("plugin-cisco-aci")
+crawl_plugin_cisco_trustsec = _make_plugin_crawler("plugin-cisco-trustsec")
+crawl_plugin_ztp = _make_plugin_crawler("plugin-ztp")
+crawl_plugin_clustering = _make_plugin_crawler("plugin-clustering")
