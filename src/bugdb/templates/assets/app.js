@@ -30,6 +30,7 @@ const elements = {
     versionFilter: document.getElementById('version-filter'),
     versionDropdown: document.getElementById('version-dropdown'),
     typeFilter: document.getElementById('type-filter'),
+    typeDropdown: document.getElementById('type-dropdown'),
     results: document.getElementById('results'),
     resultsCount: document.getElementById('results-count'),
     resultsRange: document.getElementById('results-range'),
@@ -45,8 +46,13 @@ const elements = {
 // Autocomplete state
 let productOptions = [];
 let versionOptions = [];
+const typeOptions = [
+    { value: 'known', label: 'Known Issues' },
+    { value: 'addressed', label: 'Addressed Issues' }
+];
 let highlightedProductIndex = -1;
 let highlightedVersionIndex = -1;
+let highlightedTypeIndex = -1;
 
 // Debounce helper
 function debounce(func, wait) {
@@ -760,6 +766,7 @@ function clearFilters(data) {
     // Hide dropdowns
     hideDropdown(elements.productDropdown);
     hideDropdown(elements.versionDropdown);
+    hideDropdown(elements.typeDropdown);
 
     applyFilters();
 }
@@ -825,12 +832,28 @@ function setupEventListeners(data) {
         }
     );
 
-    // Type filter
-    elements.typeFilter.addEventListener('change', (e) => {
-        currentFilters.type = e.target.value;
-        currentPage = 1; // Reset to first page when filter changes
-        applyFilters();
-    });
+    // Type filter autocomplete
+    setupAutocomplete(
+        elements.typeFilter,
+        elements.typeDropdown,
+        () => typeOptions,
+        () => currentFilters.type,
+        (value, label) => {
+            currentFilters.type = value;
+            elements.typeFilter.value = label;
+            hideDropdown(elements.typeDropdown);
+            currentPage = 1; // Reset to first page when filter changes
+            applyFilters();
+        },
+        () => highlightedTypeIndex,
+        (idx) => { highlightedTypeIndex = idx; },
+        // Clear callback
+        () => {
+            currentFilters.type = '';
+            currentPage = 1; // Reset to first page when filter changes
+            applyFilters();
+        }
+    );
 
     // Page size selector
     elements.pageSize.addEventListener('change', (e) => {
@@ -850,6 +873,9 @@ function setupEventListeners(data) {
         }
         if (!elements.versionFilter.contains(e.target) && !elements.versionDropdown.contains(e.target)) {
             hideDropdown(elements.versionDropdown);
+        }
+        if (!elements.typeFilter.contains(e.target) && !elements.typeDropdown.contains(e.target)) {
+            hideDropdown(elements.typeDropdown);
         }
     });
 }
