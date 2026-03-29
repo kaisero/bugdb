@@ -1,15 +1,50 @@
 # BugDB
 
-A Python CLI application that generates a static HTML website for browsing and searching bug/issue data from Palo Alto Networks release notes.
+A Python CLI application that crawls Palo Alto Networks release notes and generates a static HTML website for browsing and searching bug/issue data.
 
 ## Features
 
-- Generate sample bug database with realistic PAN-OS, Panorama, and GlobalProtect issues
-- Build static HTML site with client-side search and filtering
-- Validate JSON data against schema
-- Beautiful UI with Tailwind CSS
-- Filter by product, version, issue type, and severity
-- Full-text search across bug IDs, descriptions, symptoms, and workarounds
+- **Automated Crawling**: Fetch known and addressed issues directly from Palo Alto Networks documentation
+- **25 Supported Products**: PAN-OS, Prisma Access, GlobalProtect, Cloud NGFW, and more
+- **Static Site Generation**: Build a fast, searchable HTML site with client-side filtering
+- **Incremental Updates**: Add new products or versions without re-fetching existing data
+- **Full-Text Search**: Search across bug IDs, descriptions, symptoms, and workarounds
+
+## Supported Products
+
+### Firewall & Management
+- **PAN-OS** - Firewall operating system
+- **GlobalProtect** - VPN client (all platforms)
+- **Strata Cloud Manager (SCM)** - Cloud management platform
+
+### Prisma Products
+- **Prisma Access** - Cloud-delivered security
+- **Prisma Access Agent** - Endpoint agent
+- **Prisma SD-WAN** - Software-defined WAN
+
+### Cloud NGFW
+- **Cloud NGFW for AWS** - Cloud-native firewall for AWS
+- **Cloud NGFW for Azure** - Cloud-native firewall for Azure
+
+### Panorama Plugins
+- **VM-Series Plugin** - Virtual firewall management
+- **Panorama Plugin for AWS** - AWS integration
+- **Panorama Plugin for Azure** - Azure integration
+- **Panorama Plugin for GCP** - Google Cloud integration
+- **Panorama Plugin for VMware NSX** - NSX integration
+- **Panorama Plugin for VMware vCenter** - vCenter integration
+- **Panorama Plugin for Kubernetes** - K8s integration
+- **Panorama Plugin for Cisco ACI** - Cisco ACI integration
+- **Panorama Plugin for Cisco TrustSec** - TrustSec integration
+- **Panorama Plugin for Zero Touch Provisioning** - ZTP support
+- **Panorama Plugin for Clustering** - HA clustering
+- **Panorama SD-WAN Plugin** - SD-WAN management
+
+### Other Products
+- **Autonomous DEM (ADEM)** - Digital experience monitoring
+- **AI Runtime Security** - AI/ML security
+- **Remote Browser Isolation** - Browser isolation
+- **Strata Logging Service** - Cloud logging
 
 ## Installation
 
@@ -24,20 +59,32 @@ source .venv/bin/activate
 # Install in development mode
 pip install -e .
 
-# Install test dependencies
-pip install pytest
+# Install Playwright for web crawling
+playwright install chromium
 ```
 
 ## Usage
 
-### Generate Sample Data
+### Fetch Release Notes
 
-Create a sample bug database JSON file:
+Crawl release notes from Palo Alto Networks documentation:
 
 ```bash
-bugdb generate-sample                    # Creates data/bugs.json
-bugdb generate-sample -o custom.json     # Custom output path
-bugdb generate-sample --force            # Overwrite existing file
+# Fetch a single product
+bugdb fetch panos -o data/data.json
+
+# Fetch all supported products
+bugdb fetch -o data/data.json
+
+# Fetch specific version(s)
+bugdb fetch panos --version 11-2 -o data/data.json
+bugdb fetch panos --version 11-2,11-1,10-2 -o data/data.json
+
+# Incremental update (add new versions to existing data)
+bugdb fetch panos -o data/data.json --incremental
+
+# Force overwrite existing file
+bugdb fetch panos -o data/data.json --force
 ```
 
 ### Build Static Site
@@ -45,17 +92,9 @@ bugdb generate-sample --force            # Overwrite existing file
 Generate the HTML website from bug data:
 
 ```bash
-bugdb build-site                         # Uses data/bugs.json, outputs to dist/
-bugdb build-site -d custom.json          # Custom data file
-bugdb build-site -o output/              # Custom output directory
-```
-
-### Validate Data
-
-Validate a JSON file against the schema:
-
-```bash
-bugdb validate data/bugs.json
+bugdb build-site-cmd                     # Uses assets/data.json, outputs to dist/
+bugdb build-site-cmd -d data/data.json   # Custom data file
+bugdb build-site-cmd -o output/          # Custom output directory
 ```
 
 ### View the Site
@@ -66,6 +105,28 @@ After building, open the generated site in your browser:
 open dist/index.html
 ```
 
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `bugdb fetch <product>` | Fetch release notes for a product |
+| `bugdb fetch` | Fetch all supported products |
+| `bugdb build-site-cmd` | Build static HTML site |
+| `bugdb generate-sample` | Generate sample data for testing |
+| `bugdb --version` | Show version |
+| `bugdb --help` | Show help |
+
+### Fetch Options
+
+| Option | Description |
+|--------|-------------|
+| `-o, --output` | Output JSON file path |
+| `-v, --version` | Version(s) to fetch (e.g., "11-2" or "11-2,11-1") |
+| `--incremental` | Add to existing data instead of overwriting |
+| `-f, --force` | Overwrite existing output file |
+| `--headless/--no-headless` | Run browser in headless mode |
+| `--debug` | Enable debug logging |
+
 ## JSON Schema
 
 The bug database uses this structure:
@@ -73,33 +134,30 @@ The bug database uses this structure:
 ```json
 {
   "metadata": {
-    "generated_at": "2026-03-26T10:00:00Z",
+    "generated_at": "2026-03-29T10:00:00Z",
     "version": "1.0.0",
     "source": "Palo Alto Networks Release Notes"
   },
   "products": [
     {
-      "id": "pan-os",
+      "id": "panos",
       "name": "PAN-OS",
       "versions": [
         {
-          "version": "11.1.3",
-          "release_date": "2026-03-15",
+          "version": "11.2.3",
           "known_issues": [
             {
               "bug_id": "PAN-300637",
               "description": "Issue description",
-              "severity": "medium",
-              "symptoms": "Observable symptoms",
               "workaround": "Known workaround",
+              "fix_info": "Fixed in 11.2.4",
               "affected_components": ["Hardware", "Networking"]
             }
           ],
           "addressed_issues": [
             {
               "bug_id": "PAN-201910",
-              "description": "Fixed issue description",
-              "severity": "high"
+              "description": "Fixed issue description"
             }
           ]
         }
@@ -115,17 +173,19 @@ The bug database uses this structure:
 |-------|----------|-------------|
 | `bug_id` | Yes | Unique bug identifier (e.g., PAN-300637) |
 | `description` | Yes | Issue description |
-| `severity` | No | critical, high, medium, low, or info |
-| `symptoms` | No | Observable symptoms |
 | `workaround` | No | Known workaround |
+| `fix_info` | No | Fix availability information |
 | `affected_components` | No | Array of affected components |
+| `release_date` | No | Date when issue was addressed |
 
 ## Development
 
 ### Running Tests
 
 ```bash
-pytest
+pytest                           # Run all tests
+pytest tests/test_crawler.py -v  # Run crawler tests with verbose output
+pytest -k "plugin" -v            # Run tests matching "plugin"
 ```
 
 ### Project Structure
@@ -134,22 +194,21 @@ pytest
 bugdb/
 ├── pyproject.toml              # Project config and dependencies
 ├── README.md
-├── .gitignore
 ├── src/bugdb/
 │   ├── __init__.py             # Package version
 │   ├── cli.py                  # Typer CLI commands
+│   ├── crawler.py              # Web crawler for release notes
 │   ├── models.py               # Pydantic data models
 │   ├── sample_data.py          # Sample data generation
 │   ├── site_builder.py         # Static site generator
 │   └── templates/
-│       ├── index.html          # Main HTML template
-│       └── assets/
-│           └── app.js          # Search/filter JavaScript
+│       └── index.html          # Main HTML template
 ├── data/
-│   └── bugs.json               # Bug database
+│   └── data.json               # Bug database
 ├── dist/                       # Generated static site
 └── tests/
     ├── test_cli.py
+    ├── test_crawler.py
     ├── test_models.py
     └── test_site_builder.py
 ```
