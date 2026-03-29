@@ -12,39 +12,32 @@ A Python CLI application that crawls Palo Alto Networks release notes and genera
 
 ## Supported Products
 
-### Firewall & Management
-- **PAN-OS** - Firewall operating system
-- **GlobalProtect** - VPN client (all platforms)
-- **Strata Cloud Manager (SCM)** - Cloud management platform
-
-### Prisma Products
-- **Prisma Access** - Cloud-delivered security
-- **Prisma Access Agent** - Endpoint agent
-- **Prisma SD-WAN** - Software-defined WAN
-
-### Cloud NGFW
-- **Cloud NGFW for AWS** - Cloud-native firewall for AWS
-- **Cloud NGFW for Azure** - Cloud-native firewall for Azure
-
-### Panorama Plugins
-- **VM-Series Plugin** - Virtual firewall management
-- **Panorama Plugin for AWS** - AWS integration
-- **Panorama Plugin for Azure** - Azure integration
-- **Panorama Plugin for GCP** - Google Cloud integration
-- **Panorama Plugin for VMware NSX** - NSX integration
-- **Panorama Plugin for VMware vCenter** - vCenter integration
-- **Panorama Plugin for Kubernetes** - K8s integration
-- **Panorama Plugin for Cisco ACI** - Cisco ACI integration
-- **Panorama Plugin for Cisco TrustSec** - TrustSec integration
-- **Panorama Plugin for Zero Touch Provisioning** - ZTP support
-- **Panorama Plugin for Clustering** - HA clustering
-- **Panorama SD-WAN Plugin** - SD-WAN management
-
-### Other Products
-- **Autonomous DEM (ADEM)** - Digital experience monitoring
-- **AI Runtime Security** - AI/ML security
-- **Remote Browser Isolation** - Browser isolation
-- **Strata Logging Service** - Cloud logging
+| Product | Supported |
+|---------|:---------:|
+| PAN-OS | ✅ |
+| GlobalProtect | ✅ |
+| Strata Cloud Manager (SCM) | ✅ |
+| Prisma Access | ✅ |
+| Prisma Access Agent | ✅ |
+| Prisma SD-WAN | ✅ |
+| Cloud NGFW for AWS | ✅ |
+| Cloud NGFW for Azure | ✅ |
+| VM-Series Plugin | ✅ |
+| Panorama Plugin for AWS | ✅ |
+| Panorama Plugin for Azure | ✅ |
+| Panorama Plugin for GCP | ✅ |
+| Panorama Plugin for VMware NSX | ✅ |
+| Panorama Plugin for VMware vCenter | ✅ |
+| Panorama Plugin for Kubernetes | ✅ |
+| Panorama Plugin for Cisco ACI | ✅ |
+| Panorama Plugin for Cisco TrustSec | ✅ |
+| Panorama Plugin for Zero Touch Provisioning | ✅ |
+| Panorama Plugin for Clustering | ✅ |
+| Panorama SD-WAN Plugin | ✅ |
+| Autonomous DEM (ADEM) | ✅ |
+| AI Runtime Security | ✅ |
+| Remote Browser Isolation | ✅ |
+| Strata Logging Service | ✅ |
 
 ## Installation
 
