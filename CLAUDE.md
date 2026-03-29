@@ -1,5 +1,9 @@
 # Claude Code Project Instructions
 
+## Git Commits
+
+- Do NOT include "Co-Authored-By" lines in commit messages
+
 ## Development Guidelines
 
 ### Testing New Product Crawlers

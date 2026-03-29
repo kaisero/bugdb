@@ -117,18 +117,28 @@ GLOBALPROTECT_URL_MAPPING = {
 }
 
 # URL mappings for PAN-OS
+# NOTE: Order matters! The mock uses substring matching (first match wins),
+# so more-specific patterns (child pages) must come before less-specific
+# patterns (parent pages, index pages).
 PANOS_URL_MAPPING = {
-    # NGFW index pages (12.x+)
+    # NGFW specific index page (won't collide with other patterns)
     "/ngfw/release-notes/12-1/features-introduced-in-pan-os": "panos/12-1-index.html",
-    "/ngfw/release-notes/12-1": "panos/12-1-index.html",
-    # NGFW version-specific pages
+    # Hotfix child pages (most specific, must match before parent patterns)
+    "/pan-os-12-1-5-h2-known-issues": "panos/12-1-5-h2-known-issues.html",
+    "/pan-os-12-1-5-h2-addressed-issues": "panos/12-1-5-h2-addressed-issues.html",
+    "/pan-os-11-2-4-h1-known-issues": "panos/11-2-4-h1-known-issues.html",
+    "/pan-os-11-2-4-h1-addressed-issues": "panos/11-2-4-h1-addressed-issues.html",
+    # Regular version child pages
     "/pan-os-12-1-5-known-issues": "panos/12-1-5-known-issues.html",
     "/pan-os-12-1-5-addressed-issues": "panos/12-1-5-addressed-issues.html",
-    # PAN-OS index pages (11.x and older)
-    "/pan-os/11-2/pan-os-release-notes": "panos/11-2-index.html",
-    # PAN-OS version-specific pages
     "/pan-os-11-2-4-known-issues": "panos/11-2-4-known-issues.html",
     "/pan-os-11-2-4-addressed-issues": "panos/11-2-4-addressed-issues.html",
+    # Known-and-addressed parent pages (contain hotfix sub-page links)
+    "/pan-os-12-1-5-known-and-addressed-issues": "panos/12-1-5-known-and-addressed-issues.html",
+    "/pan-os-11-2-4-known-and-addressed-issues": "panos/11-2-4-known-and-addressed-issues.html",
+    # Index pages (least specific, must come last)
+    "/ngfw/release-notes/12-1": "panos/12-1-index.html",
+    "/pan-os/11-2/pan-os-release-notes": "panos/11-2-index.html",
 }
 
 # URL mappings for Prisma Access Agent

@@ -14,6 +14,11 @@ let currentFilters = {
 let fixReleasesMap = {}; // Map of bug_id -> array of fix releases
 let knownIssuesMap = {}; // Map of bug_id -> array of releases where issue is known
 
+// Pagination state
+const PAGE_SIZE_OPTIONS = [50, 100, 250, 'All'];
+let currentPage = 1;
+let pageSize = 50; // Default page size
+
 // Versions that should not be displayed in issue cards (e.g., SaaS products)
 const HIDDEN_VERSIONS = ['SaaS', 'Unknown'];
 
@@ -27,6 +32,9 @@ const elements = {
     typeFilter: document.getElementById('type-filter'),
     results: document.getElementById('results'),
     resultsCount: document.getElementById('results-count'),
+    resultsRange: document.getElementById('results-range'),
+    pagination: document.getElementById('pagination'),
+    pageSize: document.getElementById('page-size'),
     noResults: document.getElementById('no-results'),
     loading: document.getElementById('loading'),
     clearFilters: document.getElementById('clear-filters'),
@@ -149,7 +157,9 @@ function buildKnownIssuesMap(data) {
 function shouldShowFixInfo(fixInfo) {
     if (!fixInfo) return false;
     const lowerFixInfo = fixInfo.toLowerCase();
-    return !lowerFixInfo.includes('this issue is') && !lowerFixInfo.includes('resolved in');
+    return !lowerFixInfo.includes('this issue is') &&
+           !lowerFixInfo.includes('resolved in') &&
+           !lowerFixInfo.includes('addressed in');
 }
 
 // Compare versions for sorting (handles 11.2.5, 2025.r5.0, SaaS, -h9 suffixes)
@@ -348,22 +358,163 @@ function applyFilters() {
     renderResults();
 }
 
-// Render issue cards
+// Calculate pagination values
+function getPaginationInfo() {
+    const totalIssues = filteredIssues.length;
+    const effectivePageSize = pageSize === 'all' ? totalIssues : pageSize;
+    const totalPages = effectivePageSize > 0 ? Math.ceil(totalIssues / effectivePageSize) : 1;
+    const startIndex = (currentPage - 1) * effectivePageSize;
+    const endIndex = Math.min(startIndex + effectivePageSize, totalIssues);
+
+    return { totalIssues, effectivePageSize, totalPages, startIndex, endIndex };
+}
+
+// Render issue cards with pagination
 function renderResults() {
     elements.results.innerHTML = '';
     elements.resultsCount.textContent = filteredIssues.length;
 
     if (filteredIssues.length === 0) {
         elements.noResults.classList.remove('hidden');
+        elements.pagination.classList.add('hidden');
+        elements.resultsRange.textContent = '0';
         return;
     }
 
     elements.noResults.classList.add('hidden');
 
-    filteredIssues.forEach(issue => {
+    const { totalIssues, totalPages, startIndex, endIndex } = getPaginationInfo();
+
+    // Ensure current page is valid
+    if (currentPage > totalPages) {
+        currentPage = totalPages;
+    }
+
+    // Update results range display
+    if (pageSize === 'all') {
+        elements.resultsRange.textContent = totalIssues;
+    } else {
+        elements.resultsRange.textContent = `${startIndex + 1}-${endIndex}`;
+    }
+
+    // Get issues for current page
+    const pageIssues = filteredIssues.slice(startIndex, endIndex);
+
+    // Render issue cards
+    pageIssues.forEach(issue => {
         const card = createIssueCard(issue);
         elements.results.appendChild(card);
     });
+
+    // Render pagination controls
+    renderPagination(totalPages);
+}
+
+// Render pagination controls
+function renderPagination(totalPages) {
+    elements.pagination.innerHTML = '';
+
+    // Hide pagination if only one page or showing all
+    if (totalPages <= 1 || pageSize === 'all') {
+        elements.pagination.classList.add('hidden');
+        return;
+    }
+
+    elements.pagination.classList.remove('hidden');
+
+    // Previous button
+    const prevBtn = document.createElement('button');
+    prevBtn.className = `px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+        currentPage === 1
+            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+    }`;
+    prevBtn.textContent = 'Previous';
+    prevBtn.disabled = currentPage === 1;
+    prevBtn.onclick = () => goToPage(currentPage - 1);
+    elements.pagination.appendChild(prevBtn);
+
+    // Page numbers
+    const pageNumbers = getPageNumbers(currentPage, totalPages);
+    pageNumbers.forEach(pageNum => {
+        if (pageNum === '...') {
+            const ellipsis = document.createElement('span');
+            ellipsis.className = 'px-3 py-2 text-gray-500';
+            ellipsis.textContent = '...';
+            elements.pagination.appendChild(ellipsis);
+        } else {
+            const pageBtn = document.createElement('button');
+            pageBtn.className = `px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                pageNum === currentPage
+                    ? 'bg-pan-orange text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+            }`;
+            pageBtn.textContent = pageNum;
+            pageBtn.onclick = () => goToPage(pageNum);
+            elements.pagination.appendChild(pageBtn);
+        }
+    });
+
+    // Next button
+    const nextBtn = document.createElement('button');
+    nextBtn.className = `px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+        currentPage === totalPages
+            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+            : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-300'
+    }`;
+    nextBtn.textContent = 'Next';
+    nextBtn.disabled = currentPage === totalPages;
+    nextBtn.onclick = () => goToPage(currentPage + 1);
+    elements.pagination.appendChild(nextBtn);
+}
+
+// Get page numbers to display (with ellipsis for many pages)
+function getPageNumbers(current, total) {
+    if (total <= 7) {
+        return Array.from({ length: total }, (_, i) => i + 1);
+    }
+
+    const pages = [];
+
+    // Always show first page
+    pages.push(1);
+
+    if (current > 3) {
+        pages.push('...');
+    }
+
+    // Show pages around current
+    const start = Math.max(2, current - 1);
+    const end = Math.min(total - 1, current + 1);
+
+    for (let i = start; i <= end; i++) {
+        if (!pages.includes(i)) {
+            pages.push(i);
+        }
+    }
+
+    if (current < total - 2) {
+        pages.push('...');
+    }
+
+    // Always show last page
+    if (!pages.includes(total)) {
+        pages.push(total);
+    }
+
+    return pages;
+}
+
+// Navigate to a specific page
+function goToPage(page) {
+    const { totalPages } = getPaginationInfo();
+    if (page < 1 || page > totalPages) return;
+
+    currentPage = page;
+    renderResults();
+
+    // Scroll to top of results
+    elements.results.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // Create issue card HTML
@@ -598,6 +749,11 @@ function clearFilters(data) {
     elements.versionFilter.value = '';
     elements.typeFilter.value = '';
 
+    // Reset pagination
+    currentPage = 1;
+    pageSize = 50;
+    elements.pageSize.value = '50';
+
     // Reset version filter to disabled state
     updateVersionFilter(data);
 
@@ -613,6 +769,7 @@ function setupEventListeners(data) {
     // Search input with debouncing
     elements.search.addEventListener('input', debounce((e) => {
         currentFilters.search = e.target.value;
+        currentPage = 1; // Reset to first page when search changes
         applyFilters();
     }, 300));
 
@@ -629,6 +786,7 @@ function setupEventListeners(data) {
             elements.versionFilter.value = '';
             updateVersionFilter(data);
             hideDropdown(elements.productDropdown);
+            currentPage = 1; // Reset to first page when filter changes
             applyFilters();
         },
         () => highlightedProductIndex,
@@ -639,6 +797,7 @@ function setupEventListeners(data) {
             currentFilters.version = '';
             elements.versionFilter.value = '';
             updateVersionFilter(data);
+            currentPage = 1; // Reset to first page when filter changes
             applyFilters();
         }
     );
@@ -653,6 +812,7 @@ function setupEventListeners(data) {
             currentFilters.version = value;
             elements.versionFilter.value = label;
             hideDropdown(elements.versionDropdown);
+            currentPage = 1; // Reset to first page when filter changes
             applyFilters();
         },
         () => highlightedVersionIndex,
@@ -660,6 +820,7 @@ function setupEventListeners(data) {
         // Clear callback
         () => {
             currentFilters.version = '';
+            currentPage = 1; // Reset to first page when filter changes
             applyFilters();
         }
     );
@@ -667,7 +828,16 @@ function setupEventListeners(data) {
     // Type filter
     elements.typeFilter.addEventListener('change', (e) => {
         currentFilters.type = e.target.value;
+        currentPage = 1; // Reset to first page when filter changes
         applyFilters();
+    });
+
+    // Page size selector
+    elements.pageSize.addEventListener('change', (e) => {
+        const value = e.target.value;
+        pageSize = value === 'all' ? 'all' : parseInt(value, 10);
+        currentPage = 1; // Reset to first page when page size changes
+        renderResults();
     });
 
     // Clear filters button

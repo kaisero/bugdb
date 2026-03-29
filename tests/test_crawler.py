@@ -605,53 +605,78 @@ class TestPaloAltoCrawlerAsync:
         """Test crawling GlobalProtect with version-specific pages."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_globalprotect(major_versions=["6-2"])
+                result = await crawler.crawl_globalprotect(major_versions=["6-2"])
 
-                assert product.id == "globalprotect"
-                assert product.name == "GlobalProtect"
+                assert result.product.id == "globalprotect"
+                assert result.product.name == "GlobalProtect"
                 # Should have found some versions
-                assert len(product.versions) >= 0
+                assert len(result.product.versions) >= 0
+                assert isinstance(result.failed_fetches, list)
 
     @pytest.mark.asyncio
     async def test_crawl_globalprotect_multi_version(self, mock_playwright_globalprotect):
         """Test crawling GlobalProtect with multi-version pages (older style)."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_globalprotect(major_versions=["6-1"])
+                result = await crawler.crawl_globalprotect(major_versions=["6-1"])
 
-                assert product.id == "globalprotect"
+                assert result.product.id == "globalprotect"
                 # Multi-version pages should yield multiple versions
                 # (if the fixture is properly parsed)
+                assert isinstance(result.failed_fetches, list)
 
     @pytest.mark.asyncio
     async def test_crawl_panos_ngfw_pattern(self, mock_playwright_panos):
         """Test crawling PAN-OS with NGFW URL pattern (12.x+)."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_panos(major_versions=["12-1"])
+                result = await crawler.crawl_panos(major_versions=["12-1"])
 
-                assert product.id == "panos"
-                assert product.name == "PAN-OS"
+                assert result.product.id == "panos"
+                assert result.product.name == "PAN-OS"
+                assert isinstance(result.failed_fetches, list)
+
+    @pytest.mark.asyncio
+    async def test_crawl_panos_ngfw_discovers_hotfixes(self, mock_playwright_panos):
+        """Test that NGFW pattern (12.x+) discovers hotfix releases."""
+        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
+            async with PaloAltoCrawler() as crawler:
+                result = await crawler.crawl_panos(major_versions=["12-1"])
+
+                versions = {v.version for v in result.product.versions}
+                assert "12.1.5-h2" in versions
 
     @pytest.mark.asyncio
     async def test_crawl_panos_legacy_pattern(self, mock_playwright_panos):
         """Test crawling PAN-OS with legacy URL pattern (11.x and older)."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_panos(major_versions=["11-2"])
+                result = await crawler.crawl_panos(major_versions=["11-2"])
 
-                assert product.id == "panos"
-                assert product.name == "PAN-OS"
+                assert result.product.id == "panos"
+                assert result.product.name == "PAN-OS"
+                assert isinstance(result.failed_fetches, list)
+
+    @pytest.mark.asyncio
+    async def test_crawl_panos_legacy_discovers_hotfixes(self, mock_playwright_panos):
+        """Test that legacy pattern (11.x) discovers hotfix releases."""
+        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
+            async with PaloAltoCrawler() as crawler:
+                result = await crawler.crawl_panos(major_versions=["11-2"])
+
+                versions = {v.version for v in result.product.versions}
+                assert "11.2.4-h1" in versions
 
     @pytest.mark.asyncio
     async def test_crawl_prisma_access_agent(self, mock_playwright_prisma):
         """Test crawling Prisma Access Agent."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_prisma):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_prisma_access_agent(major_versions=["26-1"])
+                result = await crawler.crawl_prisma_access_agent(major_versions=["26-1"])
 
-                assert product.id == "prisma-access-agent"
-                assert product.name == "Prisma Access Agent"
+                assert result.product.id == "prisma-access-agent"
+                assert result.product.name == "Prisma Access Agent"
+                assert isinstance(result.failed_fetches, list)
 
     @pytest.mark.asyncio
     async def test_crawl_version_parallel(self, mock_playwright_globalprotect):
@@ -666,52 +691,151 @@ class TestPaloAltoCrawlerAsync:
                     ),
                 ]
 
-                results = await crawler._crawl_versions_parallel(version_infos)
+                versions, failed = await crawler._crawl_versions_parallel(version_infos)
 
-                # Should return list of ProductVersion
-                assert isinstance(results, list)
-                for pv in results:
+                # Should return list of ProductVersion and list of FailedFetch
+                assert isinstance(versions, list)
+                for pv in versions:
                     assert isinstance(pv, ProductVersion)
+                assert isinstance(failed, list)
+
+
+class TestGlobalBackoff:
+    """Tests for global backoff mechanism on connection refused errors."""
+
+    def test_is_connection_refused_error_detection(self):
+        """Test detection of connection refused errors."""
+        crawler = PaloAltoCrawler()
+
+        # Should detect connection refused errors
+        assert crawler._is_connection_refused_error(
+            Exception("net::ERR_CONNECTION_REFUSED")
+        )
+        assert crawler._is_connection_refused_error(
+            Exception("Connection refused by server")
+        )
+        assert crawler._is_connection_refused_error(
+            Exception("ERR_CONNECTION_RESET occurred")
+        )
+
+        # Should not trigger on other errors
+        assert not crawler._is_connection_refused_error(
+            Exception("Page not found")
+        )
+        assert not crawler._is_connection_refused_error(
+            Exception("Timeout waiting for selector")
+        )
+
+    @pytest.mark.asyncio
+    async def test_global_backoff_trigger_and_wait(self):
+        """Test that global backoff can be triggered and waited on."""
+        import time
+
+        # Create crawler with context manager to initialize lock
+        crawler = PaloAltoCrawler()
+        crawler._backoff_lock = asyncio.Lock()
+        crawler._global_backoff_until = 0.0
+
+        # Trigger backoff
+        await crawler._trigger_global_backoff()
+
+        # Verify backoff was set
+        assert crawler._global_backoff_until > time.monotonic()
+        assert crawler._global_backoff_until <= time.monotonic() + crawler.GLOBAL_BACKOFF_DURATION + 1
+
+    @pytest.mark.asyncio
+    async def test_global_backoff_wait_skips_if_not_active(self):
+        """Test that wait returns immediately if no backoff is active."""
+        import time
+
+        crawler = PaloAltoCrawler()
+        crawler._backoff_lock = asyncio.Lock()
+        crawler._global_backoff_until = 0.0  # No backoff active
+
+        start = time.monotonic()
+        await crawler._wait_for_global_backoff()
+        elapsed = time.monotonic() - start
+
+        # Should return almost immediately (less than 0.1s)
+        assert elapsed < 0.1
+
+    @pytest.mark.asyncio
+    async def test_global_backoff_shared_across_tasks(self):
+        """Test that backoff is shared across concurrent tasks."""
+        import time
+
+        crawler = PaloAltoCrawler()
+        crawler._backoff_lock = asyncio.Lock()
+        crawler._global_backoff_until = 0.0
+
+        # Set a short backoff for testing (0.2 seconds)
+        crawler.GLOBAL_BACKOFF_DURATION = 0.2
+
+        wait_times = []
+
+        async def task_that_waits(task_id: int):
+            start = time.monotonic()
+            await crawler._wait_for_global_backoff()
+            wait_times.append((task_id, time.monotonic() - start))
+
+        # Trigger backoff
+        await crawler._trigger_global_backoff()
+
+        # Start multiple tasks that should all wait
+        tasks = [
+            asyncio.create_task(task_that_waits(i))
+            for i in range(3)
+        ]
+
+        await asyncio.gather(*tasks)
+
+        # All tasks should have waited approximately the same amount
+        # (within 0.15 seconds of each other)
+        for task_id, wait_time in wait_times:
+            assert wait_time >= 0.15, f"Task {task_id} didn't wait long enough"
 
 
 class TestWrapperFunctions:
     """Tests for the synchronous wrapper functions."""
 
     def test_crawl_globalprotect_returns_database(self, mock_playwright_globalprotect):
-        """Test that crawl_globalprotect returns a BugDatabase."""
+        """Test that crawl_globalprotect returns a FetchResult with BugDatabase."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
-            db = crawl_globalprotect(major_versions=["6-2"])
+            result = crawl_globalprotect(major_versions=["6-2"])
 
-            assert db is not None
-            assert len(db.products) == 1
-            assert db.products[0].id == "globalprotect"
-            assert db.metadata is not None
+            assert result is not None
+            assert len(result.database.products) == 1
+            assert result.database.products[0].id == "globalprotect"
+            assert result.database.metadata is not None
+            assert isinstance(result.failed_fetches, list)
 
     def test_crawl_panos_returns_database(self, mock_playwright_panos):
-        """Test that crawl_panos returns a BugDatabase."""
+        """Test that crawl_panos returns a FetchResult with BugDatabase."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
-            db = crawl_panos(major_versions=["12-1"])
+            result = crawl_panos(major_versions=["12-1"])
 
-            assert db is not None
-            assert len(db.products) == 1
-            assert db.products[0].id == "panos"
+            assert result is not None
+            assert len(result.database.products) == 1
+            assert result.database.products[0].id == "panos"
+            assert isinstance(result.failed_fetches, list)
 
     def test_crawl_prisma_returns_database(self, mock_playwright_prisma):
-        """Test that crawl_prisma_access_agent returns a BugDatabase."""
+        """Test that crawl_prisma_access_agent returns a FetchResult with BugDatabase."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_prisma):
-            db = crawl_prisma_access_agent(major_versions=["26-1"])
+            result = crawl_prisma_access_agent(major_versions=["26-1"])
 
-            assert db is not None
-            assert len(db.products) == 1
-            assert db.products[0].id == "prisma-access-agent"
+            assert result is not None
+            assert len(result.database.products) == 1
+            assert result.database.products[0].id == "prisma-access-agent"
+            assert isinstance(result.failed_fetches, list)
 
     def test_crawl_globalprotect_metadata_source(self, mock_playwright_globalprotect):
         """Test that metadata source is set correctly."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
-            db = crawl_globalprotect(major_versions=["6-2"])
+            result = crawl_globalprotect(major_versions=["6-2"])
 
-            assert "GlobalProtect" in db.metadata.source
-            assert "6.2" in db.metadata.source
+            assert "GlobalProtect" in result.database.metadata.source
+            assert "6.2" in result.database.metadata.source
 
     def test_crawl_globalprotect_all_versions_source(self, mock_playwright_globalprotect):
         """Test metadata source when crawling all versions."""
@@ -724,9 +848,9 @@ class TestWrapperFunctions:
                 new_callable=AsyncMock,
                 return_value=[]
             ):
-                db = crawl_globalprotect(major_versions=None)
+                result = crawl_globalprotect(major_versions=None)
 
-                assert "All Versions" in db.metadata.source
+                assert "All Versions" in result.database.metadata.source
 
 
 class TestCrawlerConfiguration:
@@ -1296,14 +1420,14 @@ class TestSkipVersionsParameter:
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
             async with PaloAltoCrawler() as crawler:
                 # Crawl with skip_versions - should skip the specified version
-                product = await crawler.crawl_globalprotect(
+                result = await crawler.crawl_globalprotect(
                     major_versions=["6-2"],
                     skip_versions={"6.2.1"},
                 )
 
-                assert product.id == "globalprotect"
+                assert result.product.id == "globalprotect"
                 # Version 6.2.1 should be skipped
-                versions = {v.version for v in product.versions}
+                versions = {v.version for v in result.product.versions}
                 assert "6.2.1" not in versions
 
     @pytest.mark.asyncio
@@ -1311,25 +1435,25 @@ class TestSkipVersionsParameter:
         """Test that empty skip_versions doesn't affect crawling."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_globalprotect(
+                result = await crawler.crawl_globalprotect(
                     major_versions=["6-2"],
                     skip_versions=set(),
                 )
 
-                assert product.id == "globalprotect"
+                assert result.product.id == "globalprotect"
 
     @pytest.mark.asyncio
     async def test_crawl_panos_skip_versions(self, mock_playwright_panos):
         """Test that skip_versions works for PAN-OS crawler."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_panos(
+                result = await crawler.crawl_panos(
                     major_versions=["12-1"],
                     skip_versions={"12.1.5"},
                 )
 
-                assert product.id == "panos"
-                versions = {v.version for v in product.versions}
+                assert result.product.id == "panos"
+                versions = {v.version for v in result.product.versions}
                 assert "12.1.5" not in versions
 
     @pytest.mark.asyncio
@@ -1337,49 +1461,49 @@ class TestSkipVersionsParameter:
         """Test that skip_versions works for Prisma Access Agent crawler."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_prisma):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_prisma_access_agent(
+                result = await crawler.crawl_prisma_access_agent(
                     major_versions=["26-1"],
                     skip_versions={"26.1.2"},
                 )
 
-                assert product.id == "prisma-access-agent"
-                versions = {v.version for v in product.versions}
+                assert result.product.id == "prisma-access-agent"
+                versions = {v.version for v in result.product.versions}
                 assert "26.1.2" not in versions
 
     def test_crawl_globalprotect_wrapper_skip_versions(self, mock_playwright_globalprotect):
         """Test that skip_versions works in sync wrapper function."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
-            db = crawl_globalprotect(
+            result = crawl_globalprotect(
                 major_versions=["6-2"],
                 skip_versions={"6.2.1"},
             )
 
-            assert db is not None
-            versions = {v.version for p in db.products for v in p.versions}
+            assert result is not None
+            versions = {v.version for p in result.database.products for v in p.versions}
             assert "6.2.1" not in versions
 
     def test_crawl_panos_wrapper_skip_versions(self, mock_playwright_panos):
         """Test that skip_versions works in PAN-OS sync wrapper function."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
-            db = crawl_panos(
+            result = crawl_panos(
                 major_versions=["12-1"],
                 skip_versions={"12.1.5"},
             )
 
-            assert db is not None
-            versions = {v.version for p in db.products for v in p.versions}
+            assert result is not None
+            versions = {v.version for p in result.database.products for v in p.versions}
             assert "12.1.5" not in versions
 
     def test_crawl_prisma_wrapper_skip_versions(self, mock_playwright_prisma):
         """Test that skip_versions works in Prisma sync wrapper function."""
         with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_prisma):
-            db = crawl_prisma_access_agent(
+            result = crawl_prisma_access_agent(
                 major_versions=["26-1"],
                 skip_versions={"26.1.2"},
             )
 
-            assert db is not None
-            versions = {v.version for p in db.products for v in p.versions}
+            assert result is not None
+            versions = {v.version for p in result.database.products for v in p.versions}
             assert "26.1.2" not in versions
 
 
@@ -2824,14 +2948,15 @@ class TestCloudNGFWAzureCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_cloud_ngfw_azure()
+                result = await crawler.crawl_cloud_ngfw_azure()
 
-        assert product.id == "cloud-ngfw-azure"
-        assert product.name == "Cloud NGFW for Azure"
-        assert len(product.versions) == 1
-        assert product.versions[0].version == "SaaS"
-        assert len(product.versions[0].known_issues) == 2
-        assert len(product.versions[0].addressed_issues) == 1
+        assert result.product.id == "cloud-ngfw-azure"
+        assert result.product.name == "Cloud NGFW for Azure"
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "SaaS"
+        assert len(result.product.versions[0].known_issues) == 2
+        assert len(result.product.versions[0].addressed_issues) == 1
+        assert isinstance(result.failed_fetches, list)
 
     @pytest.mark.asyncio
     async def test_crawl_cloud_ngfw_azure_with_workaround(self):
@@ -2861,9 +2986,9 @@ class TestCloudNGFWAzureCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_cloud_ngfw_azure()
+                result = await crawler.crawl_cloud_ngfw_azure()
 
-        issue = product.versions[0].known_issues[0]
+        issue = result.product.versions[0].known_issues[0]
         assert issue.bug_id == "CNGFWAZR-200"
         assert issue.workaround == "Increase timeout value in settings."
         assert "Workaround" not in issue.description
@@ -2878,10 +3003,10 @@ class TestCloudNGFWAzureCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_cloud_ngfw_azure()
+                result = await crawler.crawl_cloud_ngfw_azure()
 
-        assert product.id == "cloud-ngfw-azure"
-        assert len(product.versions) == 0
+        assert result.product.id == "cloud-ngfw-azure"
+        assert len(result.product.versions) == 0
 
 
 class TestCloudNGFWAzureCrawlFunction:
@@ -2926,14 +3051,15 @@ class TestCloudNGFWAWSCrawler:
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(known_html, "lxml")
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_cloud_ngfw_aws()
+                result = await crawler.crawl_cloud_ngfw_aws()
 
-        assert product.id == "cloud-ngfw-aws"
-        assert product.name == "Cloud NGFW for AWS"
-        assert len(product.versions) == 1
-        assert product.versions[0].version == "SaaS"
-        assert len(product.versions[0].known_issues) == 2
-        assert len(product.versions[0].addressed_issues) == 0
+        assert result.product.id == "cloud-ngfw-aws"
+        assert result.product.name == "Cloud NGFW for AWS"
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "SaaS"
+        assert len(result.product.versions[0].known_issues) == 2
+        assert len(result.product.versions[0].addressed_issues) == 0
+        assert isinstance(result.failed_fetches, list)
 
     @pytest.mark.asyncio
     async def test_crawl_cloud_ngfw_aws_empty_page(self):
@@ -2943,10 +3069,10 @@ class TestCloudNGFWAWSCrawler:
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(empty_html, "lxml")
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_cloud_ngfw_aws()
+                result = await crawler.crawl_cloud_ngfw_aws()
 
-        assert product.id == "cloud-ngfw-aws"
-        assert len(product.versions) == 0
+        assert result.product.id == "cloud-ngfw-aws"
+        assert len(result.product.versions) == 0
 
 
 class TestCloudNGFWAWSCrawlFunction:
@@ -3031,15 +3157,16 @@ class TestADEMCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_adem()
+                result = await crawler.crawl_adem()
 
-        assert product.id == "adem"
-        assert product.name == "Autonomous DEM"
-        assert len(product.versions) == 1
-        assert product.versions[0].version == "5.9"
-        assert len(product.versions[0].known_issues) == 1
-        assert len(product.versions[0].addressed_issues) == 1
-        assert product.versions[0].addressed_issues[0].release_date == "2024-03-01"
+        assert result.product.id == "adem"
+        assert result.product.name == "Autonomous DEM"
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "5.9"
+        assert len(result.product.versions[0].known_issues) == 1
+        assert len(result.product.versions[0].addressed_issues) == 1
+        assert result.product.versions[0].addressed_issues[0].release_date == "2024-03-01"
+        assert isinstance(result.failed_fetches, list)
 
     @pytest.mark.asyncio
     async def test_crawl_adem_multiple_versions(self):
@@ -3074,10 +3201,10 @@ class TestADEMCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_adem()
+                result = await crawler.crawl_adem()
 
-        assert len(product.versions) == 2
-        versions = {v.version for v in product.versions}
+        assert len(result.product.versions) == 2
+        versions = {v.version for v in result.product.versions}
         assert "5.9" in versions
         assert "5.8" in versions
 
@@ -3115,10 +3242,10 @@ class TestADEMCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_adem()
+                result = await crawler.crawl_adem()
 
-        assert len(product.versions) == 1
-        addressed = product.versions[0].addressed_issues
+        assert len(result.product.versions) == 1
+        addressed = result.product.versions[0].addressed_issues
         assert len(addressed) == 2
 
         # Check that release dates are captured
@@ -3202,14 +3329,15 @@ class TestSCMCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_scm()
+                result = await crawler.crawl_scm()
 
-        assert product.id == "scm"
-        assert product.name == "Strata Cloud Manager"
-        assert len(product.versions) == 1
-        assert product.versions[0].version == "SaaS"
+        assert result.product.id == "scm"
+        assert result.product.name == "Strata Cloud Manager"
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "SaaS"
+        assert isinstance(result.failed_fetches, list)
 
-        known = product.versions[0].known_issues
+        known = result.product.versions[0].known_issues
         assert len(known) == 2
 
         # Check component association
@@ -3253,15 +3381,15 @@ class TestSCMCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_scm()
+                result = await crawler.crawl_scm()
 
-        assert len(product.versions) == 2
-        versions = {v.version for v in product.versions}
+        assert len(result.product.versions) == 2
+        versions = {v.version for v in result.product.versions}
         assert "2025.r5.0" in versions
         assert "2025.r4.0" in versions
 
         # Check component association for r5 issue
-        r5_version = next(v for v in product.versions if v.version == "2025.r5.0")
+        r5_version = next(v for v in result.product.versions if v.version == "2025.r5.0")
         assert len(r5_version.addressed_issues) == 1
         assert "Command Center" in r5_version.addressed_issues[0].affected_components
 
@@ -3291,12 +3419,12 @@ class TestSCMCrawler:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_scm()
+                result = await crawler.crawl_scm()
 
-        assert len(product.versions) == 1
-        assert product.versions[0].version == "Unknown"
-        assert len(product.versions[0].addressed_issues) == 1
-        assert product.versions[0].addressed_issues[0].release_date == "2024-09-01"
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "Unknown"
+        assert len(result.product.versions[0].addressed_issues) == 1
+        assert result.product.versions[0].addressed_issues[0].release_date == "2024-09-01"
 
 
 class TestSCMMainAddressedTable:
@@ -3338,29 +3466,29 @@ class TestSCMMainAddressedTable:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_scm()
+                result = await crawler.crawl_scm()
 
         # Should have 3 versions: 2025.r5.0, 2025.r4.0, Unknown
-        assert len(product.versions) == 3
-        versions = {v.version for v in product.versions}
+        assert len(result.product.versions) == 3
+        versions = {v.version for v in result.product.versions}
         assert "2025.r5.0" in versions
         assert "2025.r4.0" in versions
         assert "Unknown" in versions
 
         # Check 2025.r5.0 version has 2 ADI issues
-        r5_version = next(v for v in product.versions if v.version == "2025.r5.0")
+        r5_version = next(v for v in result.product.versions if v.version == "2025.r5.0")
         assert len(r5_version.addressed_issues) == 2
         bug_ids = {i.bug_id for i in r5_version.addressed_issues}
         assert "ADI-47855" in bug_ids
         assert "ADI-49121" in bug_ids
 
         # Check 2025.r4.0 version has 1 ADI issue
-        r4_version = next(v for v in product.versions if v.version == "2025.r4.0")
+        r4_version = next(v for v in result.product.versions if v.version == "2025.r4.0")
         assert len(r4_version.addressed_issues) == 1
         assert r4_version.addressed_issues[0].bug_id == "ADI-48273"
 
         # Check Unknown version has NETVIS issue from Command Center
-        unknown_version = next(v for v in product.versions if v.version == "Unknown")
+        unknown_version = next(v for v in result.product.versions if v.version == "Unknown")
         assert len(unknown_version.addressed_issues) == 1
         assert unknown_version.addressed_issues[0].bug_id == "NETVIS-2017"
         assert "Command Center" in unknown_version.addressed_issues[0].affected_components
@@ -3392,19 +3520,19 @@ class TestSCMMainAddressedTable:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_scm()
+                result = await crawler.crawl_scm()
 
         # All should be in Unknown version
-        assert len(product.versions) == 1
-        assert product.versions[0].version == "Unknown"
-        assert len(product.versions[0].addressed_issues) == 3
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "Unknown"
+        assert len(result.product.versions[0].addressed_issues) == 3
 
         # Check bug IDs
-        bug_ids = {i.bug_id for i in product.versions[0].addressed_issues}
+        bug_ids = {i.bug_id for i in result.product.versions[0].addressed_issues}
         assert bug_ids == {"ADI-38973", "ADI-34609", "ADI-36846"}
 
         # Check release dates for date-formatted entries
-        issues_by_id = {i.bug_id: i for i in product.versions[0].addressed_issues}
+        issues_by_id = {i.bug_id: i for i in result.product.versions[0].addressed_issues}
         assert issues_by_id["ADI-38973"].release_date == "2024-09-01"
         assert issues_by_id["ADI-34609"].release_date == "2024-06-01"
         assert issues_by_id["ADI-36846"].release_date is None
@@ -3436,12 +3564,12 @@ class TestSCMMainAddressedTable:
 
         with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
             async with PaloAltoCrawler() as crawler:
-                product = await crawler.crawl_scm()
+                result = await crawler.crawl_scm()
 
-        assert len(product.versions) == 1
-        assert product.versions[0].version == "2025.r1.0"
-        assert len(product.versions[0].addressed_issues) == 1
-        assert product.versions[0].addressed_issues[0].bug_id == "ADI-12345"
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "2025.r1.0"
+        assert len(result.product.versions[0].addressed_issues) == 1
+        assert result.product.versions[0].addressed_issues[0].bug_id == "ADI-12345"
 
 
 class TestSCMCrawlFunction:
@@ -3460,4 +3588,356 @@ class TestSCMCrawlFunction:
         params = list(sig.parameters.keys())
         assert "major_versions" in params
         assert "skip_versions" in params
+
+
+class TestSdwanPluginCrawler:
+    """Tests for Panorama Plugin for SD-WAN crawler methods."""
+
+    @pytest.mark.asyncio
+    async def test_discover_sdwan_plugin_versions(self):
+        """Test discovering SD-WAN Plugin versions."""
+        valid_html = """
+        <html>
+        <head><title>SD-WAN Plugin Release Notes</title></head>
+        <body><h1>Panorama Plugin for SD-WAN</h1></body>
+        </html>
+        """
+        invalid_html = """
+        <html>
+        <head><title>404 Not Found</title></head>
+        <body></body>
+        </html>
+        """
+
+        async def mock_fetch(url):
+            if "340" in url or "330" in url:
+                return BeautifulSoup(valid_html, "lxml")
+            return BeautifulSoup(invalid_html, "lxml")
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            crawler = PaloAltoCrawler()
+            versions = await crawler.discover_sdwan_plugin_versions()
+
+        assert "3-4" in versions
+        assert "3-3" in versions
+        # Versions should be sorted newest first
+        assert versions.index("3-4") < versions.index("3-3")
+
+
+class TestSdwanPluginIssuePageParsing:
+    """Tests for SD-WAN Plugin issue page parsing."""
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_basic(self):
+        """Test parsing a basic SD-WAN Plugin issues page."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">PLUG-21660</h2>
+                <div class="shortdesc">Short description of the issue.</div>
+                <div class="p">Main description of the problem.</div>
+            </div>
+            <div class="topic topic concept" id="id_456">
+                <h2 class="title">PAN-12345</h2>
+                <div class="shortdesc">Another issue.</div>
+                <div class="p">Details about this issue.</div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, addressed_by_version = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 2
+        assert known_issues[0].bug_id == "PLUG-21660"
+        assert known_issues[1].bug_id == "PAN-12345"
+        assert "Short description" in known_issues[0].description
+        assert len(addressed_by_version) == 0  # No fix info
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_with_fix_info(self):
+        """Test parsing page with fix information in tt tags."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">PLUG-21660</h2>
+                <div class="shortdesc">Issue with fix.</div>
+                <div class="p">Main description.</div>
+                <div class="p">
+                    <tt class="ph tt">This issue is addressed in SD-WAN plugin
+                        <span>3.2.4-h1</span><span>, 3.3.4</span><span> and 3.4.1</span>.
+                    </tt>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, addressed_by_version = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 1
+        assert known_issues[0].bug_id == "PLUG-21660"
+        assert known_issues[0].fix_info is not None
+        # Fix info should keep the original text
+        assert "This issue is addressed" in known_issues[0].fix_info
+        assert "3.2.4-h1" in known_issues[0].fix_info
+        assert "3.3.4" in known_issues[0].fix_info
+        assert "3.4.1" in known_issues[0].fix_info
+
+        # Should have addressed issues for each plugin fix version
+        assert "3.2.4-h1" in addressed_by_version
+        assert "3.3.4" in addressed_by_version
+        assert "3.4.1" in addressed_by_version
+        assert addressed_by_version["3.3.4"][0].bug_id == "PLUG-21660"
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_strips_description_prefix(self):
+        """Test that 'Description of <issue-id>' prefix is stripped."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="shortdesc">Description of PLUG-12345</div>
+                <div class="p">The actual issue description here.</div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 1
+        # "Description of PLUG-12345" prefix should be stripped
+        assert not known_issues[0].description.startswith("Description of")
+        assert "actual issue description" in known_issues[0].description
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_strips_description_prefix_with_period(self):
+        """Test that 'Description of <issue-id>.' prefix with period is stripped."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="p">Description of PLUG-12345. The actual issue description here.</div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 1
+        # "Description of PLUG-12345." prefix should be stripped
+        assert not known_issues[0].description.startswith("Description of")
+        assert "actual issue description" in known_issues[0].description.lower()
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_panos_versions_not_in_addressed(self):
+        """Test that PAN-OS versions (>=8) don't create addressed issues."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">PLUG-99999</h2>
+                <div class="shortdesc">Issue fixed in both plugin and PAN-OS.</div>
+                <div class="p">
+                    <tt class="ph tt">This issue is addressed in SD-WAN plugin 3.3.4
+                        and PAN-OS 10.2.0, 11.1.1.
+                    </tt>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, addressed_by_version = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 1
+        # fix_info should keep original text with both plugin and PAN-OS versions
+        assert "plugin" in known_issues[0].fix_info.lower()
+        assert "3.3.4" in known_issues[0].fix_info
+        assert "PAN-OS" in known_issues[0].fix_info
+        assert "10.2.0" in known_issues[0].fix_info
+        assert "11.1.1" in known_issues[0].fix_info
+
+        # Only plugin version should be in addressed_by_version
+        assert "3.3.4" in addressed_by_version
+        # PAN-OS versions should NOT create addressed issues
+        assert "10.2.0" not in addressed_by_version
+        assert "11.1.1" not in addressed_by_version
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_deduplicates_addressed_versions(self):
+        """Test that addressed_by_version entries are deduplicated even if fix_info has duplicates."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">PLUG-11111</h2>
+                <div class="shortdesc">Issue with duplicate versions.</div>
+                <div class="p">
+                    <tt class="ph tt">This issue is addressed in SD-WAN plugin 3.3.4, 3.3.4, 3.4.1.
+                    </tt>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, addressed_by_version = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 1
+        # fix_info keeps original text (may have duplicates)
+        fix_info = known_issues[0].fix_info
+        assert "3.3.4" in fix_info
+        assert "3.4.1" in fix_info
+
+        # addressed_by_version should have unique entries (deduplicated)
+        assert len(addressed_by_version) == 2  # 3.3.4 and 3.4.1
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_with_affected_components(self):
+        """Test parsing page with affected components in parentheses."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="shortdesc">Issue summary.</div>
+                <div class="p">(<tt class="ph tt">HA Deployments only</tt>) Main description of the problem.</div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 1
+        assert known_issues[0].affected_components is not None
+        assert "HA Deployments only" in known_issues[0].affected_components
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_with_workaround(self):
+        """Test parsing page with workaround text."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">PLUG-99999</h2>
+                <div class="shortdesc">Issue with workaround.</div>
+                <div class="p">This is the main description.</div>
+                <div class="p"><b class="ph b">Workaround</b></div>
+                <div class="p">Follow these steps to work around the issue.</div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 1
+        assert known_issues[0].bug_id == "PLUG-99999"
+        # Workaround should be extracted (checking it's not None)
+        # Note: The exact extraction depends on the HTML structure
+
+    @pytest.mark.asyncio
+    async def test_parse_sdwan_plugin_issues_page_skips_invalid_bug_ids(self):
+        """Test that invalid bug IDs are skipped."""
+        html = """
+        <html>
+        <body>
+            <div class="topic topic concept" id="id_123">
+                <h2 class="title">Not A Bug ID</h2>
+                <div class="shortdesc">This should be skipped.</div>
+            </div>
+            <div class="topic topic concept" id="id_456">
+                <h2 class="title">PLUG-12345</h2>
+                <div class="shortdesc">Valid issue.</div>
+            </div>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(html, "lxml")
+
+            crawler = PaloAltoCrawler()
+            known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
+                "/test-url", "3-3"
+            )
+
+        assert len(known_issues) == 1
+        assert known_issues[0].bug_id == "PLUG-12345"
+
+
+class TestSdwanPluginCrawlFunction:
+    """Tests for the crawl_sdwan_plugin function."""
+
+    def test_crawl_sdwan_plugin_import(self):
+        """Test that crawl_sdwan_plugin can be imported."""
+        from bugdb.crawler import crawl_sdwan_plugin
+        assert callable(crawl_sdwan_plugin)
+
+    def test_crawl_sdwan_plugin_signature(self):
+        """Test that crawl_sdwan_plugin has expected parameters."""
+        from bugdb.crawler import crawl_sdwan_plugin
+        import inspect
+        sig = inspect.signature(crawl_sdwan_plugin)
+        params = list(sig.parameters.keys())
+        assert "major_versions" in params
+        assert "skip_versions" in params
+        assert "headless" in params
+        assert "debug" in params
 

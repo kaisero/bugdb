@@ -397,8 +397,46 @@ class VersionInfo:
     addressed_issues_urls: list[str]
 
 
+@dataclass
+class FailedFetch:
+    """Information about a failed URL fetch."""
+
+    url: str
+    error: str
+    product: str
+    version: Optional[str] = None
+    issue_type: Optional[str] = None  # "known" or "addressed"
+
+
+@dataclass
+class CrawlResult:
+    """Result of a crawl operation."""
+
+    product: Product
+    failed_fetches: list[FailedFetch]
+
+
+@dataclass
+class VersionCrawlResult:
+    """Result of crawling a single version."""
+
+    product_version: ProductVersion
+    failed_fetches: list[FailedFetch]
+
+
+@dataclass
+class FetchResult:
+    """Result of a complete fetch operation (module-level)."""
+
+    database: BugDatabase
+    failed_fetches: list[FailedFetch]
+
+
 class PaloAltoCrawler:
     """Async crawler for Palo Alto Networks release notes."""
+
+    # Global backoff duration in seconds when connection refused is encountered
+    GLOBAL_BACKOFF_DURATION = 30.0
 
     def __init__(
         self,
@@ -429,6 +467,10 @@ class PaloAltoCrawler:
         self._browser: Optional[Browser] = None
         self._semaphore: Optional[asyncio.Semaphore] = None
 
+        # Global backoff state - shared across all concurrent fetches
+        self._global_backoff_until: float = 0.0
+        self._backoff_lock: Optional[asyncio.Lock] = None
+
         # Configure logging if debug is enabled
         if debug:
             configure_logging(debug=True)
@@ -438,6 +480,7 @@ class PaloAltoCrawler:
         self._playwright = await async_playwright().start()
         self._browser = await self._playwright.chromium.launch(headless=self.headless)
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
+        self._backoff_lock = asyncio.Lock()
         logger.debug("Browser started, max_concurrency=%d", self.max_concurrency)
         return self
 
@@ -454,6 +497,68 @@ class PaloAltoCrawler:
             print(message)
         # Also log at info level for debug mode
         logger.info(message)
+
+    def _is_connection_refused_error(self, error: Exception) -> bool:
+        """Check if an error is a connection refused error.
+
+        Args:
+            error: The exception to check.
+
+        Returns:
+            True if this is a connection refused error that should trigger global backoff.
+        """
+        error_str = str(error).lower()
+        return (
+            "net::err_connection_refused" in error_str
+            or "connection refused" in error_str
+            or "err_connection_reset" in error_str
+        )
+
+    async def _wait_for_global_backoff(self) -> None:
+        """Wait if global backoff is active.
+
+        All concurrent fetches will wait until the backoff period ends.
+        """
+        import time
+
+        async with self._backoff_lock:
+            now = time.monotonic()
+            if self._global_backoff_until > now:
+                wait_time = self._global_backoff_until - now
+                self._log(
+                    f"  [Backoff] Waiting {wait_time:.1f}s for network recovery..."
+                )
+                logger.info(
+                    "Global backoff active, waiting %.1f seconds", wait_time
+                )
+
+        # Wait outside the lock so other tasks can also check and wait
+        now = time.monotonic()
+        if self._global_backoff_until > now:
+            await asyncio.sleep(self._global_backoff_until - now)
+
+    async def _trigger_global_backoff(self) -> None:
+        """Trigger global backoff for all concurrent fetches.
+
+        Called when a connection refused error is encountered.
+        """
+        import time
+
+        async with self._backoff_lock:
+            now = time.monotonic()
+            new_backoff_until = now + self.GLOBAL_BACKOFF_DURATION
+
+            # Only extend if this is a new/later backoff
+            if new_backoff_until > self._global_backoff_until:
+                self._global_backoff_until = new_backoff_until
+                self._log(
+                    f"  [Backoff] Connection refused - all fetches paused for "
+                    f"{self.GLOBAL_BACKOFF_DURATION:.0f}s"
+                )
+                logger.warning(
+                    "Connection refused detected, triggering global backoff for %.0f seconds",
+                    self.GLOBAL_BACKOFF_DURATION,
+                )
 
     async def _new_page(self) -> Page:
         """Create a new browser page."""
@@ -490,6 +595,7 @@ class PaloAltoCrawler:
         Creates a new page, fetches the URL, and closes the page.
         Uses semaphore to limit concurrent requests.
         Retries on transient failures with exponential backoff.
+        Honors global backoff when connection refused errors are detected.
 
         Args:
             url: URL to fetch.
@@ -504,6 +610,9 @@ class PaloAltoCrawler:
         last_error = None
 
         for attempt in range(self.max_retries):
+            # Wait for global backoff if another thread triggered it
+            await self._wait_for_global_backoff()
+
             logger.debug("Acquiring semaphore for: %s (attempt %d)", url, attempt + 1)
             async with self._semaphore:
                 logger.debug("Semaphore acquired, creating new page for: %s", url)
@@ -514,6 +623,11 @@ class PaloAltoCrawler:
                     return result
                 except Exception as e:
                     last_error = e
+
+                    # Check if this is a connection refused error
+                    if self._is_connection_refused_error(e):
+                        await self._trigger_global_backoff()
+
                     logger.warning(
                         "Fetch failed for %s (attempt %d/%d): %s",
                         url, attempt + 1, self.max_retries, e
@@ -524,7 +638,7 @@ class PaloAltoCrawler:
                 finally:
                     await page.close()
 
-            # Exponential backoff before retry
+            # Exponential backoff before retry (in addition to global backoff)
             if attempt < self.max_retries - 1:
                 delay = self.retry_delay * (2 ** attempt)
                 logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
@@ -572,7 +686,7 @@ class PaloAltoCrawler:
         self,
         major_versions: Optional[list[str]] = None,
         skip_versions: Optional[set[str]] = None,
-    ) -> Product:
+    ) -> CrawlResult:
         """Crawl GlobalProtect release notes for one or more major versions.
 
         Args:
@@ -582,7 +696,7 @@ class PaloAltoCrawler:
                           Used for incremental fetching to avoid re-fetching existing versions.
 
         Returns:
-            Product with all versions and issues.
+            CrawlResult with Product and any failed fetches.
         """
         skip_versions = skip_versions or set()
         # Discover versions if not specified
@@ -592,6 +706,7 @@ class PaloAltoCrawler:
             self._log(f"Found versions: {', '.join(major_versions)}")
 
         all_product_versions = []
+        all_failed_fetches = []
 
         for major_version in major_versions:
             self._log(f"Crawling GlobalProtect {major_version.replace('-', '.')}...")
@@ -663,8 +778,11 @@ class PaloAltoCrawler:
 
                 # Version-specific pages (6.2+, 6.3+ style)
                 self._log(f"  Fetching {len(versions_to_fetch)} sub-versions")
-                batch_results = await self._crawl_versions_parallel(versions_to_fetch)
+                batch_results, failed = await self._crawl_versions_parallel(
+                    versions_to_fetch, product_name="globalprotect"
+                )
                 all_product_versions.extend(batch_results)
+                all_failed_fetches.extend(failed)
             elif all_generic_known_urls or all_generic_addressed_urls:
                 # Generic pages with multiple versions (6.1, 6.0 style)
                 self._log("  Parsing multi-version pages...")
@@ -687,16 +805,28 @@ class PaloAltoCrawler:
             else:
                 self._log(f"  No issues found for {major_version}")
 
+        # Retry failed fetches sequentially
+        if all_failed_fetches:
+            recovered_issues, still_failed = await self._retry_failed_fetches_sequentially(
+                all_failed_fetches
+            )
+            # Add recovered issues to the appropriate versions
+            # For now, we just report them - the issues are already categorized by version
+            all_failed_fetches = still_failed
+
         # Sort versions (newest first)
         all_product_versions.sort(
             key=lambda v: self._version_sort_key(v.version),
             reverse=True,
         )
 
-        return Product(
-            id="globalprotect",
-            name="GlobalProtect",
-            versions=all_product_versions,
+        return CrawlResult(
+            product=Product(
+                id="globalprotect",
+                name="GlobalProtect",
+                versions=all_product_versions,
+            ),
+            failed_fetches=all_failed_fetches,
         )
 
     def _version_sort_key(self, version: str) -> tuple:
@@ -821,17 +951,21 @@ class PaloAltoCrawler:
             return version
         return None
 
-    async def _crawl_version(self, version_info: VersionInfo) -> ProductVersion:
+    async def _crawl_version(
+        self, version_info: VersionInfo, product_name: str = ""
+    ) -> VersionCrawlResult:
         """Crawl a specific version's known and addressed issues.
 
         Args:
             version_info: Version information with URLs.
+            product_name: Name of the product being crawled (for error tracking).
 
         Returns:
-            ProductVersion with issues.
+            VersionCrawlResult with ProductVersion and any failed fetches.
         """
         known_issues = []
         addressed_issues = []
+        failed_fetches = []
 
         # Gather all URLs to fetch
         all_urls = []
@@ -852,6 +986,13 @@ class PaloAltoCrawler:
         # Process results
         for i, result in enumerate(results):
             if isinstance(result, Exception):
+                failed_fetches.append(FailedFetch(
+                    url=all_urls[i],
+                    error=str(result),
+                    product=product_name,
+                    version=version_info.version,
+                    issue_type=url_types[i],
+                ))
                 continue
             if url_types[i] == "known":
                 known_issues.extend(result)
@@ -862,33 +1003,60 @@ class PaloAltoCrawler:
         known_issues = self._deduplicate_issues(known_issues)
         addressed_issues = self._deduplicate_issues(addressed_issues)
 
-        return ProductVersion(
-            version=version_info.version,
-            known_issues=known_issues,
-            addressed_issues=addressed_issues,
+        return VersionCrawlResult(
+            product_version=ProductVersion(
+                version=version_info.version,
+                known_issues=known_issues,
+                addressed_issues=addressed_issues,
+            ),
+            failed_fetches=failed_fetches,
         )
 
     async def _crawl_versions_parallel(
-        self, version_infos: list[VersionInfo]
-    ) -> list[ProductVersion]:
+        self, version_infos: list[VersionInfo], product_name: str = ""
+    ) -> tuple[list[ProductVersion], list[FailedFetch]]:
         """Crawl multiple versions in parallel.
 
         Args:
             version_infos: List of version information objects.
+            product_name: Name of the product being crawled (for error tracking).
 
         Returns:
-            List of ProductVersion objects.
+            Tuple of (list of ProductVersion objects, list of FailedFetch objects).
         """
-        tasks = [self._crawl_version(vi) for vi in version_infos]
+        tasks = [self._crawl_version(vi, product_name) for vi in version_infos]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         product_versions = []
+        all_failed_fetches = []
+
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                self._log(f"    Error crawling {version_infos[i].version}: {result}")
+                # Entire version crawl failed - track all URLs as failed
+                vi = version_infos[i]
+                self._log(f"    Error crawling {vi.version}: {result}")
+                for url in vi.known_issues_urls:
+                    all_failed_fetches.append(FailedFetch(
+                        url=url,
+                        error=str(result),
+                        product=product_name,
+                        version=vi.version,
+                        issue_type="known",
+                    ))
+                for url in vi.addressed_issues_urls:
+                    all_failed_fetches.append(FailedFetch(
+                        url=url,
+                        error=str(result),
+                        product=product_name,
+                        version=vi.version,
+                        issue_type="addressed",
+                    ))
                 continue
 
-            pv = result
+            # Collect failed fetches from successful version crawl
+            all_failed_fetches.extend(result.failed_fetches)
+
+            pv = result.product_version
             if pv.known_issues or pv.addressed_issues:
                 product_versions.append(pv)
                 self._log(
@@ -896,7 +1064,67 @@ class PaloAltoCrawler:
                     f"{len(pv.addressed_issues)} addressed"
                 )
 
-        return product_versions
+        return product_versions, all_failed_fetches
+
+    async def _retry_failed_fetches_sequentially(
+        self,
+        failed_fetches: list[FailedFetch],
+        max_retries: int = 3,
+    ) -> tuple[list[Issue], list[FailedFetch]]:
+        """Retry failed fetches sequentially with backoff.
+
+        Args:
+            failed_fetches: List of failed fetch attempts to retry.
+            max_retries: Maximum number of retry attempts per URL.
+
+        Returns:
+            Tuple of (successfully retrieved issues, still-failed fetches).
+        """
+        if not failed_fetches:
+            return [], []
+
+        self._log(f"  Retrying {len(failed_fetches)} failed fetches sequentially...")
+
+        recovered_issues = []
+        still_failed = []
+
+        for failed in failed_fetches:
+            success = False
+            last_error = failed.error
+
+            for attempt in range(max_retries):
+                try:
+                    self._log(
+                        f"    Retry {attempt + 1}/{max_retries} for {failed.url}"
+                    )
+                    issues = await self._parse_issues_page(failed.url)
+                    recovered_issues.extend(issues)
+                    self._log(
+                        f"    Recovered {len(issues)} issues from {failed.url}"
+                    )
+                    success = True
+                    break
+                except Exception as e:
+                    last_error = str(e)
+                    if attempt < max_retries - 1:
+                        delay = self.retry_delay * (2 ** attempt)
+                        await asyncio.sleep(delay)
+
+            if not success:
+                still_failed.append(FailedFetch(
+                    url=failed.url,
+                    error=last_error,
+                    product=failed.product,
+                    version=failed.version,
+                    issue_type=failed.issue_type,
+                ))
+
+        if still_failed:
+            self._log(f"  {len(still_failed)} fetches still failed after retries")
+        else:
+            self._log(f"  All failed fetches recovered successfully")
+
+        return recovered_issues, still_failed
 
     async def _parse_multi_version_pages(
         self,
@@ -1290,7 +1518,7 @@ class PaloAltoCrawler:
         self,
         major_versions: Optional[list[str]] = None,
         skip_versions: Optional[set[str]] = None,
-    ) -> Product:
+    ) -> CrawlResult:
         """Crawl Prisma Access Agent release notes for one or more major versions.
 
         Args:
@@ -1300,7 +1528,7 @@ class PaloAltoCrawler:
                           Used for incremental fetching to avoid re-fetching existing versions.
 
         Returns:
-            Product with all versions and issues.
+            CrawlResult with Product and any failed fetches.
         """
         skip_versions = skip_versions or set()
         # Discover versions if not specified
@@ -1310,6 +1538,7 @@ class PaloAltoCrawler:
             self._log(f"Found versions: {', '.join(major_versions)}")
 
         all_product_versions = []
+        all_failed_fetches = []
 
         for major_version in major_versions:
             self._log(
@@ -1383,8 +1612,11 @@ class PaloAltoCrawler:
 
                 # Crawl versions in parallel
                 self._log(f"  Fetching {len(versions_to_fetch)} sub-versions")
-                batch_results = await self._crawl_versions_parallel(versions_to_fetch)
+                batch_results, failed = await self._crawl_versions_parallel(
+                    versions_to_fetch, product_name="prisma-access-agent"
+                )
                 all_product_versions.extend(batch_results)
+                all_failed_fetches.extend(failed)
             else:
                 # Try direct URL for the major version (e.g., 26-1)
                 version_str = major_version.replace("-", ".")
@@ -1405,7 +1637,11 @@ class PaloAltoCrawler:
                             f"/prisma-access-agent-{major_version}-addressed-issues"
                         ],
                     )
-                    pv = await self._crawl_version(version_info)
+                    result = await self._crawl_version(
+                        version_info, product_name="prisma-access-agent"
+                    )
+                    all_failed_fetches.extend(result.failed_fetches)
+                    pv = result.product_version
                     if pv.known_issues or pv.addressed_issues:
                         all_product_versions.append(pv)
                         self._log(
@@ -1413,16 +1649,26 @@ class PaloAltoCrawler:
                             f"{len(pv.addressed_issues)} addressed"
                         )
 
+        # Retry failed fetches sequentially
+        if all_failed_fetches:
+            recovered_issues, still_failed = await self._retry_failed_fetches_sequentially(
+                all_failed_fetches
+            )
+            all_failed_fetches = still_failed
+
         # Sort versions (newest first)
         all_product_versions.sort(
             key=lambda v: self._version_sort_key(v.version),
             reverse=True,
         )
 
-        return Product(
-            id="prisma-access-agent",
-            name="Prisma Access Agent",
-            versions=all_product_versions,
+        return CrawlResult(
+            product=Product(
+                id="prisma-access-agent",
+                name="Prisma Access Agent",
+                versions=all_product_versions,
+            ),
+            failed_fetches=all_failed_fetches,
         )
 
     def _extract_prisma_access_agent_version(
@@ -1527,7 +1773,7 @@ class PaloAltoCrawler:
         self,
         major_versions: Optional[list[str]] = None,
         skip_versions: Optional[set[str]] = None,
-    ) -> Product:
+    ) -> CrawlResult:
         """Crawl PAN-OS release notes for one or more major versions.
 
         Args:
@@ -1537,7 +1783,7 @@ class PaloAltoCrawler:
                           Used for incremental fetching to avoid re-fetching existing versions.
 
         Returns:
-            Product with all versions and issues.
+            CrawlResult with Product and any failed fetches.
         """
         skip_versions = skip_versions or set()
         # Discover versions if not specified
@@ -1547,6 +1793,7 @@ class PaloAltoCrawler:
             self._log(f"Found versions: {', '.join(major_versions)}")
 
         all_product_versions = []
+        all_failed_fetches = []
 
         for major_version in major_versions:
             self._log(f"Crawling PAN-OS {major_version.replace('-', '.')}...")
@@ -1626,6 +1873,73 @@ class PaloAltoCrawler:
                                 addressed_issues_urls=[addressed_url],
                             )
 
+            # Discover hotfix sub-pages by fetching each base version's
+            # "known-and-addressed-issues" parent page
+            base_versions = [
+                v for v in version_infos if "-h" not in v
+            ]
+            if base_versions:
+                parent_tasks = []
+                for version in base_versions:
+                    version_dashed = version.replace(".", "-")
+                    if url_pattern == "ngfw":
+                        parent_url = (
+                            f"/ngfw/release-notes/{major_version}"
+                            f"/pan-os-{version_dashed}-known-and-addressed-issues"
+                        )
+                    else:
+                        parent_url = (
+                            f"/pan-os/{major_version}/pan-os-release-notes"
+                            f"/pan-os-{version_dashed}-known-and-addressed-issues"
+                        )
+                    parent_tasks.append(self._fetch_page_with_semaphore(parent_url))
+
+                parent_results = await asyncio.gather(
+                    *parent_tasks, return_exceptions=True
+                )
+
+                for soup in parent_results:
+                    if isinstance(soup, Exception):
+                        continue
+
+                    for link in soup.find_all("a", href=True):
+                        href = link["href"]
+                        hf_version = self._extract_panos_version_from_url(
+                            href, major_version
+                        )
+                        if hf_version and "-h" in hf_version and hf_version not in version_infos:
+                            hf_dashed = hf_version.replace(".", "-")
+                            hf_base_dashed = hf_dashed.rsplit("-h", 1)[0]
+
+                            if url_pattern == "ngfw":
+                                known_url = (
+                                    f"/ngfw/release-notes/{major_version}"
+                                    f"/pan-os-{hf_base_dashed}-known-and-addressed-issues"
+                                    f"/pan-os-{hf_dashed}-known-issues"
+                                )
+                                addressed_url = (
+                                    f"/ngfw/release-notes/{major_version}"
+                                    f"/pan-os-{hf_base_dashed}-known-and-addressed-issues"
+                                    f"/pan-os-{hf_dashed}-addressed-issues"
+                                )
+                            else:
+                                known_url = (
+                                    f"/pan-os/{major_version}/pan-os-release-notes"
+                                    f"/pan-os-{hf_base_dashed}-known-and-addressed-issues"
+                                    f"/pan-os-{hf_dashed}-known-issues"
+                                )
+                                addressed_url = (
+                                    f"/pan-os/{major_version}/pan-os-release-notes"
+                                    f"/pan-os-{hf_base_dashed}-known-and-addressed-issues"
+                                    f"/pan-os-{hf_dashed}-addressed-issues"
+                                )
+
+                            version_infos[hf_version] = VersionInfo(
+                                version=hf_version,
+                                known_issues_urls=[known_url],
+                                addressed_issues_urls=[addressed_url],
+                            )
+
             if version_infos:
                 # Filter out already-fetched versions
                 versions_to_fetch = [
@@ -1638,10 +1952,20 @@ class PaloAltoCrawler:
 
                 # Crawl versions in parallel
                 self._log(f"  Fetching {len(versions_to_fetch)} sub-versions")
-                batch_results = await self._crawl_versions_parallel(versions_to_fetch)
+                batch_results, failed = await self._crawl_versions_parallel(
+                    versions_to_fetch, product_name="panos"
+                )
                 all_product_versions.extend(batch_results)
+                all_failed_fetches.extend(failed)
             else:
                 self._log(f"  No sub-versions found for {major_version}")
+
+        # Retry failed fetches sequentially
+        if all_failed_fetches:
+            recovered_issues, still_failed = await self._retry_failed_fetches_sequentially(
+                all_failed_fetches
+            )
+            all_failed_fetches = still_failed
 
         # Sort versions (newest first)
         all_product_versions.sort(
@@ -1649,10 +1973,13 @@ class PaloAltoCrawler:
             reverse=True,
         )
 
-        return Product(
-            id="panos",
-            name="PAN-OS",
-            versions=all_product_versions,
+        return CrawlResult(
+            product=Product(
+                id="panos",
+                name="PAN-OS",
+                versions=all_product_versions,
+            ),
+            failed_fetches=all_failed_fetches,
         )
 
     def _extract_panos_version_from_url(
@@ -1667,10 +1994,15 @@ class PaloAltoCrawler:
         Returns:
             Version string (e.g., "12.1.5" or "12.1.5-h3") or None.
         """
+        # Extract last path segment to avoid matching parent directory names
+        # e.g., for ".../pan-os-11-2-4-known-and-addressed-issues/pan-os-11-2-4-h1-known-issues"
+        # we want to match the filename "pan-os-11-2-4-h1-known-issues", not the parent
+        last_segment = url.rstrip("/").split("/")[-1]
+
         # Match patterns like pan-os-12-1-5-known-and-addressed-issues
         # or pan-os-12-1-5-h3-addressed-issues (hotfix releases)
         match = re.search(
-            r"pan-os-(\d+)-(\d+)-(\d+)(?:-(h\d+))?-(?:known|addressed)", url
+            r"pan-os-(\d+)-(\d+)-(\d+)(?:-(h\d+))?-(?:known|addressed)", last_segment
         )
         if match:
             major = match.group(1)
@@ -1728,7 +2060,7 @@ class PaloAltoCrawler:
         self,
         major_versions: Optional[list[str]] = None,
         skip_versions: Optional[set[str]] = None,
-    ) -> Product:
+    ) -> CrawlResult:
         """Crawl Prisma Access release notes for one or more major versions.
 
         Args:
@@ -1738,9 +2070,10 @@ class PaloAltoCrawler:
                           Used for incremental fetching to avoid re-fetching existing versions.
 
         Returns:
-            Product with all versions and issues.
+            CrawlResult with Product and any failed fetches.
         """
         skip_versions = skip_versions or set()
+        failed_fetches: list[FailedFetch] = []
 
         # Discover versions if not specified
         if major_versions is None:
@@ -1784,12 +2117,28 @@ class PaloAltoCrawler:
                 for version, issues in results[0].items():
                     if version not in skip_versions:
                         known_by_version[version] = issues
+            else:
+                failed_fetches.append(FailedFetch(
+                    url=known_issues_url,
+                    error=str(results[0]),
+                    product="prisma-access",
+                    version=version_str,
+                    issue_type="known",
+                ))
 
             # Process addressed issues
             if not isinstance(results[1], Exception):
                 for version, issues in results[1].items():
                     if version not in skip_versions:
                         addressed_by_version[version] = issues
+            else:
+                failed_fetches.append(FailedFetch(
+                    url=addressed_issues_url,
+                    error=str(results[1]),
+                    product="prisma-access",
+                    version=version_str,
+                    issue_type="addressed",
+                ))
 
             # Combine into ProductVersion objects
             all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
@@ -1810,16 +2159,26 @@ class PaloAltoCrawler:
                         f"    {ver}: {len(known)} known, {len(addressed)} addressed"
                     )
 
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
         # Sort versions (newest first)
         all_product_versions.sort(
             key=lambda v: self._version_sort_key(v.version),
             reverse=True,
         )
 
-        return Product(
-            id="prisma-access",
-            name="Prisma Access",
-            versions=all_product_versions,
+        return CrawlResult(
+            product=Product(
+                id="prisma-access",
+                name="Prisma Access",
+                versions=all_product_versions,
+            ),
+            failed_fetches=failed_fetches,
         )
 
     async def _parse_prisma_access_issues_page(
@@ -2068,7 +2427,7 @@ class PaloAltoCrawler:
         self,
         major_versions: Optional[list[str]] = None,
         skip_versions: Optional[set[str]] = None,
-    ) -> Product:
+    ) -> CrawlResult:
         """Crawl Prisma SD-WAN release notes for one or more major versions.
 
         Args:
@@ -2078,9 +2437,10 @@ class PaloAltoCrawler:
                           Used for incremental fetching to avoid re-fetching existing versions.
 
         Returns:
-            Product with all versions and issues.
+            CrawlResult with Product and any failed fetches.
         """
         skip_versions = skip_versions or set()
+        failed_fetches: list[FailedFetch] = []
 
         # Discover versions if not specified
         if major_versions is None:
@@ -2133,12 +2493,28 @@ class PaloAltoCrawler:
                 for version, issues in results[0].items():
                     if version not in skip_versions:
                         known_by_version[version] = issues
+            else:
+                failed_fetches.append(FailedFetch(
+                    url=known_urls[0],
+                    error=str(results[0]),
+                    product="prisma-sdwan",
+                    version=version_str,
+                    issue_type="known",
+                ))
 
             # Process addressed issues
             if not isinstance(results[1], Exception):
                 for version, issues in results[1].items():
                     if version not in skip_versions:
                         addressed_by_version[version] = issues
+            else:
+                failed_fetches.append(FailedFetch(
+                    url=addressed_urls[0],
+                    error=str(results[1]),
+                    product="prisma-sdwan",
+                    version=version_str,
+                    issue_type="addressed",
+                ))
 
             # Combine into ProductVersion objects
             all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
@@ -2159,16 +2535,26 @@ class PaloAltoCrawler:
                         f"    {ver}: {len(known)} known, {len(addressed)} addressed"
                     )
 
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
         # Sort versions (newest first)
         all_product_versions.sort(
             key=lambda v: self._version_sort_key(v.version),
             reverse=True,
         )
 
-        return Product(
-            id="prisma-sdwan",
-            name="Prisma SD-WAN",
-            versions=all_product_versions,
+        return CrawlResult(
+            product=Product(
+                id="prisma-sdwan",
+                name="Prisma SD-WAN",
+                versions=all_product_versions,
+            ),
+            failed_fetches=failed_fetches,
         )
 
     async def _parse_prisma_sdwan_issues_page_with_fallback(
@@ -2253,14 +2639,14 @@ class PaloAltoCrawler:
 
         return results
 
-    async def crawl_cloud_ngfw_azure(self) -> Product:
+    async def crawl_cloud_ngfw_azure(self) -> CrawlResult:
         """Crawl Cloud NGFW for Azure release notes.
 
         Cloud NGFW for Azure is a SaaS product with no version dropdown.
         All known and addressed issues are on single pages.
 
         Returns:
-            Product with a single "SaaS" version containing all issues.
+            CrawlResult with Product and any failed fetches.
         """
         self._log("Crawling Cloud NGFW for Azure...")
 
@@ -2280,6 +2666,7 @@ class PaloAltoCrawler:
 
         known_issues: list[Issue] = []
         addressed_issues: list[Issue] = []
+        failed_fetches: list[FailedFetch] = []
 
         # Parse known issues
         if not isinstance(results[0], Exception):
@@ -2293,6 +2680,13 @@ class PaloAltoCrawler:
             self._log(f"  Found {len(known_issues)} known issues")
         else:
             self._log(f"  Error fetching known issues: {results[0]}")
+            failed_fetches.append(FailedFetch(
+                url=known_issues_url,
+                error=str(results[0]),
+                product="cloud-ngfw-azure",
+                version="SaaS",
+                issue_type="known",
+            ))
 
         # Parse addressed issues
         if not isinstance(results[1], Exception):
@@ -2306,6 +2700,20 @@ class PaloAltoCrawler:
             self._log(f"  Found {len(addressed_issues)} addressed issues")
         else:
             self._log(f"  Error fetching addressed issues: {results[1]}")
+            failed_fetches.append(FailedFetch(
+                url=addressed_issues_url,
+                error=str(results[1]),
+                product="cloud-ngfw-azure",
+                version="SaaS",
+                issue_type="addressed",
+            ))
+
+        # Retry failed fetches
+        if failed_fetches:
+            recovered_issues, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
 
         # Deduplicate issues
         known_issues = self._deduplicate_issues(known_issues)
@@ -2318,20 +2726,23 @@ class PaloAltoCrawler:
             addressed_issues=addressed_issues,
         )
 
-        return Product(
-            id="cloud-ngfw-azure",
-            name="Cloud NGFW for Azure",
-            versions=[version] if known_issues or addressed_issues else [],
+        return CrawlResult(
+            product=Product(
+                id="cloud-ngfw-azure",
+                name="Cloud NGFW for Azure",
+                versions=[version] if known_issues or addressed_issues else [],
+            ),
+            failed_fetches=failed_fetches,
         )
 
-    async def crawl_cloud_ngfw_aws(self) -> Product:
+    async def crawl_cloud_ngfw_aws(self) -> CrawlResult:
         """Crawl Cloud NGFW for AWS release notes.
 
         Cloud NGFW for AWS is a SaaS product with no version dropdown.
         It only has a known issues page (no addressed issues).
 
         Returns:
-            Product with a single "SaaS" version containing known issues.
+            CrawlResult with Product and any failed fetches.
         """
         self._log("Crawling Cloud NGFW for AWS...")
 
@@ -2340,6 +2751,7 @@ class PaloAltoCrawler:
         )
 
         known_issues: list[Issue] = []
+        failed_fetches: list[FailedFetch] = []
 
         try:
             soup = await self._fetch_page_with_semaphore(known_issues_url)
@@ -2352,6 +2764,20 @@ class PaloAltoCrawler:
             self._log(f"  Found {len(known_issues)} known issues")
         except Exception as e:
             self._log(f"  Error fetching known issues: {e}")
+            failed_fetches.append(FailedFetch(
+                url=known_issues_url,
+                error=str(e),
+                product="cloud-ngfw-aws",
+                version="SaaS",
+                issue_type="known",
+            ))
+
+        # Retry failed fetches
+        if failed_fetches:
+            recovered_issues, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
 
         # Deduplicate issues
         known_issues = self._deduplicate_issues(known_issues)
@@ -2363,13 +2789,16 @@ class PaloAltoCrawler:
             addressed_issues=[],
         )
 
-        return Product(
-            id="cloud-ngfw-aws",
-            name="Cloud NGFW for AWS",
-            versions=[version] if known_issues else [],
+        return CrawlResult(
+            product=Product(
+                id="cloud-ngfw-aws",
+                name="Cloud NGFW for AWS",
+                versions=[version] if known_issues else [],
+            ),
+            failed_fetches=failed_fetches,
         )
 
-    async def crawl_adem(self) -> Product:
+    async def crawl_adem(self) -> CrawlResult:
         """Crawl Autonomous DEM (ADEM) release notes.
 
         ADEM issues are organized by agent version with release dates.
@@ -2377,9 +2806,10 @@ class PaloAltoCrawler:
         followed by release dates and issue tables.
 
         Returns:
-            Product with versions organized by agent version.
+            CrawlResult with Product and any failed fetches.
         """
         self._log("Crawling Autonomous DEM...")
+        failed_fetches: list[FailedFetch] = []
 
         known_issues_url = (
             "/autonomous-dem/release-notes/ai-powered-adem-release-notes"
@@ -2405,6 +2835,12 @@ class PaloAltoCrawler:
             self._log(f"  Found {total_known} known issues across {len(known_by_version)} versions")
         else:
             self._log(f"  Error fetching known issues: {results[0]}")
+            failed_fetches.append(FailedFetch(
+                url=known_issues_url,
+                error=str(results[0]),
+                product="adem",
+                issue_type="known",
+            ))
 
         # Parse addressed issues (with release dates)
         addressed_by_version: dict[str, list[Issue]] = {}
@@ -2414,6 +2850,12 @@ class PaloAltoCrawler:
             self._log(f"  Found {total_addressed} addressed issues across {len(addressed_by_version)} versions")
         else:
             self._log(f"  Error fetching addressed issues: {results[1]}")
+            failed_fetches.append(FailedFetch(
+                url=addressed_issues_url,
+                error=str(results[1]),
+                product="adem",
+                issue_type="addressed",
+            ))
 
         # Combine into ProductVersion objects
         all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
@@ -2432,16 +2874,26 @@ class PaloAltoCrawler:
                     )
                 )
 
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
         # Sort versions (newest first)
         all_product_versions.sort(
             key=lambda v: self._version_sort_key(v.version),
             reverse=True,
         )
 
-        return Product(
-            id="adem",
-            name="Autonomous DEM",
-            versions=all_product_versions,
+        return CrawlResult(
+            product=Product(
+                id="adem",
+                name="Autonomous DEM",
+                versions=all_product_versions,
+            ),
+            failed_fetches=failed_fetches,
         )
 
     def _parse_adem_issues_page(
@@ -2570,7 +3022,7 @@ class PaloAltoCrawler:
 
         return None
 
-    async def crawl_scm(self) -> Product:
+    async def crawl_scm(self) -> CrawlResult:
         """Crawl Strata Cloud Manager (SCM) release notes.
 
         SCM is a SaaS service with versioned releases like 2025.r5.0.
@@ -2578,12 +3030,13 @@ class PaloAltoCrawler:
         Addressed issues include version numbers or dates.
 
         Returns:
-            Product with versions and issues.
+            CrawlResult with Product and any failed fetches.
         """
         self._log("Crawling Strata Cloud Manager...")
 
         known_issues_url = "/strata-cloud-manager/release-notes/known-issues"
         addressed_issues_url = "/strata-cloud-manager/release-notes/addressed-issues"
+        failed_fetches: list[FailedFetch] = []
 
         # Fetch both pages in parallel
         fetch_tasks = [
@@ -2600,6 +3053,12 @@ class PaloAltoCrawler:
             self._log(f"  Found {total_known} known issues")
         else:
             self._log(f"  Error fetching known issues: {results[0]}")
+            failed_fetches.append(FailedFetch(
+                url=known_issues_url,
+                error=str(results[0]),
+                product="scm",
+                issue_type="known",
+            ))
 
         # Parse addressed issues (organized by version/date and component)
         addressed_by_version: dict[str, list[Issue]] = {}
@@ -2609,6 +3068,19 @@ class PaloAltoCrawler:
             self._log(f"  Found {total_addressed} addressed issues")
         else:
             self._log(f"  Error fetching addressed issues: {results[1]}")
+            failed_fetches.append(FailedFetch(
+                url=addressed_issues_url,
+                error=str(results[1]),
+                product="scm",
+                issue_type="addressed",
+            ))
+
+        # Retry failed fetches
+        if failed_fetches:
+            recovered_issues, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
 
         # Combine into ProductVersion objects
         all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
@@ -2633,10 +3105,13 @@ class PaloAltoCrawler:
             reverse=True,
         )
 
-        return Product(
-            id="scm",
-            name="Strata Cloud Manager",
-            versions=all_product_versions,
+        return CrawlResult(
+            product=Product(
+                id="scm",
+                name="Strata Cloud Manager",
+                versions=all_product_versions,
+            ),
+            failed_fetches=failed_fetches,
         )
 
     def _scm_version_sort_key(self, version: str) -> tuple:
@@ -2948,6 +3423,362 @@ class PaloAltoCrawler:
 
         return parsed_any
 
+    async def discover_sdwan_plugin_versions(self) -> list[str]:
+        """Discover available Panorama Plugin for SD-WAN major versions.
+
+        The version dropdown is JavaScript-rendered, so we probe for known
+        version patterns by checking if the URLs exist.
+
+        Returns:
+            List of major version strings (e.g., ["3-4", "3-3", "3-2"]).
+        """
+        logger.debug("Discovering Panorama Plugin for SD-WAN versions by probing URLs")
+
+        # Known version patterns to check (newest first)
+        candidate_versions = [
+            "3-4", "3-3", "3-2", "3-1", "3-0",
+            "2-2", "2-1", "2-0",
+            "1-0",
+        ]
+
+        valid_versions = []
+
+        async def check_version(version: str) -> Optional[str]:
+            """Check if a version URL exists."""
+            # Convert 3-4 to 340 for URL (sd-wan-plugin-340)
+            version_num = version.replace("-", "") + "0"
+            url = (
+                f"/sd-wan/release-notes/panorama-plugin-for-sd-wan"
+                f"/sd-wan-plugin-{version_num}"
+            )
+            try:
+                soup = await self._fetch_page_with_semaphore(url)
+                # Check if page has actual content (not a 404 or error page)
+                title = soup.find("title")
+                title_text = title.get_text().lower() if title else ""
+                if "404" in title_text or "not found" in title_text or "error" in title_text:
+                    return None
+                # Check for a valid h1 header
+                h1 = soup.find("h1")
+                if h1 and ("plugin" in h1.get_text().lower() or "sd-wan" in h1.get_text().lower()):
+                    logger.debug("Found valid SD-WAN Plugin version: %s", version)
+                    return version
+                return None
+            except Exception:
+                return None
+
+        # Check versions concurrently
+        tasks = [check_version(v) for v in candidate_versions]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for result in results:
+            if isinstance(result, str):
+                valid_versions.append(result)
+
+        # Sort versions in descending order (newest first)
+        sorted_versions = sorted(
+            valid_versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
+        )
+        logger.debug("Discovered %d SD-WAN Plugin versions: %s",
+                     len(sorted_versions), sorted_versions)
+        return sorted_versions
+
+    async def crawl_sdwan_plugin(
+        self,
+        major_versions: Optional[list[str]] = None,
+        skip_versions: Optional[set[str]] = None,
+    ) -> CrawlResult:
+        """Crawl Panorama Plugin for SD-WAN release notes for one or more major versions.
+
+        This product has a unique structure:
+        - Only known issues pages exist (no separate addressed issues pages)
+        - Fix information is embedded in known issues text
+        - Issues are in div.topic containers, not tables
+
+        Args:
+            major_versions: List of major versions to crawl (e.g., ["3-4", "3-3"]).
+                           If None, discovers and crawls all available versions.
+            skip_versions: Set of version strings to skip (e.g., {"3.3", "3.2"}).
+                          Used for incremental fetching to avoid re-fetching existing versions.
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        skip_versions = skip_versions or set()
+        failed_fetches: list[FailedFetch] = []
+
+        # Discover versions if not specified
+        if major_versions is None:
+            self._log("Discovering available Panorama Plugin for SD-WAN versions...")
+            major_versions = await self.discover_sdwan_plugin_versions()
+            self._log(f"Found versions: {', '.join(major_versions)}")
+
+        all_product_versions: list[ProductVersion] = []
+
+        for major_version in major_versions:
+            version_str = major_version.replace("-", ".")
+            self._log(f"Crawling Panorama Plugin for SD-WAN {version_str}...")
+
+            # Build URL for known issues page
+            # Convert 3-3 to 330 for URL
+            version_num = major_version.replace("-", "") + "0"
+            known_issues_url = (
+                f"/sd-wan/release-notes/panorama-plugin-for-sd-wan"
+                f"/sd-wan-plugin-{version_num}"
+                f"/known-issues-in-sd-wan-plugin-{version_num}"
+            )
+
+            try:
+                known_issues, addressed_by_version = await self._parse_sdwan_plugin_issues_page(
+                    known_issues_url, major_version
+                )
+
+                # Create ProductVersion for known issues (keyed by major version)
+                # Filter out issues for skipped versions
+                if version_str not in skip_versions:
+                    known_filtered = self._deduplicate_issues(known_issues)
+                    if known_filtered:
+                        all_product_versions.append(
+                            ProductVersion(
+                                version=version_str,
+                                known_issues=known_filtered,
+                                addressed_issues=[],
+                            )
+                        )
+                        self._log(f"    {version_str}: {len(known_filtered)} known issues")
+
+                # Create ProductVersions for addressed issues (keyed by fix version)
+                for fix_version, issues in addressed_by_version.items():
+                    if fix_version not in skip_versions:
+                        addressed_filtered = self._deduplicate_issues(issues)
+                        if addressed_filtered:
+                            # Check if we already have a ProductVersion for this fix version
+                            existing_pv = next(
+                                (pv for pv in all_product_versions if pv.version == fix_version),
+                                None
+                            )
+                            if existing_pv:
+                                # Merge addressed issues
+                                existing_pv.addressed_issues.extend(addressed_filtered)
+                            else:
+                                all_product_versions.append(
+                                    ProductVersion(
+                                        version=fix_version,
+                                        known_issues=[],
+                                        addressed_issues=addressed_filtered,
+                                    )
+                                )
+                            self._log(f"    {fix_version}: {len(addressed_filtered)} addressed issues")
+
+            except Exception as e:
+                failed_fetches.append(FailedFetch(
+                    url=known_issues_url,
+                    error=str(e),
+                    product="sdwan-plugin",
+                    version=version_str,
+                    issue_type="known",
+                ))
+                self._log(f"  Error fetching {known_issues_url}: {e}")
+
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
+        # Sort versions (newest first)
+        all_product_versions.sort(
+            key=lambda v: self._version_sort_key(v.version),
+            reverse=True,
+        )
+
+        return CrawlResult(
+            product=Product(
+                id="sdwan-plugin",
+                name="Panorama Plugin for SD-WAN",
+                versions=all_product_versions,
+            ),
+            failed_fetches=failed_fetches,
+        )
+
+    async def _parse_sdwan_plugin_issues_page(
+        self, url: str, major_version: str
+    ) -> tuple[list[Issue], dict[str, list[Issue]]]:
+        """Parse known issues page for Panorama Plugin for SD-WAN.
+
+        This product has a unique page structure:
+        - Issues are in div.topic containers, not tables
+        - Bug ID is in h2.title
+        - Description is in div.shortdesc and div.p elements
+        - Affected components appear in (<tt>...</tt>) at start of description
+        - Fix info is embedded: "This issue is addressed in SD-WAN plugin 3.2.4-h1, 3.3.4 and 3.4.1"
+        - Workaround follows a <b>Workaround</b> element
+
+        Args:
+            url: URL of the known issues page.
+            major_version: The major version being parsed (e.g., "3-3").
+
+        Returns:
+            Tuple of (known_issues, addressed_issues_by_version).
+            known_issues: List of Issue objects for this major version.
+            addressed_issues_by_version: Dict mapping fix version to Issue objects.
+        """
+        known_issues: list[Issue] = []
+        addressed_by_version: dict[str, list[Issue]] = {}
+
+        try:
+            soup = await self._fetch_page_with_semaphore(url)
+
+            # Find all div.topic containers
+            for topic in soup.find_all("div", class_="topic"):
+                # Extract bug ID from h2.title
+                title_elem = topic.find(["h2", "h3"], class_="title")
+                if not title_elem:
+                    continue
+
+                bug_id = title_elem.get_text(strip=True)
+
+                # Validate bug ID format (PAN-XXXXX or PLUG-XXXXX)
+                if not re.match(r"^(PAN|PLUG)-\d+$", bug_id):
+                    continue
+
+                # Build description from shortdesc and p elements
+                description_parts = []
+                affected_components = None
+
+                # Get shortdesc if present
+                shortdesc = topic.find("div", class_="shortdesc")
+                if shortdesc:
+                    description_parts.append(normalize_text(shortdesc))
+
+                # Get all div.p elements (excluding workaround)
+                workaround_text = None
+                fix_info_text = None
+                in_workaround = False
+                first_p_processed = False
+
+                for p_elem in topic.find_all("div", class_="p"):
+                    p_text = normalize_text(p_elem)
+
+                    # Check for workaround marker
+                    b_elem = p_elem.find("b")
+                    if b_elem and "workaround" in b_elem.get_text().lower():
+                        in_workaround = True
+                        # Extract workaround text after the bold element
+                        workaround_parts = []
+                        for sibling in b_elem.next_siblings:
+                            if hasattr(sibling, 'get_text'):
+                                workaround_parts.append(sibling.get_text(strip=True))
+                            elif isinstance(sibling, str):
+                                workaround_parts.append(sibling.strip())
+                        if workaround_parts:
+                            workaround_text = " ".join(workaround_parts).strip()
+                            workaround_text = re.sub(r"\s+", " ", workaround_text).strip()
+                            # Remove leading colon or dash
+                            workaround_text = re.sub(r"^[:\-]\s*", "", workaround_text)
+                        continue
+
+                    # Check for fix info (in <tt> element)
+                    tt_elem = p_elem.find("tt")
+                    if tt_elem:
+                        tt_text = normalize_text(tt_elem)
+                        if "this issue is addressed" in tt_text.lower():
+                            fix_info_text = tt_text
+                            continue
+
+                    # Check if this is the first p element and starts with affected component
+                    # Pattern: (<tt>Component Name</tt>) followed by description
+                    if not in_workaround and not first_p_processed:
+                        first_p_processed = True
+                        # Check for parenthesized text at start (component in <tt> tags)
+                        component_match = re.match(r"^\(\s*([^)]+?)\s*\)\s*", p_text)
+                        if component_match:
+                            affected_components = [component_match.group(1).strip()]
+                            # Add remaining text after the component
+                            remaining = p_text[component_match.end():].strip()
+                            if remaining:
+                                description_parts.append(remaining)
+                            continue
+
+                    if not in_workaround:
+                        description_parts.append(p_text)
+
+                # Combine description
+                full_description = " ".join(description_parts)
+                desc_cleaned = re.sub(r"\s+", " ", full_description).strip()
+
+                # Strip "Description of <issue-id>" prefix from description
+                desc_prefix_match = re.match(
+                    r"^Description\s+of\s+" + re.escape(bug_id) + r"[\s:.\-]*",
+                    desc_cleaned,
+                    re.IGNORECASE
+                )
+                if desc_prefix_match:
+                    desc_cleaned = desc_cleaned[desc_prefix_match.end():].strip()
+
+                # Extract fix versions from fix_info_text
+                plugin_fix_versions = []  # SD-WAN Plugin versions (major < 8)
+                panos_fix_versions = []   # PAN-OS versions (major >= 8)
+                if fix_info_text:
+                    # Pattern to extract versions: 3.2.4-h1, 3.3.4, 3.4.1, 10.2.0, etc.
+                    version_matches = re.findall(
+                        r"(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9]+)?)",
+                        fix_info_text
+                    )
+                    # Deduplicate while preserving order
+                    seen = set()
+                    for v in version_matches:
+                        if v not in seen:
+                            seen.add(v)
+                            # Check if this is a PAN-OS version (major >= 8)
+                            major_match = re.match(r"(\d+)\.", v)
+                            if major_match and int(major_match.group(1)) >= 8:
+                                panos_fix_versions.append(v)
+                            else:
+                                plugin_fix_versions.append(v)
+
+                # Use original fix_info_text instead of rebuilding
+                fix_info = fix_info_text
+
+                # Create the issue
+                issue = Issue(
+                    bug_id=bug_id,
+                    description=desc_cleaned,
+                    workaround=workaround_text,
+                    fix_info=fix_info,
+                    affected_components=affected_components,
+                )
+
+                # Add to known issues
+                known_issues.append(issue)
+
+                # Only create addressed issue entries for plugin versions (not PAN-OS)
+                for fix_version in plugin_fix_versions:
+                    if fix_version not in addressed_by_version:
+                        addressed_by_version[fix_version] = []
+                    # Create a copy of the issue for addressed list
+                    addressed_issue = Issue(
+                        bug_id=bug_id,
+                        description=desc_cleaned,
+                        workaround=workaround_text,
+                        fix_info=f"Plugin {fix_version}",
+                        affected_components=affected_components,
+                    )
+                    addressed_by_version[fix_version].append(addressed_issue)
+
+                logger.debug(
+                    "Parsed SD-WAN Plugin issue: %s (plugin: %s, panos: %s)",
+                    bug_id, plugin_fix_versions, panos_fix_versions
+                )
+
+        except Exception as e:
+            logger.error("Error parsing SD-WAN Plugin page %s: %s", url, e)
+            self._log(f"  Error parsing {url}: {e}")
+            raise
+
+        return known_issues, addressed_by_version
+
 
 async def _crawl_cloud_ngfw_azure_async(
     major_versions: Optional[list[str]] = None,
@@ -2956,7 +3787,7 @@ async def _crawl_cloud_ngfw_azure_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of Cloud NGFW for Azure crawler.
 
     Note: major_versions and skip_versions are accepted for API compatibility
@@ -2965,15 +3796,18 @@ async def _crawl_cloud_ngfw_azure_async(
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_cloud_ngfw_azure()
+        result = await crawler.crawl_cloud_ngfw_azure()
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source="Palo Alto Networks Cloud NGFW for Azure Release Notes",
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Cloud NGFW for Azure Release Notes",
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -2984,7 +3818,7 @@ async def _crawl_cloud_ngfw_aws_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of Cloud NGFW for AWS crawler.
 
     Note: major_versions and skip_versions are accepted for API compatibility
@@ -2993,15 +3827,18 @@ async def _crawl_cloud_ngfw_aws_async(
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_cloud_ngfw_aws()
+        result = await crawler.crawl_cloud_ngfw_aws()
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source="Palo Alto Networks Cloud NGFW for AWS Release Notes",
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Cloud NGFW for AWS Release Notes",
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -3012,7 +3849,7 @@ async def _crawl_adem_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of Autonomous DEM crawler.
 
     Note: major_versions and skip_versions are accepted for API compatibility
@@ -3021,15 +3858,18 @@ async def _crawl_adem_async(
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_adem()
+        result = await crawler.crawl_adem()
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source="Palo Alto Networks Autonomous DEM Release Notes",
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Autonomous DEM Release Notes",
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -3040,7 +3880,7 @@ async def _crawl_scm_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of Strata Cloud Manager crawler.
 
     Note: major_versions and skip_versions are accepted for API compatibility
@@ -3049,15 +3889,18 @@ async def _crawl_scm_async(
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_scm()
+        result = await crawler.crawl_scm()
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source="Palo Alto Networks Strata Cloud Manager Release Notes",
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Strata Cloud Manager Release Notes",
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -3068,12 +3911,12 @@ async def _crawl_globalprotect_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of GlobalProtect crawler."""
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_globalprotect(major_versions, skip_versions)
+        result = await crawler.crawl_globalprotect(major_versions, skip_versions)
 
         # Build source description
         if major_versions:
@@ -3082,13 +3925,16 @@ async def _crawl_globalprotect_async(
         else:
             source = "Palo Alto Networks GlobalProtect Release Notes (All Versions)"
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source=source,
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source=source,
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -3099,12 +3945,12 @@ async def _crawl_prisma_access_agent_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of Prisma Access Agent crawler."""
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_prisma_access_agent(major_versions, skip_versions)
+        result = await crawler.crawl_prisma_access_agent(major_versions, skip_versions)
 
         # Build source description
         if major_versions:
@@ -3117,13 +3963,16 @@ async def _crawl_prisma_access_agent_async(
                 "Palo Alto Networks Prisma Access Agent Release Notes (All Versions)"
             )
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source=source,
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source=source,
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -3134,12 +3983,12 @@ async def _crawl_prisma_access_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of Prisma Access crawler."""
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_prisma_access(major_versions, skip_versions)
+        result = await crawler.crawl_prisma_access(major_versions, skip_versions)
 
         # Build source description
         if major_versions:
@@ -3148,13 +3997,16 @@ async def _crawl_prisma_access_async(
         else:
             source = "Palo Alto Networks Prisma Access Release Notes (All Versions)"
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source=source,
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source=source,
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -3165,12 +4017,12 @@ async def _crawl_panos_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of PAN-OS crawler."""
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_panos(major_versions, skip_versions)
+        result = await crawler.crawl_panos(major_versions, skip_versions)
 
         # Build source description
         if major_versions:
@@ -3179,13 +4031,16 @@ async def _crawl_panos_async(
         else:
             source = "Palo Alto Networks PAN-OS Release Notes (All Versions)"
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source=source,
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source=source,
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -3196,12 +4051,12 @@ async def _crawl_prisma_sdwan_async(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
+) -> FetchResult:
     """Async implementation of Prisma SD-WAN crawler."""
     async with PaloAltoCrawler(
         headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
     ) as crawler:
-        product = await crawler.crawl_prisma_sdwan(major_versions, skip_versions)
+        result = await crawler.crawl_prisma_sdwan(major_versions, skip_versions)
 
         # Build source description
         if major_versions:
@@ -3210,13 +4065,50 @@ async def _crawl_prisma_sdwan_async(
         else:
             source = "Palo Alto Networks Prisma SD-WAN Release Notes (All Versions)"
 
-        return BugDatabase(
-            metadata=Metadata(
-                generated_at=datetime.now(timezone.utc),
-                version="1.0.0",
-                source=source,
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source=source,
+                ),
+                products=[result.product],
             ),
-            products=[product],
+            failed_fetches=result.failed_fetches,
+        )
+
+
+async def _crawl_sdwan_plugin_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Async implementation of Panorama Plugin for SD-WAN crawler."""
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        result = await crawler.crawl_sdwan_plugin(major_versions, skip_versions)
+
+        # Build source description
+        if major_versions:
+            versions_str = ", ".join(v.replace("-", ".") for v in major_versions)
+            source = f"Palo Alto Networks Panorama Plugin for SD-WAN {versions_str} Release Notes"
+        else:
+            source = "Palo Alto Networks Panorama Plugin for SD-WAN Release Notes (All Versions)"
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source=source,
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
         )
 
 
@@ -3227,8 +4119,8 @@ def crawl_globalprotect(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl GlobalProtect release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl GlobalProtect release notes and return a FetchResult.
 
     Args:
         major_versions: List of major versions to crawl (e.g., ["6-2", "6-1"]).
@@ -3240,7 +4132,7 @@ def crawl_globalprotect(
         skip_versions: Set of version strings to skip for incremental fetching.
 
     Returns:
-        BugDatabase with GlobalProtect issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_globalprotect_async(
@@ -3256,8 +4148,8 @@ def crawl_prisma_access_agent(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl Prisma Access Agent release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl Prisma Access Agent release notes and return a FetchResult.
 
     Args:
         major_versions: List of major versions to crawl (e.g., ["26-1", "25-2"]).
@@ -3269,7 +4161,7 @@ def crawl_prisma_access_agent(
         skip_versions: Set of version strings to skip for incremental fetching.
 
     Returns:
-        BugDatabase with Prisma Access Agent issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_prisma_access_agent_async(
@@ -3285,8 +4177,8 @@ def crawl_prisma_access(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl Prisma Access release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl Prisma Access release notes and return a FetchResult.
 
     Args:
         major_versions: List of major versions to crawl (e.g., ["6-1", "5-2"]).
@@ -3298,7 +4190,7 @@ def crawl_prisma_access(
         skip_versions: Set of version strings to skip for incremental fetching.
 
     Returns:
-        BugDatabase with Prisma Access issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_prisma_access_async(
@@ -3314,8 +4206,8 @@ def crawl_panos(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl PAN-OS release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl PAN-OS release notes and return a FetchResult.
 
     Args:
         major_versions: List of major versions to crawl (e.g., ["12-1", "11-2"]).
@@ -3327,7 +4219,7 @@ def crawl_panos(
         skip_versions: Set of version strings to skip for incremental fetching.
 
     Returns:
-        BugDatabase with PAN-OS issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_panos_async(
@@ -3343,8 +4235,8 @@ def crawl_prisma_sdwan(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl Prisma SD-WAN release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl Prisma SD-WAN release notes and return a FetchResult.
 
     Args:
         major_versions: List of major versions to crawl (e.g., ["6-5", "6-4"]).
@@ -3356,7 +4248,7 @@ def crawl_prisma_sdwan(
         skip_versions: Set of version strings to skip for incremental fetching.
 
     Returns:
-        BugDatabase with Prisma SD-WAN issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_prisma_sdwan_async(
@@ -3372,8 +4264,8 @@ def crawl_cloud_ngfw_azure(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl Cloud NGFW for Azure release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl Cloud NGFW for Azure release notes and return a FetchResult.
 
     Cloud NGFW for Azure is a SaaS product without version releases.
     All issues are on single known/addressed issues pages.
@@ -3390,7 +4282,7 @@ def crawl_cloud_ngfw_azure(
         skip_versions: Ignored (kept for API compatibility).
 
     Returns:
-        BugDatabase with Cloud NGFW for Azure issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_cloud_ngfw_azure_async(
@@ -3406,8 +4298,8 @@ def crawl_cloud_ngfw_aws(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl Cloud NGFW for AWS release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl Cloud NGFW for AWS release notes and return a FetchResult.
 
     Cloud NGFW for AWS is a SaaS product without version releases.
     It only has a known issues page (no addressed issues).
@@ -3424,7 +4316,7 @@ def crawl_cloud_ngfw_aws(
         skip_versions: Ignored (kept for API compatibility).
 
     Returns:
-        BugDatabase with Cloud NGFW for AWS issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_cloud_ngfw_aws_async(
@@ -3440,8 +4332,8 @@ def crawl_adem(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl Autonomous DEM release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl Autonomous DEM release notes and return a FetchResult.
 
     ADEM issues are organized by agent version with release dates for fixes.
 
@@ -3457,7 +4349,7 @@ def crawl_adem(
         skip_versions: Ignored (kept for API compatibility).
 
     Returns:
-        BugDatabase with Autonomous DEM issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_adem_async(
@@ -3473,8 +4365,8 @@ def crawl_scm(
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: Optional[set[str]] = None,
-) -> BugDatabase:
-    """Crawl Strata Cloud Manager release notes and return a BugDatabase.
+) -> FetchResult:
+    """Crawl Strata Cloud Manager release notes and return a FetchResult.
 
     SCM issues are organized by component and version (e.g., 2025.r5.0).
     Older releases may only have dates instead of version numbers.
@@ -3491,10 +4383,43 @@ def crawl_scm(
         skip_versions: Ignored (kept for API compatibility).
 
     Returns:
-        BugDatabase with Strata Cloud Manager issues.
+        FetchResult with BugDatabase and any failed fetches.
     """
     return asyncio.run(
         _crawl_scm_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_sdwan_plugin(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Crawl Panorama Plugin for SD-WAN release notes and return a FetchResult.
+
+    This product has a unique structure where known issues pages contain
+    embedded fix information. Issues with fix info are also added as
+    addressed issues for the corresponding fix versions.
+
+    Args:
+        major_versions: List of major versions to crawl (e.g., ["3-4", "3-3"]).
+                       If None, discovers and crawls all available versions.
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Set of version strings to skip for incremental fetching.
+
+    Returns:
+        FetchResult with BugDatabase and any failed fetches.
+    """
+    return asyncio.run(
+        _crawl_sdwan_plugin_async(
             major_versions, headless, verbose, debug, max_concurrency, skip_versions
         )
     )

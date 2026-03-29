@@ -56,7 +56,7 @@ def generate_sample(
             "-o",
             help="Output JSON file path.",
         ),
-    ] = Path("data/data.json"),
+    ] = Path("assets/data.json"),
     force: Annotated[
         bool,
         typer.Option(
@@ -130,7 +130,7 @@ def build_site_cmd(
             "-d",
             help="Input JSON data file.",
         ),
-    ] = Path("data/data.json"),
+    ] = Path("assets/data.json"),
     output: Annotated[
         Path,
         typer.Option(
@@ -264,7 +264,7 @@ def fetch(
             "-o",
             help="Output JSON file path.",
         ),
-    ] = Path("data/data.json"),
+    ] = Path("assets/data.json"),
     force: Annotated[
         bool,
         typer.Option(
@@ -301,6 +301,7 @@ def fetch(
     from datetime import datetime, timezone
 
     from bugdb.crawler import (
+        FailedFetch,
         crawl_adem,
         crawl_cloud_ngfw_aws,
         crawl_cloud_ngfw_azure,
@@ -310,6 +311,7 @@ def fetch(
         crawl_prisma_access_agent,
         crawl_prisma_sdwan,
         crawl_scm,
+        crawl_sdwan_plugin,
         get_existing_versions,
         merge_databases,
     )
@@ -356,6 +358,7 @@ def fetch(
         "prisma-access-agent": crawl_prisma_access_agent,
         "prisma-sdwan": crawl_prisma_sdwan,
         "scm": crawl_scm,
+        "sdwan-plugin": crawl_sdwan_plugin,
     }
 
     # Determine which products to fetch
@@ -383,6 +386,8 @@ def fetch(
     console.print(f"[bold]Fetching {product_display} ({version_display})...[/bold]")
     console.print("[dim]This may take a while as we need to load multiple pages.[/dim]\n")
 
+    all_failed_fetches: list[FailedFetch] = []
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -405,13 +410,14 @@ def fetch(
                         description=f"Fetching {prod_name} (skipping {len(skip_versions)} existing versions)..."
                     )
 
-                db = crawler_func(
+                result = crawler_func(
                     major_versions,
                     headless=headless,
                     debug=debug,
                     skip_versions=skip_versions,
                 )
-                all_products.extend(db.products)
+                all_products.extend(result.database.products)
+                all_failed_fetches.extend(result.failed_fetches)
 
             # Create combined database
             database = BugDatabase(
@@ -485,6 +491,28 @@ def fetch(
             border_style="green",
         )
     )
+
+    # Display failed fetches report if any
+    if all_failed_fetches:
+        console.print()
+        failed_summary = "\n".join(
+            f"  • {f.product}"
+            + (f" {f.version}" if f.version else "")
+            + f" ({f.issue_type}): {f.error[:80]}..."
+            if len(f.error) > 80
+            else f"  • {f.product}"
+            + (f" {f.version}" if f.version else "")
+            + f" ({f.issue_type}): {f.error}"
+            for f in all_failed_fetches
+        )
+        console.print(
+            Panel(
+                f"[yellow]⚠[/yellow] Failed to fetch {len(all_failed_fetches)} page(s) "
+                f"after retries:\n{failed_summary}",
+                title="Failed Fetches",
+                border_style="yellow",
+            )
+        )
 
 
 if __name__ == "__main__":

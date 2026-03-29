@@ -140,19 +140,35 @@
             </div>
         </div>
 
-        <!-- Results Count -->
-        <div class="mb-4 flex items-center justify-between">
+        <!-- Results Count and Page Size -->
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-4">
             <p class="text-gray-600">
-                Showing <span id="results-count" class="font-semibold">0</span> issues
+                Showing <span id="results-range" class="font-semibold">0</span> of <span id="results-count" class="font-semibold">0</span> issues
             </p>
-            <button id="clear-filters" class="text-pan-orange hover:underline text-sm">
-                Clear all filters
-            </button>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <label for="page-size" class="text-sm text-gray-600">Per page:</label>
+                    <select id="page-size" class="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pan-orange focus:border-transparent">
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="250">250</option>
+                        <option value="all">All</option>
+                    </select>
+                </div>
+                <button id="clear-filters" class="text-pan-orange hover:underline text-sm">
+                    Clear all filters
+                </button>
+            </div>
         </div>
 
         <!-- Results Container -->
         <div id="results" class="space-y-4">
             <!-- Issue cards will be rendered here -->
+        </div>
+
+        <!-- Pagination Controls -->
+        <div id="pagination" class="hidden mt-6 flex flex-wrap items-center justify-center gap-2">
+            <!-- Pagination buttons will be rendered here -->
         </div>
 
         <!-- No Results Message -->
