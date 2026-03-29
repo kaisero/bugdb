@@ -4231,3 +4231,150 @@ class TestPluginVersionDiscovery:
         assert "6.1.2" in version_strs
         assert "6.1.1" in version_strs
 
+
+
+class TestDeviceSecurityCrawler:
+    """Tests for Device Security (IoT) crawler."""
+
+    @pytest.mark.asyncio
+    async def test_discover_device_security_years(self):
+        """Test that year discovery extracts years from index pages."""
+        known_html = """
+        <html>
+        <body>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2025">2025</a>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2024">2024</a>
+        </body>
+        </html>
+        """
+        addressed_html = """
+        <html>
+        <body>
+            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2026">2026</a>
+            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2025">2025</a>
+        </body>
+        </html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.side_effect = [
+                BeautifulSoup(known_html, "lxml"),
+                BeautifulSoup(addressed_html, "lxml"),
+            ]
+
+            async with PaloAltoCrawler() as crawler:
+                years = await crawler.discover_device_security_years()
+
+        assert "2025" in years["known"]
+        assert "2024" in years["known"]
+        assert "2026" in years["addressed"]
+        assert "2025" in years["addressed"]
+
+    @pytest.mark.asyncio
+    async def test_crawl_device_security_parses_issues(self):
+        """Test that Device Security crawler parses issues from tables."""
+        index_known_html = """
+        <html><body>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2025">2025</a>
+        </body></html>
+        """
+        index_addressed_html = """
+        <html><body>
+            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2025">2025</a>
+        </body></html>
+        """
+        issues_html = """
+        <html><body>
+        <table>
+            <thead><tr><th>ISSUE ID</th><th>DESCRIPTION</th></tr></thead>
+            <tbody>
+                <tr><td>DIT-12345</td><td>Test issue description</td></tr>
+                <tr><td>DIT-67890</td><td>Another test issue</td></tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.side_effect = [
+                BeautifulSoup(index_known_html, "lxml"),
+                BeautifulSoup(index_addressed_html, "lxml"),
+                BeautifulSoup(issues_html, "lxml"),
+                BeautifulSoup(issues_html, "lxml"),
+            ]
+
+            async with PaloAltoCrawler() as crawler:
+                result = await crawler.crawl_device_security()
+
+        assert result.product.id == "device-security"
+        assert result.product.name == "Device Security"
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "2025"
+        assert len(result.product.versions[0].known_issues) == 2
+        assert len(result.product.versions[0].addressed_issues) == 2
+
+    @pytest.mark.asyncio
+    async def test_crawl_device_security_skip_versions(self):
+        """Test that skip_versions is respected."""
+        index_known_html = """
+        <html><body>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2025">2025</a>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2024">2024</a>
+        </body></html>
+        """
+        index_addressed_html = """
+        <html><body>
+            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2025">2025</a>
+            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2024">2024</a>
+        </body></html>
+        """
+        issues_html = """
+        <html><body>
+        <table>
+            <thead><tr><th>ISSUE ID</th><th>DESCRIPTION</th></tr></thead>
+            <tbody>
+                <tr><td>DIT-11111</td><td>Issue for non-skipped year</td></tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+
+        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.side_effect = [
+                BeautifulSoup(index_known_html, "lxml"),
+                BeautifulSoup(index_addressed_html, "lxml"),
+                BeautifulSoup(issues_html, "lxml"),
+                BeautifulSoup(issues_html, "lxml"),
+            ]
+
+            async with PaloAltoCrawler() as crawler:
+                result = await crawler.crawl_device_security(skip_versions={"2024"})
+
+        # Should only have 2025, not 2024
+        version_strs = [v.version for v in result.product.versions]
+        assert "2025" in version_strs
+        assert "2024" not in version_strs
+
+
+class TestDeviceSecurityCrawlFunction:
+    """Tests for Device Security crawl function import and signature."""
+
+    def test_crawl_device_security_import(self):
+        """Test that crawl_device_security can be imported."""
+        from bugdb.crawler import crawl_device_security
+        assert callable(crawl_device_security)
+
+    def test_crawl_device_security_signature(self):
+        """Test that crawl_device_security has correct signature."""
+        import inspect
+        from bugdb.crawler import crawl_device_security
+
+        sig = inspect.signature(crawl_device_security)
+        param_names = list(sig.parameters.keys())
+
+        assert "major_versions" in param_names
+        assert "headless" in param_names
+        assert "verbose" in param_names
+        assert "debug" in param_names
+        assert "max_concurrency" in param_names
+        assert "skip_versions" in param_names

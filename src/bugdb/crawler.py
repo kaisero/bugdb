@@ -3230,6 +3230,155 @@ class PaloAltoCrawler:
             failed_fetches=failed_fetches,
         )
 
+    async def discover_device_security_years(self) -> dict[str, list[str]]:
+        """Discover available years for Device Security known and addressed issues.
+
+        Returns:
+            Dict with 'known' and 'addressed' keys, each containing list of year strings.
+        """
+        years: dict[str, list[str]] = {"known": [], "addressed": []}
+
+        # Fetch both index pages in parallel
+        fetch_tasks = [
+            self._fetch_page_with_semaphore("/iot/release-notes/known-issues"),
+            self._fetch_page_with_semaphore("/iot/release-notes/addressed-issues"),
+        ]
+        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        # Parse known issues index for year links
+        if not isinstance(results[0], Exception):
+            soup = results[0]
+            for link in soup.find_all("a", href=True):
+                href = link["href"]
+                # Match pattern: known-issues-in-YYYY
+                match = re.search(r"known-issues/known-issues-in-(\d{4})", href)
+                if match:
+                    year = match.group(1)
+                    if year not in years["known"]:
+                        years["known"].append(year)
+
+        # Parse addressed issues index for year links
+        if not isinstance(results[1], Exception):
+            soup = results[1]
+            for link in soup.find_all("a", href=True):
+                href = link["href"]
+                # Match pattern: addressed-issues-in-YYYY
+                match = re.search(r"addressed-issues/addressed-issues-in-(\d{4})", href)
+                if match:
+                    year = match.group(1)
+                    if year not in years["addressed"]:
+                        years["addressed"].append(year)
+
+        # Sort years descending (newest first)
+        years["known"].sort(reverse=True)
+        years["addressed"].sort(reverse=True)
+
+        return years
+
+    async def crawl_device_security(
+        self,
+        skip_versions: Optional[set[str]] = None,
+    ) -> CrawlResult:
+        """Crawl Device Security (IoT Security) release notes.
+
+        Device Security organizes issues by year (e.g., 2025, 2026).
+        Each year has separate known and addressed issues pages.
+
+        Args:
+            skip_versions: Set of year strings to skip (e.g., {"2025", "2024"}).
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        skip_versions = skip_versions or set()
+        self._log("Crawling Device Security...")
+
+        # Discover available years
+        years = await self.discover_device_security_years()
+        all_years = sorted(set(years["known"]) | set(years["addressed"]), reverse=True)
+
+        if all_years:
+            self._log(f"  Found years: {', '.join(all_years)}")
+
+        all_product_versions: list[ProductVersion] = []
+        failed_fetches: list[FailedFetch] = []
+
+        for year in all_years:
+            if year in skip_versions:
+                self._log(f"  Skipping {year} (already fetched)")
+                continue
+
+            self._log(f"  Crawling {year}...")
+
+            known_issues: list[Issue] = []
+            addressed_issues: list[Issue] = []
+
+            # Build URLs for this year
+            known_url = f"/iot/release-notes/known-issues/known-issues-in-{year}"
+            addressed_url = f"/iot/release-notes/addressed-issues/addressed-issues-in-{year}"
+
+            # Fetch both pages in parallel
+            fetch_tasks = []
+            if year in years["known"]:
+                fetch_tasks.append(("known", known_url, self._fetch_page_with_semaphore(known_url)))
+            if year in years["addressed"]:
+                fetch_tasks.append(("addressed", addressed_url, self._fetch_page_with_semaphore(addressed_url)))
+
+            # Gather results
+            for issue_type, url, task in fetch_tasks:
+                try:
+                    soup = await task
+                    # Parse tables
+                    for table in soup.find_all("table"):
+                        if table.find_parent("table"):
+                            continue
+                        issues = self._parse_issues_table(table)
+                        if issue_type == "known":
+                            known_issues.extend(issues)
+                        else:
+                            addressed_issues.extend(issues)
+                except Exception as e:
+                    failed_fetches.append(FailedFetch(
+                        url=url,
+                        error=str(e),
+                        product="device-security",
+                        version=year,
+                        issue_type=issue_type,
+                    ))
+
+            # Deduplicate
+            known_issues = self._deduplicate_issues(known_issues)
+            addressed_issues = self._deduplicate_issues(addressed_issues)
+
+            if known_issues or addressed_issues:
+                all_product_versions.append(
+                    ProductVersion(
+                        version=year,
+                        known_issues=known_issues,
+                        addressed_issues=addressed_issues,
+                    )
+                )
+                self._log(f"    {year}: {len(known_issues)} known, {len(addressed_issues)} addressed")
+
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
+        # Sort versions (newest first - years sort naturally)
+        all_product_versions.sort(key=lambda v: v.version, reverse=True)
+
+        return CrawlResult(
+            product=Product(
+                id="device-security",
+                name="Device Security",
+                versions=all_product_versions,
+            ),
+            failed_fetches=failed_fetches,
+        )
+
     async def crawl_adem(self) -> CrawlResult:
         """Crawl Autonomous DEM (ADEM) release notes.
 
@@ -4613,6 +4762,37 @@ async def _crawl_strata_logging_service_async(
         )
 
 
+async def _crawl_device_security_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Async implementation of Device Security crawler.
+
+    Note: major_versions is accepted for API compatibility but ignored.
+    Years are auto-discovered from the index pages.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        result = await crawler.crawl_device_security(skip_versions=skip_versions)
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Device Security Release Notes",
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
 async def _crawl_adem_async(
     major_versions: Optional[list[str]] = None,
     headless: bool = True,
@@ -5193,6 +5373,37 @@ def crawl_strata_logging_service(
     """
     return asyncio.run(
         _crawl_strata_logging_service_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
+
+
+def crawl_device_security(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Crawl Device Security (IoT Security) release notes and return a FetchResult.
+
+    Device Security organizes issues by year (e.g., 2025, 2026).
+    Years are auto-discovered from the index pages.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Set of year strings to skip (e.g., {"2025", "2024"}).
+
+    Returns:
+        FetchResult with BugDatabase and any failed fetches.
+    """
+    return asyncio.run(
+        _crawl_device_security_async(
             major_versions, headless, verbose, debug, max_concurrency, skip_versions
         )
     )
