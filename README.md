@@ -5,7 +5,7 @@ A Python CLI application that crawls Palo Alto Networks release notes and genera
 ## Features
 
 - **Automated Crawling**: Fetch known and addressed issues directly from Palo Alto Networks documentation
-- **26 Supported Products**: PAN-OS, Prisma Access, GlobalProtect, Cloud NGFW, and more
+- **27 Supported Products**: PAN-OS, Prisma Access, GlobalProtect, Cloud NGFW, Cortex XDR, and more
 - **Static Site Generation**: Build a fast, searchable HTML site with client-side filtering
 - **Incremental Updates**: Add new products or versions without re-fetching existing data
 - **Full-Text Search**: Search across bug IDs, descriptions, symptoms, and workarounds
@@ -22,6 +22,7 @@ A Python CLI application that crawls Palo Alto Networks release notes and genera
 | Prisma SD-WAN | ✅ |
 | Cloud NGFW for AWS | ✅ |
 | Cloud NGFW for Azure | ✅ |
+| Cortex XDR Agent | ✅ |
 | Device Security | ✅ |
 | VM-Series Plugin | ✅ |
 | Panorama Plugin for AWS | ✅ |

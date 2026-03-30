@@ -365,6 +365,7 @@ def extract_cell_text_with_tables(cell) -> str:
 
 
 BASE_URL = "https://docs.paloaltonetworks.com"
+CORTEX_BASE_URL = "https://docs-cortex.paloaltonetworks.com"
 
 
 def configure_logging(debug: bool = False) -> None:
@@ -4659,6 +4660,344 @@ class PaloAltoCrawler:
             failed_fetches=failed_fetches,
         )
 
+    async def crawl_cortex_xdr(
+        self,
+        skip_versions: Optional[set[str]] = None,
+    ) -> CrawlResult:
+        """Crawl Cortex XDR Agent release notes.
+
+        Cortex XDR has a different documentation portal (docs-cortex.paloaltonetworks.com)
+        with release notes organized by agent version. The main page lists releases in tables:
+        - Cortex XDR Agent Releases (main releases)
+        - Cortex XDR Hotfix Releases (skip rows without release links)
+        - Cortex XDR Agent Past Releases Archive (for releases >= 7.7)
+
+        Each release page has sections for:
+        - Addressed issues (with tables containing ISSUE, DESCRIPTION columns)
+        - Known limitations (with tables containing ISSUE, LIMITATION or DESCRIPTION columns)
+
+        Args:
+            skip_versions: Set of version strings to skip for incremental fetching.
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        self._log("Crawling Cortex XDR Agent...")
+        failed_fetches: list[FailedFetch] = []
+        skip_versions = skip_versions or set()
+
+        # Main releases page URL
+        releases_url = (
+            f"{CORTEX_BASE_URL}/r/Cortex-XDR/Cortex-XDR-Agent-Releases/Cortex-XDR-Agent-Releases"
+        )
+
+        # Fetch main releases page
+        try:
+            soup = await self._fetch_page_with_semaphore(releases_url, wait_time=5000)
+        except Exception as e:
+            self._log(f"  Error fetching releases page: {e}")
+            failed_fetches.append(FailedFetch(
+                url=releases_url,
+                error=str(e),
+                product="cortex-xdr",
+                issue_type="releases",
+            ))
+            return CrawlResult(
+                product=Product(id="cortex-xdr", name="Cortex XDR Agent", versions=[]),
+                failed_fetches=failed_fetches,
+            )
+
+        # Parse release links from tables
+        release_links = self._parse_cortex_xdr_releases_page(soup)
+        self._log(f"  Found {len(release_links)} releases to process")
+
+        # Filter out skipped versions
+        releases_to_fetch = []
+        for version, url in release_links:
+            if version in skip_versions:
+                self._log(f"  Skipping existing version: {version}")
+            else:
+                releases_to_fetch.append((version, url))
+
+        if not releases_to_fetch:
+            self._log("  No new versions to fetch")
+            return CrawlResult(
+                product=Product(id="cortex-xdr", name="Cortex XDR Agent", versions=[]),
+                failed_fetches=failed_fetches,
+            )
+
+        self._log(f"  Fetching {len(releases_to_fetch)} versions...")
+
+        # Fetch all release pages in parallel
+        async def fetch_release(version: str, url: str) -> tuple[str, Optional[BeautifulSoup], Optional[str]]:
+            try:
+                soup = await self._fetch_page_with_semaphore(url, wait_time=5000)
+                return (version, soup, None)
+            except Exception as e:
+                return (version, None, str(e))
+
+        fetch_tasks = [fetch_release(ver, url) for ver, url in releases_to_fetch]
+        results = await asyncio.gather(*fetch_tasks)
+
+        # Process results
+        all_product_versions: list[ProductVersion] = []
+
+        for version, soup, error in results:
+            if error:
+                self._log(f"  Error fetching {version}: {error}")
+                failed_fetches.append(FailedFetch(
+                    url=dict(releases_to_fetch).get(version, ""),
+                    error=error,
+                    product="cortex-xdr",
+                    version=version,
+                    issue_type="release",
+                ))
+                continue
+
+            # Parse known and addressed issues from the release page
+            known_issues, addressed_issues = self._parse_cortex_xdr_release_page(soup)
+
+            self._log(f"  {version}: {len(known_issues)} known, {len(addressed_issues)} addressed")
+
+            if known_issues or addressed_issues:
+                all_product_versions.append(
+                    ProductVersion(
+                        version=version,
+                        known_issues=self._deduplicate_issues(known_issues),
+                        addressed_issues=self._deduplicate_issues(addressed_issues),
+                    )
+                )
+
+        # Retry failed fetches
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(
+                failed_fetches
+            )
+            failed_fetches = still_failed
+
+        # Sort versions (newest first)
+        all_product_versions.sort(
+            key=lambda v: self._version_sort_key(v.version),
+            reverse=True,
+        )
+
+        return CrawlResult(
+            product=Product(
+                id="cortex-xdr",
+                name="Cortex XDR Agent",
+                versions=all_product_versions,
+            ),
+            failed_fetches=failed_fetches,
+        )
+
+    def _parse_cortex_xdr_releases_page(
+        self, soup: BeautifulSoup
+    ) -> list[tuple[str, str]]:
+        """Parse the Cortex XDR releases page to extract version links.
+
+        Extracts releases from:
+        - Cortex XDR Agent Releases table (main releases)
+        - Cortex XDR Hotfix Releases table (skip rows without links)
+        - Cortex XDR Agent Past Releases Archive table (>= 7.7 only)
+
+        Args:
+            soup: BeautifulSoup parsed page.
+
+        Returns:
+            List of (version, url) tuples.
+        """
+        releases: list[tuple[str, str]] = []
+        seen_versions: set[str] = set()
+
+        # Find all tables
+        tables = soup.find_all("table")
+
+        for table in tables:
+            # Get table headers to identify table type
+            headers = [th.get_text(strip=True).upper() for th in table.find_all("th")]
+
+            # Skip feature/description tables and mobile release tables
+            if "FEATURE" in headers or "LIMITATION" in headers:
+                continue
+
+            # Process each row
+            for row in table.find_all("tr")[1:]:  # Skip header row
+                cells = row.find_all("td")
+                if not cells:
+                    continue
+
+                # Find link in the row
+                link = row.find("a", href=True)
+                if not link:
+                    # Skip rows without release links (e.g., some hotfix entries)
+                    continue
+
+                href = link.get("href", "")
+                link_text = link.get_text(strip=True)
+
+                # Skip mobile/iOS/Android releases
+                if any(x in link_text.lower() for x in ["ios", "android", "mobile"]):
+                    continue
+
+                # Extract version from link text
+                version = self._extract_cortex_xdr_version(link_text)
+                if not version:
+                    continue
+
+                # For archive releases, only include >= 7.7
+                if "archive" in str(table.find_previous(["h1", "h2", "h3"])).lower():
+                    try:
+                        major_minor = tuple(map(int, version.split(".")[:2]))
+                        if major_minor < (7, 7):
+                            continue
+                    except (ValueError, IndexError):
+                        pass
+
+                # Avoid duplicates
+                if version in seen_versions:
+                    continue
+                seen_versions.add(version)
+
+                # Build full URL if needed
+                if not href.startswith("http"):
+                    href = f"{CORTEX_BASE_URL}{href}"
+
+                releases.append((version, href))
+                logger.debug("Found Cortex XDR release: %s -> %s", version, href[:80])
+
+        return releases
+
+    def _extract_cortex_xdr_version(self, text: str) -> Optional[str]:
+        """Extract version number from Cortex XDR release text.
+
+        Examples:
+            "Cortex XDR agent 9.0.1" -> "9.0.1"
+            "Cortex XDR agent 8.7" -> "8.7"
+            "8.6.1 HF" -> "8.6.1"
+
+        Args:
+            text: Link text containing version info.
+
+        Returns:
+            Version string or None if not found.
+        """
+        # Try to match version pattern (e.g., 9.0.1, 8.7, 8.6.1)
+        match = re.search(r"(\d+\.\d+(?:\.\d+)?)", text)
+        if match:
+            return match.group(1)
+        return None
+
+    def _parse_cortex_xdr_release_page(
+        self, soup: BeautifulSoup
+    ) -> tuple[list[Issue], list[Issue]]:
+        """Parse a Cortex XDR release page for known and addressed issues.
+
+        Looks for sections:
+        - "Addressed issues" -> tables with ISSUE, DESCRIPTION columns
+        - "Known limitations" or "Known issues" -> tables with ISSUE, LIMITATION/DESCRIPTION columns
+
+        Args:
+            soup: BeautifulSoup parsed page.
+
+        Returns:
+            Tuple of (known_issues, addressed_issues).
+        """
+        known_issues: list[Issue] = []
+        addressed_issues: list[Issue] = []
+
+        # Track current section based on headings
+        current_section = None
+
+        # Process all elements in order
+        for element in soup.find_all(["h1", "h2", "h3", "h4", "table"]):
+            if element.name in ["h1", "h2", "h3", "h4"]:
+                heading_text = element.get_text(strip=True).lower()
+
+                if "addressed" in heading_text and "issue" in heading_text:
+                    current_section = "addressed"
+                elif "known" in heading_text and ("limitation" in heading_text or "issue" in heading_text):
+                    current_section = "known"
+                elif "feature" in heading_text or "enhancement" in heading_text:
+                    current_section = "feature"  # Skip feature tables
+                continue
+
+            if element.name == "table" and current_section in ["known", "addressed"]:
+                # Skip nested tables
+                if element.find_parent("table"):
+                    continue
+
+                # Get table headers
+                headers = [th.get_text(strip=True).upper() for th in element.find_all("th")]
+
+                # Skip if this is a feature table
+                if "FEATURE" in headers:
+                    continue
+
+                # Find column indices
+                issue_col = None
+                desc_col = None
+
+                for i, h in enumerate(headers):
+                    if h in ["ISSUE", "BUG", "ID"]:
+                        issue_col = i
+                    elif h in ["DESCRIPTION", "LIMITATION", "DETAILS"]:
+                        desc_col = i
+
+                if issue_col is None:
+                    # Try to parse without explicit issue column
+                    issue_col = 0
+                    desc_col = 1 if len(headers) > 1 else 0
+
+                # Parse rows
+                for row in element.find_all("tr")[1:]:  # Skip header
+                    cells = row.find_all("td")
+                    if len(cells) <= issue_col:
+                        continue
+
+                    # Extract bug ID
+                    bug_id_cell = cells[issue_col]
+                    bug_id = bug_id_cell.get_text(strip=True)
+
+                    # Clean up bug ID (remove platform prefix sometimes included)
+                    bug_id = re.sub(r"^\([^)]+\)\s*", "", bug_id)
+                    bug_id = bug_id.split("\n")[0].strip()
+
+                    if not bug_id or not re.match(r"^[A-Z]+-\d+", bug_id):
+                        # Try to find bug ID pattern in the cell
+                        match = re.search(r"([A-Z]+-\d+)", bug_id_cell.get_text())
+                        if match:
+                            bug_id = match.group(1)
+                        else:
+                            continue
+
+                    # Extract description
+                    description = ""
+                    if desc_col is not None and desc_col < len(cells):
+                        description = cells[desc_col].get_text(strip=True)
+                    else:
+                        # Use all text after bug ID
+                        full_text = row.get_text(strip=True)
+                        description = full_text.replace(bug_id, "", 1).strip()
+
+                    # Clean up description
+                    description = re.sub(r"\s+", " ", description).strip()
+
+                    # Extract workaround if present
+                    clean_desc, workaround = extract_workaround(description)
+
+                    issue = Issue(
+                        bug_id=bug_id,
+                        description=clean_desc or description,
+                        workaround=workaround,
+                    )
+
+                    if current_section == "known":
+                        known_issues.append(issue)
+                    else:
+                        addressed_issues.append(issue)
+
+        return known_issues, addressed_issues
+
 
 async def _crawl_cloud_ngfw_azure_async(
     major_versions: Optional[list[str]] = None,
@@ -5649,3 +5988,71 @@ crawl_plugin_cisco_aci = _make_plugin_crawler("plugin-cisco-aci")
 crawl_plugin_cisco_trustsec = _make_plugin_crawler("plugin-cisco-trustsec")
 crawl_plugin_ztp = _make_plugin_crawler("plugin-ztp")
 crawl_plugin_clustering = _make_plugin_crawler("plugin-clustering")
+
+
+# Cortex XDR Agent crawler
+async def _crawl_cortex_xdr_async(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Async implementation of Cortex XDR Agent crawler.
+
+    Note: major_versions is accepted for API compatibility but currently
+    ignored as versions are auto-discovered from the releases page.
+    """
+    async with PaloAltoCrawler(
+        headless=headless, verbose=verbose, debug=debug, max_concurrency=max_concurrency
+    ) as crawler:
+        result = await crawler.crawl_cortex_xdr(skip_versions)
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Cortex XDR Agent Release Notes",
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
+def crawl_cortex_xdr(
+    major_versions: Optional[list[str]] = None,
+    headless: bool = True,
+    verbose: bool = False,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: Optional[set[str]] = None,
+) -> FetchResult:
+    """Crawl Cortex XDR Agent release notes and return a FetchResult.
+
+    Cortex XDR Agent has a separate documentation portal at docs-cortex.paloaltonetworks.com.
+    This crawler fetches release notes for all agent versions, extracting:
+    - Known issues/limitations
+    - Addressed issues
+
+    Note: major_versions is accepted for API compatibility but currently
+    ignored as versions are auto-discovered from the releases page.
+
+    Args:
+        major_versions: Ignored (kept for API compatibility).
+        headless: Whether to run browser in headless mode.
+        verbose: Whether to print progress messages.
+        debug: Whether to enable debug logging.
+        max_concurrency: Maximum number of concurrent page fetches.
+        skip_versions: Set of version strings to skip for incremental fetching.
+
+    Returns:
+        FetchResult with BugDatabase and any failed fetches.
+    """
+    return asyncio.run(
+        _crawl_cortex_xdr_async(
+            major_versions, headless, verbose, debug, max_concurrency, skip_versions
+        )
+    )
