@@ -4,6 +4,7 @@ pages:
   stage: deploy
   script:
     - pip install .
+    - bugdb generate-sample
     - bugdb build-site-cmd -o public
     # Replace local data.json path with external URL
     - sed -i "s|fetch('assets/data.json')|fetch('https://dependencyhell.net/bugdb/data.json')|g" public/assets/app.js
