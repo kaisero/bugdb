@@ -1,28 +1,38 @@
 """
-DEPRECATED: This module is maintained for backward compatibility only.
+Modular web crawlers for Palo Alto Networks release notes.
 
-The crawler functionality has been refactored into a modular package structure
-at bugdb.crawlers. Please update your imports to use the new module:
+This package provides a clean, modular architecture for crawling release notes
+from various Palo Alto Networks products.
 
-    # Old import (deprecated)
-    from bugdb.crawler import crawl_globalprotect, PaloAltoCrawler
+Usage:
+    # Using sync wrapper functions (recommended)
+    from bugdb.crawlers import crawl_globalprotect, crawl_panos
 
-    # New import (recommended)
-    from bugdb.crawlers import crawl_globalprotect, GlobalProtectCrawler
+    result = crawl_globalprotect(verbose=True)
+    print(f"Found {len(result.database.products[0].versions)} versions")
 
-The new package structure provides:
-- Better code organization with separate files for each product
-- Easier maintenance and testing
-- Reduced code duplication through a base crawler class
-- Clear separation of concerns (models, utils, crawlers)
+    # Using crawler classes directly (advanced)
+    from bugdb.crawlers import GlobalProtectCrawler
 
-For more information, see bugdb/crawlers/__init__.py.
+    async with GlobalProtectCrawler(verbose=True) as crawler:
+        result = await crawler.crawl(major_versions=["6-3"])
+
+Structure:
+    crawlers/
+    ├── __init__.py          # Public API re-exports
+    ├── base.py              # BaseCrawler class with shared functionality
+    ├── models.py            # Data classes (FailedFetch, CrawlResult, etc.)
+    ├── utils.py             # Utility functions (extract_workaround, etc.)
+    ├── registry.py          # Product registry and wrapper factory
+    └── products/
+        ├── __init__.py      # Product exports
+        ├── globalprotect.py
+        ├── panos.py
+        └── ...              # Other product crawlers
 """
 
-# Re-export everything from the new crawlers package for backward compatibility
-
 # Data models
-from bugdb.crawlers.models import (
+from .models import (
     CrawlResult,
     FailedFetch,
     FetchResult,
@@ -32,7 +42,7 @@ from bugdb.crawlers.models import (
 )
 
 # Utility functions
-from bugdb.crawlers.utils import (
+from .utils import (
     BASE_URL,
     CORTEX_BASE_URL,
     extract_affected_components,
@@ -44,17 +54,37 @@ from bugdb.crawlers.utils import (
     merge_databases,
     normalize_text,
     table_to_text,
+    version_sort_key,
 )
 
-# Base crawler class (aliased as PaloAltoCrawler for compatibility)
-from bugdb.crawlers.base import BaseCrawler
-PaloAltoCrawler = BaseCrawler  # Backward compatibility alias
+# Base crawler class
+from .base import BaseCrawler
+
+# Product crawler classes
+from .products import (
+    ADEMCrawler,
+    AIRuntimeSecurityCrawler,
+    CloudNGFWAWSCrawler,
+    CloudNGFWAzureCrawler,
+    CortexXDRCrawler,
+    DeviceSecurityCrawler,
+    GlobalProtectCrawler,
+    PANOSCrawler,
+    PluginCrawler,
+    PrismaAccessAgentCrawler,
+    PrismaAccessCrawler,
+    PrismaSDWANCrawler,
+    RemoteBrowserIsolationCrawler,
+    SCMCrawler,
+    SDWANPluginCrawler,
+    StrataLoggingServiceCrawler,
+)
 
 # Plugin configurations
-from bugdb.crawlers.products.plugins import PLUGIN_CONFIGS
+from .products.plugins import PLUGIN_CONFIGS
 
 # Sync wrapper functions
-from bugdb.crawlers.registry import (
+from .registry import (
     # Main products
     crawl_adem,
     crawl_ai_runtime_security,
@@ -83,6 +113,9 @@ from bugdb.crawlers.registry import (
     crawl_plugin_vmware_vcenter,
     crawl_plugin_ztp,
     crawl_vm_series_plugin,
+    # Registry
+    get_crawler_class,
+    PRODUCT_CRAWLERS,
 )
 
 __all__ = [
@@ -105,9 +138,26 @@ __all__ = [
     "merge_databases",
     "normalize_text",
     "table_to_text",
-    # Crawler class (backward compatibility)
-    "PaloAltoCrawler",
+    "version_sort_key",
+    # Base class
     "BaseCrawler",
+    # Crawler classes
+    "ADEMCrawler",
+    "AIRuntimeSecurityCrawler",
+    "CloudNGFWAWSCrawler",
+    "CloudNGFWAzureCrawler",
+    "CortexXDRCrawler",
+    "DeviceSecurityCrawler",
+    "GlobalProtectCrawler",
+    "PANOSCrawler",
+    "PluginCrawler",
+    "PrismaAccessAgentCrawler",
+    "PrismaAccessCrawler",
+    "PrismaSDWANCrawler",
+    "RemoteBrowserIsolationCrawler",
+    "SCMCrawler",
+    "SDWANPluginCrawler",
+    "StrataLoggingServiceCrawler",
     # Plugin configs
     "PLUGIN_CONFIGS",
     # Sync wrapper functions
@@ -137,4 +187,7 @@ __all__ = [
     "crawl_plugin_vmware_vcenter",
     "crawl_plugin_ztp",
     "crawl_vm_series_plugin",
+    # Registry
+    "get_crawler_class",
+    "PRODUCT_CRAWLERS",
 ]
