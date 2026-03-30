@@ -1,0 +1,16 @@
+image: python:3.12-slim
+
+pages:
+  stage: deploy
+  script:
+    - pip install .
+    - bugdb build-site-cmd -o public
+    # Replace local data.json path with external URL
+    - sed -i "s|fetch('assets/data.json')|fetch('https://dependencyhell.net/bugdb/data.json')|g" public/assets/app.js
+    # Remove local data.json since we're using external
+    - rm -f public/assets/data.json
+  artifacts:
+    paths:
+      - public
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
