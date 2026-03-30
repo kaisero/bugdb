@@ -4,6 +4,7 @@ test:
   stage: test
   script:
     - pip install ".[test]"
+    - playwright install --with-deps chromium
     - pytest --junitxml=report.xml -v
   artifacts:
     when: always
