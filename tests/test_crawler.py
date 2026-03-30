@@ -3590,6 +3590,87 @@ class TestSCMCrawlFunction:
         assert "skip_versions" in params
 
 
+class TestSCMMultitenantKnownIssues:
+    """Tests for SCM multitenant known issues parsing."""
+
+    @pytest.mark.asyncio
+    async def test_parse_multitenant_known_issues(self):
+        """Test parsing multitenant known issues with correct component."""
+        html = """
+        <html><body>
+        <h2>Known Issues in Strata Multitenant Cloud Manager</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td>ADI-31756</td><td>When configuring Snippets, the push fails.</td></tr>
+                <tr><td>PAMSP-4495</td><td>Bulk Configuration snippet push fails.</td></tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+
+        async with PaloAltoCrawler(headless=True) as crawler:
+            issues = crawler._parse_scm_multitenant_known_issues_page(soup)
+
+        assert len(issues) == 2
+        # Verify all issues have the multitenant component
+        for issue in issues:
+            assert issue.affected_components == ["Strata Multitenant Cloud Manager"]
+
+        # Verify specific issues
+        adi_issue = next(i for i in issues if i.bug_id == "ADI-31756")
+        assert "Snippets" in adi_issue.description
+
+        pamsp_issue = next(i for i in issues if i.bug_id == "PAMSP-4495")
+        assert "Bulk Configuration" in pamsp_issue.description
+
+    @pytest.mark.asyncio
+    async def test_parse_multitenant_empty_table(self):
+        """Test parsing multitenant page with no issues."""
+        html = """
+        <html><body>
+        <h2>Known Issues in Strata Multitenant Cloud Manager</h2>
+        <table>
+            <thead><tr><th>ID</th><th>Description</th></tr></thead>
+            <tbody></tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+
+        async with PaloAltoCrawler(headless=True) as crawler:
+            issues = crawler._parse_scm_multitenant_known_issues_page(soup)
+
+        assert len(issues) == 0
+
+    @pytest.mark.asyncio
+    async def test_parse_multitenant_skips_nested_tables(self):
+        """Test that nested tables are skipped."""
+        html = """
+        <html><body>
+        <table>
+            <thead><tr><th>ID</th><th>Description</th></tr></thead>
+            <tbody>
+                <tr><td>ADI-100</td><td>
+                    Issue with nested table:
+                    <table><tr><td>Nested</td><td>Data</td></tr></table>
+                </td></tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+
+        async with PaloAltoCrawler(headless=True) as crawler:
+            issues = crawler._parse_scm_multitenant_known_issues_page(soup)
+
+        # Should only parse the outer table, not the nested one
+        assert len(issues) == 1
+        assert issues[0].bug_id == "ADI-100"
+        assert issues[0].affected_components == ["Strata Multitenant Cloud Manager"]
+
+
 class TestSdwanPluginCrawler:
     """Tests for Panorama Plugin for SD-WAN crawler methods."""
 

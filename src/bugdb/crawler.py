@@ -3609,6 +3609,7 @@ class PaloAltoCrawler:
         SCM is a SaaS service with versioned releases like 2025.r5.0.
         Known issues are organized by component (Configuration Management, Command Center, etc.).
         Addressed issues include version numbers or dates.
+        Also fetches multitenant known issues from the Prisma SASE Multitenant Platform.
 
         Returns:
             CrawlResult with Product and any failed fetches.
@@ -3617,12 +3618,14 @@ class PaloAltoCrawler:
 
         known_issues_url = "/strata-cloud-manager/release-notes/known-issues"
         addressed_issues_url = "/strata-cloud-manager/release-notes/addressed-issues"
+        multitenant_known_issues_url = "/sase/prisma-sase-multitenant-platform/release-updates/known-issues-msp"
         failed_fetches: list[FailedFetch] = []
 
-        # Fetch both pages in parallel
+        # Fetch all pages in parallel
         fetch_tasks = [
             self._fetch_page_with_semaphore(known_issues_url),
             self._fetch_page_with_semaphore(addressed_issues_url),
+            self._fetch_page_with_semaphore(multitenant_known_issues_url),
         ]
         results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
 
@@ -3637,6 +3640,23 @@ class PaloAltoCrawler:
             failed_fetches.append(FailedFetch(
                 url=known_issues_url,
                 error=str(results[0]),
+                product="scm",
+                issue_type="known",
+            ))
+
+        # Parse multitenant known issues
+        if not isinstance(results[2], Exception):
+            multitenant_issues = self._parse_scm_multitenant_known_issues_page(results[2])
+            if multitenant_issues:
+                if "SaaS" not in known_by_version:
+                    known_by_version["SaaS"] = []
+                known_by_version["SaaS"].extend(multitenant_issues)
+                self._log(f"  Found {len(multitenant_issues)} multitenant known issues")
+        else:
+            self._log(f"  Error fetching multitenant known issues: {results[2]}")
+            failed_fetches.append(FailedFetch(
+                url=multitenant_known_issues_url,
+                error=str(results[2]),
                 product="scm",
                 issue_type="known",
             ))
@@ -3781,6 +3801,39 @@ class PaloAltoCrawler:
                     results["SaaS"].extend(issues)
 
         return results
+
+    def _parse_scm_multitenant_known_issues_page(
+        self, soup: BeautifulSoup
+    ) -> list[Issue]:
+        """Parse SCM multitenant known issues page.
+
+        This page has a simple table with ID and Description columns.
+        All issues get "Strata Multitenant Cloud Manager" as the affected component.
+
+        Args:
+            soup: BeautifulSoup parsed page.
+
+        Returns:
+            List of Issue objects with affected_components set to
+            ["Strata Multitenant Cloud Manager"].
+        """
+        issues: list[Issue] = []
+
+        for table in soup.find_all("table"):
+            # Skip nested tables
+            if table.find_parent("table"):
+                continue
+
+            # Parse issues from this table
+            table_issues = self._parse_issues_table(table)
+
+            # Set affected_components to "Strata Multitenant Cloud Manager"
+            for issue in table_issues:
+                issue.affected_components = ["Strata Multitenant Cloud Manager"]
+
+            issues.extend(table_issues)
+
+        return issues
 
     def _parse_scm_addressed_issues_page(
         self, soup: BeautifulSoup
