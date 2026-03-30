@@ -30,6 +30,9 @@ bugdb = "bugdb.cli:app"
 [tool.hatch.build.targets.wheel]
 packages = ["src/bugdb"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"src/bugdb/templates/assets" = "bugdb/templates/assets"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
