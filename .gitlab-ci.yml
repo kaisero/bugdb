@@ -1,10 +1,24 @@
 image: python:3.12-slim
 
+test:
+  stage: test
+  script:
+    - pip install ".[test]"
+    - playwright install --with-deps chromium
+    - pytest --junitxml=report.xml -v
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+
 pages:
   stage: deploy
   script:
     - pip install .
     - bugdb generate-sample
+    - bugdb generate-release-notes
     - bugdb build-site-cmd -o public
     # Replace local data.json path with external URL
     - sed -i "s|fetch('assets/data.json')|fetch('https://repo.dependencyhell.net/bugdb/data.json')|g" public/assets/app.js

@@ -13,6 +13,7 @@ let currentFilters = {
 };
 let fixReleasesMap = {}; // Map of bug_id -> array of fix releases
 let knownIssuesMap = {}; // Map of bug_id -> array of releases where issue is known
+let releaseNotesData = null; // Release notes data
 
 // Pagination state
 const PAGE_SIZE_OPTIONS = [50, 100, 250, 'All'];
@@ -741,6 +742,151 @@ function setupModalEventListeners() {
     });
 }
 
+// Release Notes functions
+async function loadReleaseNotes() {
+    try {
+        const response = await fetch('assets/release-notes.json');
+        if (!response.ok) {
+            return null;
+        }
+        return await response.json();
+    } catch (error) {
+        console.log('Release notes not available');
+        return null;
+    }
+}
+
+function getChangeTypeStyles(type) {
+    switch (type) {
+        case 'feature':
+            return 'bg-emerald-100 text-emerald-800';
+        case 'improvement':
+            return 'bg-blue-100 text-blue-800';
+        case 'fix':
+            return 'bg-amber-100 text-amber-800';
+        case 'breaking':
+            return 'bg-red-100 text-red-800';
+        default:
+            return 'bg-gray-100 text-gray-800';
+    }
+}
+
+function getChangeTypeIcon(type) {
+    switch (type) {
+        case 'feature':
+            return `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+            </svg>`;
+        case 'improvement':
+            return `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+            </svg>`;
+        case 'fix':
+            return `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+            </svg>`;
+        case 'breaking':
+            return `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+            </svg>`;
+        default:
+            return '';
+    }
+}
+
+function getChangeTypeLabel(type) {
+    switch (type) {
+        case 'feature':
+            return 'Feature';
+        case 'improvement':
+            return 'Improvement';
+        case 'fix':
+            return 'Fix';
+        case 'breaking':
+            return 'Breaking';
+        default:
+            return type;
+    }
+}
+
+function showReleaseNotesModal() {
+    if (!releaseNotesData || !releaseNotesData.releases || releaseNotesData.releases.length === 0) {
+        return;
+    }
+
+    const modal = document.getElementById('release-notes-modal');
+    const modalBody = document.getElementById('release-notes-modal-body');
+
+    // Build release notes HTML
+    let html = '';
+    for (const release of releaseNotesData.releases) {
+        html += `
+            <div class="mb-8 last:mb-0">
+                <div class="flex items-center gap-3 mb-4">
+                    <h3 class="text-xl font-bold text-gray-900">v${escapeHtml(release.version)}</h3>
+                    ${release.title ? `<span class="text-gray-500">-</span><span class="text-gray-600">${escapeHtml(release.title)}</span>` : ''}
+                </div>
+                <p class="text-sm text-gray-500 mb-4">${escapeHtml(release.date)}</p>
+                <ul class="space-y-3">
+        `;
+
+        for (const change of release.changes) {
+            const styles = getChangeTypeStyles(change.type);
+            const icon = getChangeTypeIcon(change.type);
+            const label = getChangeTypeLabel(change.type);
+
+            html += `
+                <li class="flex items-start gap-3">
+                    <span class="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${styles} shrink-0">
+                        ${icon}
+                        ${label}
+                    </span>
+                    <span class="text-gray-700">${escapeHtml(change.description)}</span>
+                </li>
+            `;
+        }
+
+        html += `
+                </ul>
+            </div>
+        `;
+    }
+
+    modalBody.innerHTML = html;
+    modal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+}
+
+function closeReleaseNotesModal() {
+    const modal = document.getElementById('release-notes-modal');
+    modal.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+}
+
+function setupReleaseNotesModalEventListeners() {
+    const modal = document.getElementById('release-notes-modal');
+    const backdrop = document.getElementById('release-notes-modal-backdrop');
+    const closeBtn = document.getElementById('release-notes-modal-close-btn');
+    const closeFooterBtn = document.getElementById('release-notes-modal-close-footer-btn');
+
+    // Close on backdrop click
+    backdrop.addEventListener('click', closeReleaseNotesModal);
+
+    // Close on X button click
+    closeBtn.addEventListener('click', closeReleaseNotesModal);
+
+    // Close on footer Close button click
+    closeFooterBtn.addEventListener('click', closeReleaseNotesModal);
+
+    // Close on Escape key (extend existing handler)
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+            closeReleaseNotesModal();
+        }
+    });
+}
+
 // Clear all filters
 function clearFilters(data) {
     currentFilters = {
@@ -1043,6 +1189,16 @@ async function init() {
 
         // Setup modal event listeners
         setupModalEventListeners();
+
+        // Load release notes and show/hide link
+        releaseNotesData = await loadReleaseNotes();
+        if (releaseNotesData && releaseNotesData.releases && releaseNotesData.releases.length > 0) {
+            const releaseNotesLink = document.getElementById('release-notes-link');
+            if (releaseNotesLink) {
+                releaseNotesLink.classList.remove('hidden');
+            }
+            setupReleaseNotesModalEventListeners();
+        }
 
         // Hide loading, show results
         elements.loading.classList.add('hidden');

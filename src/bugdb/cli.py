@@ -306,6 +306,7 @@ def fetch(
         crawl_ai_runtime_security,
         crawl_cloud_ngfw_aws,
         crawl_cloud_ngfw_azure,
+        crawl_cortex_xdr,
         crawl_device_security,
         crawl_globalprotect,
         crawl_panos,
@@ -368,6 +369,7 @@ def fetch(
         "ai-runtime-security": crawl_ai_runtime_security,
         "cloud-ngfw-aws": crawl_cloud_ngfw_aws,
         "cloud-ngfw-azure": crawl_cloud_ngfw_azure,
+        "cortex-xdr": crawl_cortex_xdr,
         "device-security": crawl_device_security,
         "globalprotect": crawl_globalprotect,
         "panos": crawl_panos,
@@ -543,6 +545,72 @@ def fetch(
                 border_style="yellow",
             )
         )
+
+
+@app.command()
+def generate_release_notes(
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output JSON file path.",
+        ),
+    ] = Path("src/bugdb/templates/assets/release-notes.json"),
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            "-f",
+            help="Overwrite existing file.",
+        ),
+    ] = False,
+) -> None:
+    """Generate release notes JSON file for the static site."""
+    from bugdb.release_notes import get_release_notes
+
+    # Check if file exists
+    if output.exists() and not force:
+        console.print(
+            f"[red]Error:[/red] File {output} already exists. Use --force to overwrite."
+        )
+        raise typer.Exit(1)
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        progress.add_task("Generating release notes...", total=None)
+
+        # Get release notes data
+        release_notes = get_release_notes()
+
+        # Create output directory if needed
+        output.parent.mkdir(parents=True, exist_ok=True)
+
+        # Write JSON file
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(
+                release_notes.model_dump(mode="json"),
+                f,
+                indent=2,
+            )
+
+    # Count releases and changes
+    total_releases = len(release_notes.releases)
+    total_changes = sum(len(r.changes) for r in release_notes.releases)
+
+    console.print(
+        Panel(
+            f"[green]✓[/green] Generated release notes:\n"
+            f"  • Releases: {total_releases}\n"
+            f"  • Total changes: {total_changes}\n"
+            f"  • Output: {output}",
+            title="Release Notes Generated",
+            border_style="green",
+        )
+    )
 
 
 if __name__ == "__main__":

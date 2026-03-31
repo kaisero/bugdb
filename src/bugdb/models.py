@@ -1,9 +1,45 @@
 """Pydantic data models for BugDB."""
 
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+
+class ChangeType(str, Enum):
+    """Type of change in a release."""
+
+    FEATURE = "feature"
+    IMPROVEMENT = "improvement"
+    FIX = "fix"
+    BREAKING = "breaking"
+
+
+class ReleaseChange(BaseModel):
+    """A single change in a release."""
+
+    type: ChangeType = Field(..., description="Type of change")
+    description: str = Field(..., description="Description of the change")
+
+
+class Release(BaseModel):
+    """A release with its changes."""
+
+    version: str = Field(..., description="Version string (e.g., 1.0.0)")
+    date: str = Field(..., description="Release date (YYYY-MM-DD)")
+    title: Optional[str] = Field(None, description="Optional release title")
+    changes: list[ReleaseChange] = Field(
+        default_factory=list, description="List of changes in this release"
+    )
+
+
+class ReleaseNotes(BaseModel):
+    """Root model for release notes."""
+
+    releases: list[Release] = Field(
+        default_factory=list, description="List of releases"
+    )
 
 
 class Issue(BaseModel):

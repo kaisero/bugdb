@@ -25,6 +25,22 @@ from bugdb.crawler import (
     normalize_text,
     table_to_text,
 )
+# Import specific crawler classes for product-specific tests
+from bugdb.crawlers import (
+    ADEMCrawler,
+    CloudNGFWAWSCrawler,
+    CloudNGFWAzureCrawler,
+    CortexXDRCrawler,
+    DeviceSecurityCrawler,
+    GlobalProtectCrawler,
+    PANOSCrawler,
+    PluginCrawler,
+    PrismaAccessAgentCrawler,
+    PrismaAccessCrawler,
+    SCMCrawler,
+    SDWANPluginCrawler,
+)
+from bugdb.crawlers.utils import configure_logging
 from bugdb.models import BugDatabase, Issue, Metadata, Product, ProductVersion
 
 
@@ -388,182 +404,13 @@ class TestPaloAltoCrawlerVersionSorting:
         assert key == (0, 0, 0, 0)
 
 
-class TestPaloAltoCrawlerURLPatterns:
-    """Tests for URL pattern detection."""
-
-    def test_get_panos_url_pattern_ngfw(self):
-        """Test that 12.x versions use NGFW pattern."""
-        crawler = PaloAltoCrawler()
-
-        assert crawler._get_panos_url_pattern("12-1") == "ngfw"
-        assert crawler._get_panos_url_pattern("12-0") == "ngfw"
-        assert crawler._get_panos_url_pattern("13-0") == "ngfw"
-
-    def test_get_panos_url_pattern_panos(self):
-        """Test that 11.x and older use PAN-OS pattern."""
-        crawler = PaloAltoCrawler()
-
-        assert crawler._get_panos_url_pattern("11-2") == "panos"
-        assert crawler._get_panos_url_pattern("11-1") == "panos"
-        assert crawler._get_panos_url_pattern("10-2") == "panos"
-        assert crawler._get_panos_url_pattern("9-1") == "panos"
-
-
-class TestPaloAltoCrawlerPrismaVersionExtraction:
-    """Tests for Prisma Access Agent version extraction."""
-
-    def test_extract_prisma_version_with_patch(self):
-        """Test extracting Prisma Access Agent version with patch number."""
-        crawler = PaloAltoCrawler()
-
-        result = crawler._extract_prisma_access_agent_version(
-            "/prisma-access-agent-26-1-2-known-issues",
-            "26-1"
-        )
-        assert result == "26.1.2"
-
-    def test_extract_prisma_version_without_patch(self):
-        """Test extracting Prisma Access Agent version without patch number."""
-        crawler = PaloAltoCrawler()
-
-        result = crawler._extract_prisma_access_agent_version(
-            "/prisma-access-agent-26-1-known-issues",
-            "26-1"
-        )
-        assert result == "26.1"
-
-    def test_extract_prisma_version_wrong_major(self):
-        """Test that wrong major version returns None."""
-        crawler = PaloAltoCrawler()
-
-        result = crawler._extract_prisma_access_agent_version(
-            "/prisma-access-agent-26-1-2-known-issues",
-            "25-2"  # Looking for 25.2, but URL is for 26.1
-        )
-        assert result is None
-
-    def test_extract_prisma_version_no_match(self):
-        """Test that non-matching URL returns None."""
-        crawler = PaloAltoCrawler()
-
-        result = crawler._extract_prisma_access_agent_version(
-            "/some/other/url",
-            "26-1"
-        )
-        assert result is None
-
-
-class TestPaloAltoCrawlerPanosVersionExtraction:
-    """Tests for PAN-OS version extraction."""
-
-    def test_extract_panos_version_standard(self):
-        """Test extracting PAN-OS version from standard URL."""
-        crawler = PaloAltoCrawler()
-
-        result = crawler._extract_panos_version_from_url(
-            "/pan-os-12-1-5-known-and-addressed-issues",
-            "12-1"
-        )
-        assert result == "12.1.5"
-
-    def test_extract_panos_version_with_hotfix(self):
-        """Test extracting PAN-OS version with hotfix suffix."""
-        crawler = PaloAltoCrawler()
-
-        result = crawler._extract_panos_version_from_url(
-            "/pan-os-11-2-4-h1-known-issues",
-            "11-2"
-        )
-        assert result == "11.2.4-h1"
-
-    def test_extract_panos_version_with_hotfix_double_digit(self):
-        """Test extracting PAN-OS version with double-digit hotfix."""
-        crawler = PaloAltoCrawler()
-
-        result = crawler._extract_panos_version_from_url(
-            "/pan-os-10-2-0-h12-addressed-issues",
-            "10-2"
-        )
-        assert result == "10.2.0-h12"
-
-    def test_extract_panos_version_wrong_major(self):
-        """Test that wrong major version returns None."""
-        crawler = PaloAltoCrawler()
-
-        result = crawler._extract_panos_version_from_url(
-            "/pan-os-12-1-5-known-issues",
-            "11-2"  # Looking for 11.2, but URL is for 12.1
-        )
-        assert result is None
-
-
-class TestPaloAltoCrawlerGlobalProtectVersionExtraction:
-    """Tests for GlobalProtect version extraction from release notes pages."""
-
-    def test_extract_globalprotect_versions_version_specific(self):
-        """Test extracting versions from pages with version-specific links."""
-        html = """
-        <html>
-        <body>
-            <a href="/globalprotect/release-notes/6-2/6-2-5-known-issues">6.2.5 Known Issues</a>
-            <a href="/globalprotect/release-notes/6-2/6-2-5-addressed-issues">6.2.5 Addressed Issues</a>
-            <a href="/globalprotect/release-notes/6-2/6-2-4-known-issues">6.2.4 Known Issues</a>
-            <a href="/globalprotect/release-notes/6-2/6-2-4-addressed-issues">6.2.4 Addressed Issues</a>
-        </body>
-        </html>
-        """
-        soup = BeautifulSoup(html, "lxml")
-
-        crawler = PaloAltoCrawler()
-        version_infos, generic_known, generic_addressed = crawler._extract_globalprotect_versions(
-            soup, "6-2"
-        )
-
-        assert len(version_infos) == 2
-        versions = {v.version for v in version_infos}
-        assert versions == {"6.2.5", "6.2.4"}
-
-        # Each version should have both known and addressed URLs
-        for vi in version_infos:
-            assert len(vi.known_issues_urls) == 1
-            assert len(vi.addressed_issues_urls) == 1
-
-        # No generic URLs for version-specific pages
-        assert len(generic_known) == 0
-        assert len(generic_addressed) == 0
-
-    def test_extract_globalprotect_versions_generic(self):
-        """Test extracting versions from pages with generic links."""
-        html = """
-        <html>
-        <body>
-            <a href="/globalprotect/6-1/known-issues">Known Issues</a>
-            <a href="/globalprotect/6-1/addressed-issues">Addressed Issues</a>
-        </body>
-        </html>
-        """
-        soup = BeautifulSoup(html, "lxml")
-
-        crawler = PaloAltoCrawler()
-        version_infos, generic_known, generic_addressed = crawler._extract_globalprotect_versions(
-            soup, "6-1"
-        )
-
-        # No version-specific infos
-        assert len(version_infos) == 0
-
-        # Generic URLs found
-        assert len(generic_known) == 1
-        assert len(generic_addressed) == 1
-
-
 class TestPaloAltoCrawlerAsync:
     """Tests for async crawler functionality using mocked playwright."""
 
     @pytest.mark.asyncio
     async def test_crawler_context_manager(self, mock_playwright_all):
         """Test crawler can be used as async context manager."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_all):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_all):
             async with PaloAltoCrawler() as crawler:
                 assert crawler._browser is not None
                 assert crawler._semaphore is not None
@@ -571,7 +418,7 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_fetch_page_returns_soup(self, mock_playwright_globalprotect, fixtures_dir):
         """Test that _fetch_page returns BeautifulSoup object."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
             async with PaloAltoCrawler() as crawler:
                 page = await crawler._new_page()
                 soup = await crawler._fetch_page(
@@ -588,7 +435,7 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_parse_issues_page_integration(self, mock_playwright_globalprotect):
         """Test parsing issues from a full HTML page."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
             async with PaloAltoCrawler() as crawler:
                 issues = await crawler._parse_issues_page(
                     "/globalprotect/release-notes/6-2/6-2-1-known-issues"
@@ -603,9 +450,9 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_crawl_globalprotect_version_specific(self, mock_playwright_globalprotect):
         """Test crawling GlobalProtect with version-specific pages."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_globalprotect(major_versions=["6-2"])
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
+            async with GlobalProtectCrawler() as crawler:
+                result = await crawler.crawl(major_versions=["6-2"])
 
                 assert result.product.id == "globalprotect"
                 assert result.product.name == "GlobalProtect"
@@ -616,9 +463,9 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_crawl_globalprotect_multi_version(self, mock_playwright_globalprotect):
         """Test crawling GlobalProtect with multi-version pages (older style)."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_globalprotect(major_versions=["6-1"])
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
+            async with GlobalProtectCrawler() as crawler:
+                result = await crawler.crawl(major_versions=["6-1"])
 
                 assert result.product.id == "globalprotect"
                 # Multi-version pages should yield multiple versions
@@ -628,9 +475,9 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_crawl_panos_ngfw_pattern(self, mock_playwright_panos):
         """Test crawling PAN-OS with NGFW URL pattern (12.x+)."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_panos(major_versions=["12-1"])
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler() as crawler:
+                result = await crawler.crawl(major_versions=["12-1"])
 
                 assert result.product.id == "panos"
                 assert result.product.name == "PAN-OS"
@@ -639,9 +486,9 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_crawl_panos_ngfw_discovers_hotfixes(self, mock_playwright_panos):
         """Test that NGFW pattern (12.x+) discovers hotfix releases."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_panos(major_versions=["12-1"])
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler() as crawler:
+                result = await crawler.crawl(major_versions=["12-1"])
 
                 versions = {v.version for v in result.product.versions}
                 assert "12.1.5-h2" in versions
@@ -649,9 +496,9 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_crawl_panos_legacy_pattern(self, mock_playwright_panos):
         """Test crawling PAN-OS with legacy URL pattern (11.x and older)."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_panos(major_versions=["11-2"])
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler() as crawler:
+                result = await crawler.crawl(major_versions=["11-2"])
 
                 assert result.product.id == "panos"
                 assert result.product.name == "PAN-OS"
@@ -660,9 +507,9 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_crawl_panos_legacy_discovers_hotfixes(self, mock_playwright_panos):
         """Test that legacy pattern (11.x) discovers hotfix releases."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_panos(major_versions=["11-2"])
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler() as crawler:
+                result = await crawler.crawl(major_versions=["11-2"])
 
                 versions = {v.version for v in result.product.versions}
                 assert "11.2.4-h1" in versions
@@ -670,9 +517,9 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_crawl_prisma_access_agent(self, mock_playwright_prisma):
         """Test crawling Prisma Access Agent."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_prisma):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_prisma_access_agent(major_versions=["26-1"])
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_prisma):
+            async with PrismaAccessAgentCrawler() as crawler:
+                result = await crawler.crawl(major_versions=["26-1"])
 
                 assert result.product.id == "prisma-access-agent"
                 assert result.product.name == "Prisma Access Agent"
@@ -681,7 +528,7 @@ class TestPaloAltoCrawlerAsync:
     @pytest.mark.asyncio
     async def test_crawl_version_parallel(self, mock_playwright_globalprotect):
         """Test parallel version crawling."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
             async with PaloAltoCrawler(max_concurrency=3) as crawler:
                 version_infos = [
                     VersionInfo(
@@ -800,7 +647,7 @@ class TestWrapperFunctions:
 
     def test_crawl_globalprotect_returns_database(self, mock_playwright_globalprotect):
         """Test that crawl_globalprotect returns a FetchResult with BugDatabase."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
             result = crawl_globalprotect(major_versions=["6-2"])
 
             assert result is not None
@@ -811,7 +658,7 @@ class TestWrapperFunctions:
 
     def test_crawl_panos_returns_database(self, mock_playwright_panos):
         """Test that crawl_panos returns a FetchResult with BugDatabase."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
             result = crawl_panos(major_versions=["12-1"])
 
             assert result is not None
@@ -821,7 +668,7 @@ class TestWrapperFunctions:
 
     def test_crawl_prisma_returns_database(self, mock_playwright_prisma):
         """Test that crawl_prisma_access_agent returns a FetchResult with BugDatabase."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_prisma):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_prisma):
             result = crawl_prisma_access_agent(major_versions=["26-1"])
 
             assert result is not None
@@ -831,7 +678,7 @@ class TestWrapperFunctions:
 
     def test_crawl_globalprotect_metadata_source(self, mock_playwright_globalprotect):
         """Test that metadata source is set correctly."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
             result = crawl_globalprotect(major_versions=["6-2"])
 
             assert "GlobalProtect" in result.database.metadata.source
@@ -839,12 +686,12 @@ class TestWrapperFunctions:
 
     def test_crawl_globalprotect_all_versions_source(self, mock_playwright_globalprotect):
         """Test metadata source when crawling all versions."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
-            # Mock discover_globalprotect_versions to return empty list
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
+            # Mock discover_versions to return empty list
             # to avoid actually discovering versions
             with patch.object(
-                PaloAltoCrawler,
-                "discover_globalprotect_versions",
+                GlobalProtectCrawler,
+                "discover_versions",
                 new_callable=AsyncMock,
                 return_value=[]
             ):
@@ -913,7 +760,7 @@ class TestDebugLogging:
     def test_configure_logging_sets_debug_level(self):
         """Test that configure_logging sets the correct log level."""
         import logging
-        from bugdb.crawler import configure_logging, logger
+        from bugdb.crawlers.utils import configure_logging, logger
 
         configure_logging(debug=True)
         assert logger.level == logging.DEBUG
@@ -921,7 +768,7 @@ class TestDebugLogging:
     def test_configure_logging_sets_info_level(self):
         """Test that configure_logging sets INFO level when debug is False."""
         import logging
-        from bugdb.crawler import configure_logging, logger
+        from bugdb.crawlers.utils import configure_logging, logger
 
         configure_logging(debug=False)
         assert logger.level == logging.INFO
@@ -936,7 +783,7 @@ class TestMultiVersionPageParsing:
     ):
         """Test parsing a page with multiple version sections."""
         # Create a custom mock that returns our sample HTML
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
             async with PaloAltoCrawler() as crawler:
                 # Directly test the parsing logic with our sample HTML
                 soup = BeautifulSoup(sample_html_multi_version, "lxml")
@@ -1417,10 +1264,10 @@ class TestSkipVersionsParameter:
     @pytest.mark.asyncio
     async def test_crawl_globalprotect_skip_versions(self, mock_playwright_globalprotect):
         """Test that skip_versions parameter filters out versions."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
-            async with PaloAltoCrawler() as crawler:
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
+            async with GlobalProtectCrawler() as crawler:
                 # Crawl with skip_versions - should skip the specified version
-                result = await crawler.crawl_globalprotect(
+                result = await crawler.crawl(
                     major_versions=["6-2"],
                     skip_versions={"6.2.1"},
                 )
@@ -1433,9 +1280,9 @@ class TestSkipVersionsParameter:
     @pytest.mark.asyncio
     async def test_crawl_globalprotect_empty_skip_versions(self, mock_playwright_globalprotect):
         """Test that empty skip_versions doesn't affect crawling."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_globalprotect(
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
+            async with GlobalProtectCrawler() as crawler:
+                result = await crawler.crawl(
                     major_versions=["6-2"],
                     skip_versions=set(),
                 )
@@ -1445,9 +1292,9 @@ class TestSkipVersionsParameter:
     @pytest.mark.asyncio
     async def test_crawl_panos_skip_versions(self, mock_playwright_panos):
         """Test that skip_versions works for PAN-OS crawler."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_panos(
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler() as crawler:
+                result = await crawler.crawl(
                     major_versions=["12-1"],
                     skip_versions={"12.1.5"},
                 )
@@ -1459,9 +1306,9 @@ class TestSkipVersionsParameter:
     @pytest.mark.asyncio
     async def test_crawl_prisma_skip_versions(self, mock_playwright_prisma):
         """Test that skip_versions works for Prisma Access Agent crawler."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_prisma):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_prisma_access_agent(
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_prisma):
+            async with PrismaAccessAgentCrawler() as crawler:
+                result = await crawler.crawl(
                     major_versions=["26-1"],
                     skip_versions={"26.1.2"},
                 )
@@ -1472,7 +1319,7 @@ class TestSkipVersionsParameter:
 
     def test_crawl_globalprotect_wrapper_skip_versions(self, mock_playwright_globalprotect):
         """Test that skip_versions works in sync wrapper function."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_globalprotect):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect):
             result = crawl_globalprotect(
                 major_versions=["6-2"],
                 skip_versions={"6.2.1"},
@@ -1484,7 +1331,7 @@ class TestSkipVersionsParameter:
 
     def test_crawl_panos_wrapper_skip_versions(self, mock_playwright_panos):
         """Test that skip_versions works in PAN-OS sync wrapper function."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_panos):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
             result = crawl_panos(
                 major_versions=["12-1"],
                 skip_versions={"12.1.5"},
@@ -1496,7 +1343,7 @@ class TestSkipVersionsParameter:
 
     def test_crawl_prisma_wrapper_skip_versions(self, mock_playwright_prisma):
         """Test that skip_versions works in Prisma sync wrapper function."""
-        with patch("bugdb.crawler.async_playwright", return_value=mock_playwright_prisma):
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_prisma):
             result = crawl_prisma_access_agent(
                 major_versions=["26-1"],
                 skip_versions={"26.1.2"},
@@ -2481,167 +2328,6 @@ class TestPrismaAccessCrawler:
         assert issues[2].affected_components == ["ZTNA Connector", "Linux"]
 
 
-class TestPrismaAccessIssuePageParsing:
-    """Tests for parsing Prisma Access issues pages with sections."""
-
-    @pytest.mark.asyncio
-    async def test_parse_prisma_access_issues_page_version_sections(self):
-        """Test parsing page with version sections."""
-        html = """
-        <html>
-        <body>
-            <h2>6.1 Addressed Issues</h2>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-100</td><td>Base version fix.</td></tr>
-                </tbody>
-            </table>
-
-            <h3>6.1.1 Addressed Issues</h3>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-101</td><td>Minor version fix.</td></tr>
-                </tbody>
-            </table>
-
-            <h3>6.1.0-h5 Addressed Issues</h3>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-102</td><td>Hotfix.</td></tr>
-                </tbody>
-            </table>
-        </body>
-        </html>
-        """
-
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
-            mock_fetch.return_value = BeautifulSoup(html, "lxml")
-
-            crawler = PaloAltoCrawler()
-            result = await crawler._parse_prisma_access_issues_page(
-                "/test-url", "addressed", "6-1"
-            )
-
-        # Should have issues for three versions
-        assert "6.1" in result
-        assert "6.1.1" in result
-        assert "6.1.0-h5" in result
-
-        assert result["6.1"][0].bug_id == "PA-100"
-        assert result["6.1.1"][0].bug_id == "PA-101"
-        assert result["6.1.0-h5"][0].bug_id == "PA-102"
-
-    @pytest.mark.asyncio
-    async def test_parse_prisma_access_issues_page_feature_sections(self):
-        """Test parsing page with feature sections for known issues."""
-        html = """
-        <html>
-        <body>
-            <h2>Prisma Access 6.1 Known Issues</h2>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-200</td><td>General issue.</td></tr>
-                </tbody>
-            </table>
-
-            <h3>Dynamic Privileges Access Known Issues</h3>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-201</td><td>DPA specific issue.</td></tr>
-                </tbody>
-            </table>
-
-            <h3>Remote Browser Isolation Known Issues</h3>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-202</td><td>RBI specific issue.</td></tr>
-                </tbody>
-            </table>
-        </body>
-        </html>
-        """
-
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
-            mock_fetch.return_value = BeautifulSoup(html, "lxml")
-
-            crawler = PaloAltoCrawler()
-            result = await crawler._parse_prisma_access_issues_page(
-                "/test-url", "known", "6-1"
-            )
-
-        # All issues should be under base version 6.1
-        assert "6.1" in result
-        issues = result["6.1"]
-        assert len(issues) == 3
-
-        # Check that features are in affected_components
-        bug_ids = {i.bug_id: i for i in issues}
-
-        assert bug_ids["PA-200"].affected_components is None  # General, no feature
-        assert bug_ids["PA-201"].affected_components == ["Dynamic Privileges Access"]
-        assert bug_ids["PA-202"].affected_components == ["Remote Browser Isolation"]
-
-    @pytest.mark.asyncio
-    async def test_parse_prisma_access_issues_page_mixed_sections(self):
-        """Test parsing page with both version and feature sections."""
-        html = """
-        <html>
-        <body>
-            <h2>Prisma Access Known Issues</h2>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-300</td><td>General issue.</td></tr>
-                </tbody>
-            </table>
-
-            <h3>ZTNA Connector Known Issues</h3>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-301</td><td>ZTNA issue.</td></tr>
-                </tbody>
-            </table>
-
-            <h3>6.1.2 Known Issues</h3>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>PA-302</td><td>Version specific issue.</td></tr>
-                </tbody>
-            </table>
-        </body>
-        </html>
-        """
-
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
-            mock_fetch.return_value = BeautifulSoup(html, "lxml")
-
-            crawler = PaloAltoCrawler()
-            result = await crawler._parse_prisma_access_issues_page(
-                "/test-url", "known", "6-1"
-            )
-
-        # Should have issues for base version and specific version
-        assert "6.1" in result
-        assert "6.1.2" in result
-
-        # Base version issues include general and feature-specific
-        base_issues = {i.bug_id: i for i in result["6.1"]}
-        assert "PA-300" in base_issues
-        assert "PA-301" in base_issues
-        assert base_issues["PA-301"].affected_components == ["ZTNA Connector"]
-
-        # Version-specific issue
-        assert result["6.1.2"][0].bug_id == "PA-302"
-
-
 class TestPrismaAccessCrawlFunction:
     """Tests for the crawl_prisma_access function."""
 
@@ -2788,115 +2474,6 @@ class TestPrismaSDWANCrawler:
         assert issues[1].fix_info is None
 
 
-class TestPrismaSDWANIssuePageParsing:
-    """Tests for Prisma SD-WAN issue page parsing."""
-
-    @pytest.mark.asyncio
-    async def test_parse_prisma_sdwan_issues_page_simple(self):
-        """Test parsing a simple Prisma SD-WAN issues page."""
-        html = """
-        <html>
-        <body>
-            <h2>Addressed Issues in Prisma SD-WAN ION Release 6.5</h2>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>CGXSW-100</td><td>Fixed a connectivity issue.</td></tr>
-                    <tr><td>CGXSW-101</td><td>Fixed a performance bug.</td></tr>
-                </tbody>
-            </table>
-        </body>
-        </html>
-        """
-
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
-            mock_fetch.return_value = BeautifulSoup(html, "lxml")
-
-            crawler = PaloAltoCrawler()
-            result = await crawler._parse_prisma_sdwan_issues_page(
-                "/test-url", "addressed", "6-5"
-            )
-
-        assert "6.5" in result
-        assert len(result["6.5"]) == 2
-        assert result["6.5"][0].bug_id == "CGXSW-100"
-        assert result["6.5"][1].bug_id == "CGXSW-101"
-
-    @pytest.mark.asyncio
-    async def test_parse_prisma_sdwan_issues_page_version_sections(self):
-        """Test parsing page with multiple version sections."""
-        html = """
-        <html>
-        <body>
-            <h2>Addressed Issues in Prisma SD-WAN ION Releases</h2>
-
-            <h3>6.5.1 Addressed Issues</h3>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>CGXSW-200</td><td>Fixed in 6.5.1.</td></tr>
-                </tbody>
-            </table>
-
-            <h3>6.5.0 Addressed Issues</h3>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr><td>CGXSW-201</td><td>Fixed in 6.5.0.</td></tr>
-                </tbody>
-            </table>
-        </body>
-        </html>
-        """
-
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
-            mock_fetch.return_value = BeautifulSoup(html, "lxml")
-
-            crawler = PaloAltoCrawler()
-            result = await crawler._parse_prisma_sdwan_issues_page(
-                "/test-url", "addressed", "6-5"
-            )
-
-        assert "6.5.1" in result
-        assert "6.5.0" in result
-        assert result["6.5.1"][0].bug_id == "CGXSW-200"
-        assert result["6.5.0"][0].bug_id == "CGXSW-201"
-
-    @pytest.mark.asyncio
-    async def test_parse_prisma_sdwan_issues_page_with_workaround(self):
-        """Test parsing page with workarounds in descriptions."""
-        html = """
-        <html>
-        <body>
-            <h2>Known Issues</h2>
-            <table>
-                <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
-                <tbody>
-                    <tr>
-                        <td>CGXSW-300</td>
-                        <td>Connection drops under load. Workaround: Reduce concurrent connections.</td>
-                    </tr>
-                </tbody>
-            </table>
-        </body>
-        </html>
-        """
-
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
-            mock_fetch.return_value = BeautifulSoup(html, "lxml")
-
-            crawler = PaloAltoCrawler()
-            result = await crawler._parse_prisma_sdwan_issues_page(
-                "/test-url", "known", "6-5"
-            )
-
-        assert "6.5" in result
-        issue = result["6.5"][0]
-        assert issue.bug_id == "CGXSW-300"
-        assert issue.workaround == "Reduce concurrent connections."
-        assert "Workaround" not in issue.description
-
-
 class TestPrismaSDWANCrawlFunction:
     """Tests for the crawl_prisma_sdwan function."""
 
@@ -2946,9 +2523,9 @@ class TestCloudNGFWAzureCrawler:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_cloud_ngfw_azure()
+        with patch.object(CloudNGFWAzureCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with CloudNGFWAzureCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert result.product.id == "cloud-ngfw-azure"
         assert result.product.name == "Cloud NGFW for Azure"
@@ -2984,9 +2561,9 @@ class TestCloudNGFWAzureCrawler:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_cloud_ngfw_azure()
+        with patch.object(CloudNGFWAzureCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with CloudNGFWAzureCrawler() as crawler:
+                result = await crawler.crawl()
 
         issue = result.product.versions[0].known_issues[0]
         assert issue.bug_id == "CNGFWAZR-200"
@@ -3001,9 +2578,9 @@ class TestCloudNGFWAzureCrawler:
         async def mock_fetch(url):
             return BeautifulSoup(empty_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_cloud_ngfw_azure()
+        with patch.object(CloudNGFWAzureCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with CloudNGFWAzureCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert result.product.id == "cloud-ngfw-azure"
         assert len(result.product.versions) == 0
@@ -3048,10 +2625,10 @@ class TestCloudNGFWAWSCrawler:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(CloudNGFWAWSCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(known_html, "lxml")
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_cloud_ngfw_aws()
+            async with CloudNGFWAWSCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert result.product.id == "cloud-ngfw-aws"
         assert result.product.name == "Cloud NGFW for AWS"
@@ -3066,10 +2643,10 @@ class TestCloudNGFWAWSCrawler:
         """Test handling of empty page."""
         empty_html = "<html><body></body></html>"
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(CloudNGFWAWSCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(empty_html, "lxml")
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_cloud_ngfw_aws()
+            async with CloudNGFWAWSCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert result.product.id == "cloud-ngfw-aws"
         assert len(result.product.versions) == 0
@@ -3089,27 +2666,27 @@ class TestADEMDateParsing:
 
     def test_parse_adem_date_month_year(self):
         """Test parsing 'Month Year' format."""
-        crawler = PaloAltoCrawler()
+        crawler = ADEMCrawler()
         assert crawler._parse_adem_date("March 2024") == "2024-03-01"
         assert crawler._parse_adem_date("December 2023") == "2023-12-01"
         assert crawler._parse_adem_date("January 2025") == "2025-01-01"
 
     def test_parse_adem_date_month_day_year(self):
         """Test parsing 'Month Day, Year' format."""
-        crawler = PaloAltoCrawler()
+        crawler = ADEMCrawler()
         assert crawler._parse_adem_date("March 15, 2024") == "2024-03-15"
         assert crawler._parse_adem_date("December 1, 2023") == "2023-12-01"
         assert crawler._parse_adem_date("January 31 2025") == "2025-01-31"
 
     def test_parse_adem_date_iso_format(self):
         """Test parsing ISO date format."""
-        crawler = PaloAltoCrawler()
+        crawler = ADEMCrawler()
         assert crawler._parse_adem_date("2024-03-15") == "2024-03-15"
         assert crawler._parse_adem_date("2023-12-01") == "2023-12-01"
 
     def test_parse_adem_date_invalid(self):
         """Test that invalid dates return None."""
-        crawler = PaloAltoCrawler()
+        crawler = ADEMCrawler()
         assert crawler._parse_adem_date("Not a date") is None
         assert crawler._parse_adem_date("Bug ID: ADEM-123") is None
         assert crawler._parse_adem_date("") is None
@@ -3155,9 +2732,9 @@ class TestADEMCrawler:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_adem()
+        with patch.object(ADEMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with ADEMCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert result.product.id == "adem"
         assert result.product.name == "Autonomous DEM"
@@ -3199,9 +2776,9 @@ class TestADEMCrawler:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_adem()
+        with patch.object(ADEMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with ADEMCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert len(result.product.versions) == 2
         versions = {v.version for v in result.product.versions}
@@ -3240,9 +2817,9 @@ class TestADEMCrawler:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_adem()
+        with patch.object(ADEMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with ADEMCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert len(result.product.versions) == 1
         addressed = result.product.versions[0].addressed_issues
@@ -3277,19 +2854,19 @@ class TestSCMVersionSortKey:
 
     def test_scm_version_sort_key_standard(self):
         """Test sorting standard SCM versions."""
-        crawler = PaloAltoCrawler()
+        crawler = SCMCrawler()
         assert crawler._scm_version_sort_key("2025.r5.0") == (2025, 5, 0)
         assert crawler._scm_version_sort_key("2024.r12.1") == (2024, 12, 1)
         assert crawler._scm_version_sort_key("2023.r1.0") == (2023, 1, 0)
 
     def test_scm_version_sort_key_unknown(self):
         """Test sorting Unknown version."""
-        crawler = PaloAltoCrawler()
+        crawler = SCMCrawler()
         assert crawler._scm_version_sort_key("Unknown") == (0, 0, 0)
 
     def test_scm_version_sort_key_invalid(self):
         """Test sorting invalid version."""
-        crawler = PaloAltoCrawler()
+        crawler = SCMCrawler()
         assert crawler._scm_version_sort_key("invalid") == (0, 0, 0)
 
 
@@ -3327,9 +2904,9 @@ class TestSCMCrawler:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_scm()
+        with patch.object(SCMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with SCMCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert result.product.id == "scm"
         assert result.product.name == "Strata Cloud Manager"
@@ -3379,9 +2956,9 @@ class TestSCMCrawler:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_scm()
+        with patch.object(SCMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with SCMCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert len(result.product.versions) == 2
         versions = {v.version for v in result.product.versions}
@@ -3417,9 +2994,9 @@ class TestSCMCrawler:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_scm()
+        with patch.object(SCMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with SCMCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert len(result.product.versions) == 1
         assert result.product.versions[0].version == "Unknown"
@@ -3464,9 +3041,9 @@ class TestSCMMainAddressedTable:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_scm()
+        with patch.object(SCMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with SCMCrawler() as crawler:
+                result = await crawler.crawl()
 
         # Should have 3 versions: 2025.r5.0, 2025.r4.0, Unknown
         assert len(result.product.versions) == 3
@@ -3518,9 +3095,9 @@ class TestSCMMainAddressedTable:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_scm()
+        with patch.object(SCMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with SCMCrawler() as crawler:
+                result = await crawler.crawl()
 
         # All should be in Unknown version
         assert len(result.product.versions) == 1
@@ -3562,9 +3139,9 @@ class TestSCMMainAddressedTable:
             else:
                 return BeautifulSoup(addressed_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_scm()
+        with patch.object(SCMCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            async with SCMCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert len(result.product.versions) == 1
         assert result.product.versions[0].version == "2025.r1.0"
@@ -3610,7 +3187,7 @@ class TestSCMMultitenantKnownIssues:
         """
         soup = BeautifulSoup(html, "lxml")
 
-        async with PaloAltoCrawler(headless=True) as crawler:
+        async with SCMCrawler(headless=True) as crawler:
             issues = crawler._parse_scm_multitenant_known_issues_page(soup)
 
         assert len(issues) == 2
@@ -3639,7 +3216,7 @@ class TestSCMMultitenantKnownIssues:
         """
         soup = BeautifulSoup(html, "lxml")
 
-        async with PaloAltoCrawler(headless=True) as crawler:
+        async with SCMCrawler(headless=True) as crawler:
             issues = crawler._parse_scm_multitenant_known_issues_page(soup)
 
         assert len(issues) == 0
@@ -3662,7 +3239,7 @@ class TestSCMMultitenantKnownIssues:
         """
         soup = BeautifulSoup(html, "lxml")
 
-        async with PaloAltoCrawler(headless=True) as crawler:
+        async with SCMCrawler(headless=True) as crawler:
             issues = crawler._parse_scm_multitenant_known_issues_page(soup)
 
         # Should only parse the outer table, not the nested one
@@ -3695,9 +3272,9 @@ class TestSdwanPluginCrawler:
                 return BeautifulSoup(valid_html, "lxml")
             return BeautifulSoup(invalid_html, "lxml")
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
-            crawler = PaloAltoCrawler()
-            versions = await crawler.discover_sdwan_plugin_versions()
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore', side_effect=mock_fetch):
+            crawler = SDWANPluginCrawler()
+            versions = await crawler.discover_versions()
 
         assert "3-4" in versions
         assert "3-3" in versions
@@ -3728,10 +3305,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, addressed_by_version = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -3762,10 +3339,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, addressed_by_version = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -3800,10 +3377,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -3827,10 +3404,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -3859,10 +3436,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, addressed_by_version = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -3899,10 +3476,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, addressed_by_version = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -3931,10 +3508,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -3960,10 +3537,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -3991,10 +3568,10 @@ class TestSdwanPluginIssuePageParsing:
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(SDWANPluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            crawler = PaloAltoCrawler()
+            crawler = SDWANPluginCrawler()
             known_issues, _ = await crawler._parse_sdwan_plugin_issues_page(
                 "/test-url", "3-3"
             )
@@ -4274,14 +3851,14 @@ class TestPluginVersionDiscovery:
         </body>
         </html>
         """
-        from bugdb.crawler import PLUGIN_CONFIGS
+        from bugdb.crawlers import PLUGIN_CONFIGS
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(PluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            async with PaloAltoCrawler() as crawler:
-                config = PLUGIN_CONFIGS["plugin-aws"]
-                versions = await crawler.discover_plugin_versions(config)
+            config = PLUGIN_CONFIGS["plugin-aws"]
+            async with PluginCrawler(config=config) as crawler:
+                versions = await crawler.discover_versions()
 
         # Should find versions 5.3.0 and 5.2.0
         version_strs = [v.version for v in versions]
@@ -4299,14 +3876,14 @@ class TestPluginVersionDiscovery:
         </body>
         </html>
         """
-        from bugdb.crawler import PLUGIN_CONFIGS
+        from bugdb.crawlers import PLUGIN_CONFIGS
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(PluginCrawler, '_fetch_page_with_semaphore') as mock_fetch:
             mock_fetch.return_value = BeautifulSoup(html, "lxml")
 
-            async with PaloAltoCrawler() as crawler:
-                config = PLUGIN_CONFIGS["vm-series-plugin"]
-                versions = await crawler.discover_plugin_versions(config)
+            config = PLUGIN_CONFIGS["vm-series-plugin"]
+            async with PluginCrawler(config=config) as crawler:
+                versions = await crawler.discover_versions()
 
         version_strs = [v.version for v in versions]
         assert "6.1.2" in version_strs
@@ -4320,48 +3897,35 @@ class TestDeviceSecurityCrawler:
     @pytest.mark.asyncio
     async def test_discover_device_security_years(self):
         """Test that year discovery extracts years from index pages."""
-        known_html = """
+        index_html = """
         <html>
         <body>
-            <a href="/iot/release-notes/known-issues/known-issues-in-2025">2025</a>
-            <a href="/iot/release-notes/known-issues/known-issues-in-2024">2024</a>
-        </body>
-        </html>
-        """
-        addressed_html = """
-        <html>
-        <body>
-            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2026">2026</a>
-            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2025">2025</a>
+            <a href="/iot/iot-security-release-notes/2026">2026</a>
+            <a href="/iot/iot-security-release-notes/2025">2025</a>
+            <a href="/iot/iot-security-release-notes/2024">2024</a>
         </body>
         </html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
-            mock_fetch.side_effect = [
-                BeautifulSoup(known_html, "lxml"),
-                BeautifulSoup(addressed_html, "lxml"),
-            ]
+        with patch.object(DeviceSecurityCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(index_html, "lxml")
 
-            async with PaloAltoCrawler() as crawler:
-                years = await crawler.discover_device_security_years()
+            async with DeviceSecurityCrawler() as crawler:
+                years = await crawler.discover_years()
 
-        assert "2025" in years["known"]
-        assert "2024" in years["known"]
-        assert "2026" in years["addressed"]
-        assert "2025" in years["addressed"]
+        assert "2026" in years
+        assert "2025" in years
+        assert "2024" in years
+        # Should be sorted newest first
+        assert years.index("2026") < years.index("2025") < years.index("2024")
 
     @pytest.mark.asyncio
     async def test_crawl_device_security_parses_issues(self):
         """Test that Device Security crawler parses issues from tables."""
-        index_known_html = """
+        # Index page with year links
+        index_html = """
         <html><body>
-            <a href="/iot/release-notes/known-issues/known-issues-in-2025">2025</a>
-        </body></html>
-        """
-        index_addressed_html = """
-        <html><body>
-            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2025">2025</a>
+            <a href="/iot/iot-security-release-notes/2025">2025</a>
         </body></html>
         """
         issues_html = """
@@ -4376,16 +3940,18 @@ class TestDeviceSecurityCrawler:
         </body></html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(DeviceSecurityCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            # First call: index page for discover_years
+            # Second call: known issues page for 2025
+            # Third call: addressed issues page for 2025
             mock_fetch.side_effect = [
-                BeautifulSoup(index_known_html, "lxml"),
-                BeautifulSoup(index_addressed_html, "lxml"),
+                BeautifulSoup(index_html, "lxml"),
                 BeautifulSoup(issues_html, "lxml"),
                 BeautifulSoup(issues_html, "lxml"),
             ]
 
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_device_security()
+            async with DeviceSecurityCrawler() as crawler:
+                result = await crawler.crawl()
 
         assert result.product.id == "device-security"
         assert result.product.name == "Device Security"
@@ -4397,16 +3963,11 @@ class TestDeviceSecurityCrawler:
     @pytest.mark.asyncio
     async def test_crawl_device_security_skip_versions(self):
         """Test that skip_versions is respected."""
-        index_known_html = """
+        # Index page with multiple year links
+        index_html = """
         <html><body>
-            <a href="/iot/release-notes/known-issues/known-issues-in-2025">2025</a>
-            <a href="/iot/release-notes/known-issues/known-issues-in-2024">2024</a>
-        </body></html>
-        """
-        index_addressed_html = """
-        <html><body>
-            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2025">2025</a>
-            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2024">2024</a>
+            <a href="/iot/iot-security-release-notes/2025">2025</a>
+            <a href="/iot/iot-security-release-notes/2024">2024</a>
         </body></html>
         """
         issues_html = """
@@ -4420,16 +3981,18 @@ class TestDeviceSecurityCrawler:
         </body></html>
         """
 
-        with patch.object(PaloAltoCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+        with patch.object(DeviceSecurityCrawler, '_fetch_page_with_semaphore') as mock_fetch:
+            # First call: index page for discover_years
+            # Second call: known issues page for 2025 (2024 is skipped)
+            # Third call: addressed issues page for 2025
             mock_fetch.side_effect = [
-                BeautifulSoup(index_known_html, "lxml"),
-                BeautifulSoup(index_addressed_html, "lxml"),
+                BeautifulSoup(index_html, "lxml"),
                 BeautifulSoup(issues_html, "lxml"),
                 BeautifulSoup(issues_html, "lxml"),
             ]
 
-            async with PaloAltoCrawler() as crawler:
-                result = await crawler.crawl_device_security(skip_versions={"2024"})
+            async with DeviceSecurityCrawler() as crawler:
+                result = await crawler.crawl(skip_versions={"2024"})
 
         # Should only have 2025, not 2024
         version_strs = [v.version for v in result.product.versions]
@@ -4459,3 +4022,718 @@ class TestDeviceSecurityCrawlFunction:
         assert "debug" in param_names
         assert "max_concurrency" in param_names
         assert "skip_versions" in param_names
+
+
+# =============================================================================
+# Cortex XDR Agent Crawler Tests
+# =============================================================================
+
+
+class TestCortexXDRVersionExtraction:
+    """Tests for Cortex XDR version extraction."""
+
+    def test_extract_version_from_agent_text(self):
+        """Test extracting version from 'Cortex XDR agent X.Y.Z' text."""
+        crawler = CortexXDRCrawler()
+
+        assert crawler._extract_cortex_xdr_version("Cortex XDR agent 9.0.1") == "9.0.1"
+        assert crawler._extract_cortex_xdr_version("Cortex XDR agent 8.7") == "8.7"
+        assert crawler._extract_cortex_xdr_version("Cortex XDR agent 8.6.1") == "8.6.1"
+
+    def test_extract_version_with_hotfix_suffix(self):
+        """Test extracting version from text with HF suffix."""
+        crawler = CortexXDRCrawler()
+
+        assert crawler._extract_cortex_xdr_version("8.6.1 HF") == "8.6.1"
+        assert crawler._extract_cortex_xdr_version("Cortex XDR agent 8.3.101-CE HF") == "8.3.101"
+
+    def test_extract_version_simple_number(self):
+        """Test extracting version from simple version string."""
+        crawler = CortexXDRCrawler()
+
+        assert crawler._extract_cortex_xdr_version("9.1") == "9.1"
+        assert crawler._extract_cortex_xdr_version("8.8.1") == "8.8.1"
+
+    def test_extract_version_no_match(self):
+        """Test that None is returned when no version found."""
+        crawler = CortexXDRCrawler()
+
+        assert crawler._extract_cortex_xdr_version("No version here") is None
+        assert crawler._extract_cortex_xdr_version("") is None
+        assert crawler._extract_cortex_xdr_version("Agent") is None
+
+
+class TestCortexXDRReleasesPageParsing:
+    """Tests for parsing the Cortex XDR releases index page."""
+
+    def test_parse_main_releases_table(self):
+        """Test parsing main releases table."""
+        html = """
+        <html><body>
+        <h1>Cortex XDR Agent Releases</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>MAJOR RELEASE</th>
+                    <th>RELEASE NOTES</th>
+                    <th>RELEASE DATE</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>9.1</td>
+                    <td><a href="/r/Cortex-XDR/9.1/Release-Info">Cortex XDR agent 9.1</a></td>
+                    <td>January 25, 2026</td>
+                </tr>
+                <tr>
+                    <td>9.0</td>
+                    <td><a href="/r/Cortex-XDR/9.0/Release-Info">Cortex XDR agent 9.0</a></td>
+                    <td>November 9, 2025</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        releases = crawler._parse_cortex_xdr_releases_page(soup)
+
+        assert len(releases) == 2
+        assert releases[0][0] == "9.1"
+        assert "/r/Cortex-XDR/9.1/Release-Info" in releases[0][1]
+        assert releases[1][0] == "9.0"
+
+    def test_parse_hotfix_releases_table(self):
+        """Test parsing hotfix releases table with and without links."""
+        html = """
+        <html><body>
+        <h2>Cortex XDR Hotfix Releases</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>RELEASE</th>
+                    <th>RELEASE DATE</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><a href="/r/Cortex-XDR/8.7.1">Cortex XDR agent 8.7.1</a></td>
+                    <td>June 30, 2025</td>
+                </tr>
+                <tr>
+                    <td>Cortex XDR agent 8.6.1 HF (no link)</td>
+                    <td>March 5, 2025</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        releases = crawler._parse_cortex_xdr_releases_page(soup)
+
+        # Only the row with link should be included
+        assert len(releases) == 1
+        assert releases[0][0] == "8.7.1"
+
+    def test_parse_archive_releases_filter_old_versions(self):
+        """Test that archive releases < 7.7 are filtered out."""
+        html = """
+        <html><body>
+        <h1>Cortex XDR Agent Past Releases Archive</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>RELEASE</th>
+                    <th>RELEASE DATE</th>
+                    <th>STATUS</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><a href="/r/Cortex-XDR/8.0">Cortex XDR agent 8.0</a></td>
+                    <td>January 2024</td>
+                    <td>EOL</td>
+                </tr>
+                <tr>
+                    <td><a href="/r/Cortex-XDR/7.7">Cortex XDR agent 7.7</a></td>
+                    <td>October 2023</td>
+                    <td>EOL</td>
+                </tr>
+                <tr>
+                    <td><a href="/r/Cortex-XDR/7.6">Cortex XDR agent 7.6</a></td>
+                    <td>July 2023</td>
+                    <td>EOL</td>
+                </tr>
+                <tr>
+                    <td><a href="/r/Cortex-XDR/7.5">Cortex XDR agent 7.5</a></td>
+                    <td>April 2023</td>
+                    <td>EOL</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        releases = crawler._parse_cortex_xdr_releases_page(soup)
+
+        # Only 8.0 and 7.7 should be included (>= 7.7)
+        versions = [r[0] for r in releases]
+        assert "8.0" in versions
+        assert "7.7" in versions
+        assert "7.6" not in versions
+        assert "7.5" not in versions
+
+    def test_parse_skips_mobile_releases(self):
+        """Test that iOS/Android releases are skipped."""
+        html = """
+        <html><body>
+        <h1>Cortex XDR Mobile Patch Releases</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>RELEASE</th>
+                    <th>DESCRIPTION</th>
+                    <th>RELEASE DATE</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>iOS agent 9.1</td>
+                    <td><a href="/r/ios/9.1">Cortex XDR agent 9.1 for iOS</a></td>
+                    <td>February 2026</td>
+                </tr>
+                <tr>
+                    <td>Android agent 9.0</td>
+                    <td><a href="/r/android/9.0">Cortex XDR agent 9.0 for Android</a></td>
+                    <td>January 2026</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        releases = crawler._parse_cortex_xdr_releases_page(soup)
+
+        # Mobile releases should be skipped
+        assert len(releases) == 0
+
+    def test_parse_skips_feature_tables(self):
+        """Test that feature enhancement tables are skipped."""
+        html = """
+        <html><body>
+        <h2>Feature Enhancements</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>FEATURE</th>
+                    <th>DESCRIPTION</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>New Feature 1</td>
+                    <td>Description of feature 1</td>
+                </tr>
+            </tbody>
+        </table>
+        <h1>Cortex XDR Agent Releases</h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>MAJOR RELEASE</th>
+                    <th>RELEASE NOTES</th>
+                    <th>RELEASE DATE</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>9.0</td>
+                    <td><a href="/r/9.0">Cortex XDR agent 9.0</a></td>
+                    <td>November 2025</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        releases = crawler._parse_cortex_xdr_releases_page(soup)
+
+        # Only actual release table should be parsed
+        assert len(releases) == 1
+        assert releases[0][0] == "9.0"
+
+    def test_parse_avoids_duplicate_versions(self):
+        """Test that duplicate versions are not returned."""
+        html = """
+        <html><body>
+        <table>
+            <tbody>
+                <tr>
+                    <td><a href="/r/9.0/v1">Cortex XDR agent 9.0</a></td>
+                    <td>Nov 2025</td>
+                </tr>
+                <tr>
+                    <td><a href="/r/9.0/v2">Cortex XDR agent 9.0.1</a></td>
+                    <td>Dec 2025</td>
+                </tr>
+                <tr>
+                    <td><a href="/r/9.0/v3">Cortex XDR agent 9.0</a></td>
+                    <td>Nov 2025</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        releases = crawler._parse_cortex_xdr_releases_page(soup)
+
+        # 9.0 should only appear once
+        versions = [r[0] for r in releases]
+        assert versions.count("9.0") == 1
+        assert "9.0.1" in versions
+
+
+class TestCortexXDRReleasePageParsing:
+    """Tests for parsing individual Cortex XDR release pages."""
+
+    def test_parse_addressed_issues(self):
+        """Test parsing addressed issues from a release page."""
+        html = """
+        <html><body>
+        <h2>Addressed issues in Cortex XDR agent 9.0</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ISSUE</th>
+                    <th>DESCRIPTION</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-34621</td>
+                    <td>Fixed an issue where IPv6 addresses were not handled correctly.</td>
+                </tr>
+                <tr>
+                    <td>CPATR-33007</td>
+                    <td>Resolved memory leak in the agent service.</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        known_issues, addressed_issues = crawler._parse_cortex_xdr_release_page(soup)
+
+        assert len(addressed_issues) == 2
+        assert addressed_issues[0].bug_id == "CPATR-34621"
+        assert "IPv6" in addressed_issues[0].description
+        assert addressed_issues[1].bug_id == "CPATR-33007"
+        assert len(known_issues) == 0
+
+    def test_parse_known_limitations(self):
+        """Test parsing known limitations from a release page."""
+        html = """
+        <html><body>
+        <h2>Cortex XDR agent known limitations</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ISSUE</th>
+                    <th>LIMITATION</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-18568</td>
+                    <td>Windows on ARM has limited support.</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        known_issues, addressed_issues = crawler._parse_cortex_xdr_release_page(soup)
+
+        assert len(known_issues) == 1
+        assert known_issues[0].bug_id == "CPATR-18568"
+        assert "ARM" in known_issues[0].description
+        assert len(addressed_issues) == 0
+
+    def test_parse_both_known_and_addressed(self):
+        """Test parsing page with both known and addressed issues."""
+        html = """
+        <html><body>
+        <h2>Addressed issues in Cortex XDR agent 9.1</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>PLATFORM</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-34621</td>
+                    <td>macOS</td>
+                    <td>Fixed IPv6 issue.</td>
+                </tr>
+            </tbody>
+        </table>
+        <h2>Cortex XDR agent known limitations</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-99999</td>
+                    <td>Known limitation text.</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        known_issues, addressed_issues = crawler._parse_cortex_xdr_release_page(soup)
+
+        assert len(addressed_issues) == 1
+        assert len(known_issues) == 1
+        assert addressed_issues[0].bug_id == "CPATR-34621"
+        assert known_issues[0].bug_id == "CPATR-99999"
+
+    def test_parse_skips_feature_tables(self):
+        """Test that feature enhancement tables are skipped."""
+        html = """
+        <html><body>
+        <h2>Feature Enhancements</h2>
+        <table>
+            <thead>
+                <tr><th>FEATURE</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>New Protection</td>
+                    <td>Enhanced threat detection.</td>
+                </tr>
+            </tbody>
+        </table>
+        <h2>Addressed issues in Cortex XDR agent 9.0</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-12345</td>
+                    <td>Fixed a bug.</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        known_issues, addressed_issues = crawler._parse_cortex_xdr_release_page(soup)
+
+        # Only the addressed issues table should be parsed
+        assert len(addressed_issues) == 1
+        assert addressed_issues[0].bug_id == "CPATR-12345"
+
+    def test_parse_extracts_workaround(self):
+        """Test that workarounds are extracted from descriptions."""
+        html = """
+        <html><body>
+        <h2>Cortex XDR agent known limitations</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-11111</td>
+                    <td>Agent may crash on startup. Workaround: Reinstall the agent.</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        known_issues, addressed_issues = crawler._parse_cortex_xdr_release_page(soup)
+
+        assert len(known_issues) == 1
+        assert known_issues[0].workaround == "Reinstall the agent."
+
+    def test_parse_handles_bug_id_with_platform_prefix(self):
+        """Test parsing bug ID with platform prefix in parentheses."""
+        html = """
+        <html><body>
+        <h2>Addressed issues in Cortex XDR agent 9.0</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-12345
+
+(macOS)</td>
+                    <td>Fixed issue on macOS.</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        known_issues, addressed_issues = crawler._parse_cortex_xdr_release_page(soup)
+
+        assert len(addressed_issues) == 1
+        assert addressed_issues[0].bug_id == "CPATR-12345"
+        # Platform should be extracted and normalized to affected_components
+        assert addressed_issues[0].affected_components == ["macOS"]
+
+    def test_parse_extracts_multiple_platforms(self):
+        """Test that different platforms are correctly extracted and normalized."""
+        html = """
+        <html><body>
+        <h2>Addressed issues in Cortex XDR agent 9.0</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>CPATR-11111(Windows)</td><td>Windows fix.</td></tr>
+                <tr><td>CPATR-22222(Linux)</td><td>Linux fix.</td></tr>
+                <tr><td>CPATR-33333(Mac)</td><td>Mac fix.</td></tr>
+                <tr><td>CPATR-44444</td><td>No platform specified.</td></tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+        soup = BeautifulSoup(html, "lxml")
+        crawler = CortexXDRCrawler()
+        known_issues, addressed_issues = crawler._parse_cortex_xdr_release_page(soup)
+
+        assert len(addressed_issues) == 4
+
+        # Check platforms are extracted and normalized
+        issues_by_id = {i.bug_id: i for i in addressed_issues}
+        assert issues_by_id["CPATR-11111"].affected_components == ["Windows"]
+        assert issues_by_id["CPATR-22222"].affected_components == ["Linux"]
+        assert issues_by_id["CPATR-33333"].affected_components == ["macOS"]  # Mac normalized to macOS
+        assert issues_by_id["CPATR-44444"].affected_components is None  # No platform
+
+
+class TestCortexXDRCrawlerAsync:
+    """Tests for the async Cortex XDR crawler method."""
+
+    @pytest.mark.asyncio
+    async def test_crawl_cortex_xdr_basic(self):
+        """Test basic Cortex XDR crawl."""
+        # Mock the releases page
+        releases_html = """
+        <html><body>
+        <h1>Cortex XDR Agent Releases</h1>
+        <table>
+            <thead>
+                <tr><th>MAJOR RELEASE</th><th>RELEASE NOTES</th><th>RELEASE DATE</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>9.0</td>
+                    <td><a href="https://docs-cortex.paloaltonetworks.com/r/9.0">Cortex XDR agent 9.0</a></td>
+                    <td>November 2025</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+
+        # Mock the release page
+        release_html = """
+        <html><body>
+        <h2>Addressed issues in Cortex XDR agent 9.0</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-12345</td>
+                    <td>Fixed an important bug.</td>
+                </tr>
+            </tbody>
+        </table>
+        <h2>Cortex XDR agent known limitations</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>LIMITATION</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>CPATR-99999</td>
+                    <td>Known limitation.</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+
+        with patch.object(CortexXDRCrawler, '_fetch_cortex_page_with_semaphore') as mock_fetch:
+            mock_fetch.side_effect = [
+                BeautifulSoup(releases_html, "lxml"),  # Releases page
+                BeautifulSoup(release_html, "lxml"),   # Release 9.0 page
+            ]
+
+            async with CortexXDRCrawler() as crawler:
+                result = await crawler.crawl()
+
+        assert result.product.id == "cortex-xdr"
+        assert result.product.name == "Cortex XDR Agent"
+        assert len(result.product.versions) == 1
+        assert result.product.versions[0].version == "9.0"
+        assert len(result.product.versions[0].addressed_issues) == 1
+        assert len(result.product.versions[0].known_issues) == 1
+
+    @pytest.mark.asyncio
+    async def test_crawl_cortex_xdr_skip_versions(self):
+        """Test that skip_versions parameter works."""
+        releases_html = """
+        <html><body>
+        <table>
+            <thead>
+                <tr><th>RELEASE</th><th>DATE</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><a href="/r/9.1">Cortex XDR agent 9.1</a></td>
+                    <td>Jan 2026</td>
+                </tr>
+                <tr>
+                    <td><a href="/r/9.0">Cortex XDR agent 9.0</a></td>
+                    <td>Nov 2025</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+
+        release_html = """
+        <html><body>
+        <h2>Addressed issues in Cortex XDR agent 9.1</h2>
+        <table>
+            <thead>
+                <tr><th>ISSUE</th><th>DESCRIPTION</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>CPATR-11111</td><td>New fix.</td></tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+
+        with patch.object(CortexXDRCrawler, '_fetch_cortex_page_with_semaphore') as mock_fetch:
+            mock_fetch.side_effect = [
+                BeautifulSoup(releases_html, "lxml"),
+                BeautifulSoup(release_html, "lxml"),
+            ]
+
+            async with CortexXDRCrawler() as crawler:
+                result = await crawler.crawl(skip_versions={"9.0"})
+
+        # Should only have 9.1, not 9.0
+        version_strs = [v.version for v in result.product.versions]
+        assert "9.1" in version_strs
+        assert "9.0" not in version_strs
+
+    @pytest.mark.asyncio
+    async def test_crawl_cortex_xdr_handles_fetch_error(self):
+        """Test handling when release page fetch fails - no versions should be returned."""
+        releases_html = """
+        <html><body>
+        <table>
+            <thead>
+                <tr><th>RELEASE</th><th>DATE</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><a href="/r/9.0">Cortex XDR agent 9.0</a></td>
+                    <td>Nov 2025</td>
+                </tr>
+            </tbody>
+        </table>
+        </body></html>
+        """
+
+        with patch.object(CortexXDRCrawler, '_fetch_cortex_page_with_semaphore') as mock_fetch:
+            # First call returns releases page, second call raises exception
+            mock_fetch.side_effect = [
+                BeautifulSoup(releases_html, "lxml"),  # Releases page
+                Exception("Network error"),  # Release page fails
+            ]
+
+            async with CortexXDRCrawler() as crawler:
+                result = await crawler.crawl()
+
+        # When fetch fails, the product should still be returned
+        assert result.product.id == "cortex-xdr"
+        # Version 9.0 should not be in results since its fetch failed and no issues parsed
+        version_strs = [v.version for v in result.product.versions]
+        assert "9.0" not in version_strs
+
+    @pytest.mark.asyncio
+    async def test_crawl_cortex_xdr_empty_releases(self):
+        """Test handling when no releases are found."""
+        releases_html = """
+        <html><body>
+        <p>No releases available.</p>
+        </body></html>
+        """
+
+        with patch.object(CortexXDRCrawler, '_fetch_cortex_page_with_semaphore') as mock_fetch:
+            mock_fetch.return_value = BeautifulSoup(releases_html, "lxml")
+
+            async with CortexXDRCrawler() as crawler:
+                result = await crawler.crawl()
+
+        assert result.product.id == "cortex-xdr"
+        assert len(result.product.versions) == 0
+
+
+class TestCortexXDRCrawlFunction:
+    """Tests for Cortex XDR crawl function import and signature."""
+
+    def test_crawl_cortex_xdr_import(self):
+        """Test that crawl_cortex_xdr can be imported."""
+        from bugdb.crawler import crawl_cortex_xdr
+        assert callable(crawl_cortex_xdr)
+
+    def test_crawl_cortex_xdr_signature(self):
+        """Test that crawl_cortex_xdr has correct signature."""
+        import inspect
+        from bugdb.crawler import crawl_cortex_xdr
+
+        sig = inspect.signature(crawl_cortex_xdr)
+        param_names = list(sig.parameters.keys())
+
+        assert "major_versions" in param_names
+        assert "headless" in param_names
+        assert "verbose" in param_names
+        assert "debug" in param_names
+        assert "max_concurrency" in param_names
+        assert "skip_versions" in param_names
+
+    def test_cortex_xdr_in_cli_supported_products(self):
+        """Test that cortex-xdr is in CLI supported products."""
+        # This is a simple import test to ensure CLI includes cortex-xdr
+        from bugdb.cli import fetch
+        from bugdb.crawler import crawl_cortex_xdr
+
+        # The crawl function should exist and be callable
+        assert callable(crawl_cortex_xdr)

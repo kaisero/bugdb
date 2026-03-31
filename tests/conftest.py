@@ -137,6 +137,7 @@ PANOS_URL_MAPPING = {
     "/pan-os-12-1-5-known-and-addressed-issues": "panos/12-1-5-known-and-addressed-issues.html",
     "/pan-os-11-2-4-known-and-addressed-issues": "panos/11-2-4-known-and-addressed-issues.html",
     # Index pages (least specific, must come last)
+    "/pan-os/12-1/pan-os-release-notes": "panos/12-1-index.html",
     "/ngfw/release-notes/12-1": "panos/12-1-index.html",
     "/pan-os/11-2/pan-os-release-notes": "panos/11-2-index.html",
 }
