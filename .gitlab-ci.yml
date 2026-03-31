@@ -17,6 +17,7 @@ pages:
   stage: deploy
   script:
     - pip install .
+    - bugdb generate-sample
     - bugdb build-site-cmd -o public
     - bugdb generate-release-notes -o public/assets/release-notes.json
     # Replace local data.json path with external URL
