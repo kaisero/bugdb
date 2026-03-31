@@ -75,6 +75,10 @@
                     <p class="text-gray-400 text-sm">Palo Alto Networks Bug Database</p>
                 </div>
                 <div class="text-right text-sm text-gray-400">
+                    <a id="release-notes-link" href="#" onclick="showReleaseNotesModal(); return false;"
+                       class="hidden text-pan-orange hover:text-orange-300 hover:underline mb-1 block">
+                        Release Notes
+                    </a>
                     <p>Generated: <span id="generated-date">-</span></p>
                     <p>Version: <span id="schema-version">-</span></p>
                 </div>
@@ -85,7 +89,7 @@
     <!-- Main Content -->
     <main class="max-w-7xl mx-auto px-4 py-8">
         <!-- Search and Filters -->
-        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8 sticky top-0 z-40">
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
                 <!-- Search Input -->
                 <div class="lg:col-span-2">
@@ -227,6 +231,42 @@
                 <!-- Footer -->
                 <div class="p-6 border-t border-gray-200">
                     <button id="modal-close-footer-btn" class="w-full px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Release Notes Modal -->
+    <div id="release-notes-modal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true" aria-labelledby="release-notes-modal-title">
+        <!-- Backdrop -->
+        <div id="release-notes-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 transition-opacity"></div>
+
+        <!-- Modal Panel -->
+        <div class="fixed inset-0 flex items-center justify-center p-4">
+            <div class="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col">
+                <!-- Header -->
+                <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                    <div>
+                        <h2 id="release-notes-modal-title" class="text-lg font-semibold text-gray-900">Release Notes</h2>
+                        <p class="text-sm text-gray-500">BugDB Changelog</p>
+                    </div>
+                    <button id="release-notes-modal-close-btn" class="p-2 hover:bg-gray-100 rounded-lg transition-colors" aria-label="Close modal">
+                        <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Body -->
+                <div id="release-notes-modal-body" class="flex-1 overflow-y-auto p-6">
+                    <!-- Release notes content will be inserted here -->
+                </div>
+
+                <!-- Footer -->
+                <div class="p-6 border-t border-gray-200">
+                    <button id="release-notes-modal-close-footer-btn" class="w-full px-4 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors font-medium">
                         Close
                     </button>
                 </div>
