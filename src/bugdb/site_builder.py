@@ -6,6 +6,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
+from bugdb import __version__
 from bugdb.models import BugDatabase
 
 
@@ -82,7 +83,7 @@ class SiteBuilder:
             database: The bug database (for any server-side rendering needs).
         """
         template = self.env.get_template("index.html")
-        html_content = template.render(database=database)
+        html_content = template.render(database=database, app_version=__version__)
 
         output_file = self.output_dir / "index.html"
         with open(output_file, "w", encoding="utf-8") as f:

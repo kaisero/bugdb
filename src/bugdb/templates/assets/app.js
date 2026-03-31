@@ -40,8 +40,7 @@ const elements = {
     noResults: document.getElementById('no-results'),
     loading: document.getElementById('loading'),
     clearFilters: document.getElementById('clear-filters'),
-    generatedDate: document.getElementById('generated-date'),
-    schemaVersion: document.getElementById('schema-version')
+    generatedDate: document.getElementById('generated-date')
 };
 
 // Autocomplete state
@@ -1168,7 +1167,6 @@ async function init() {
         if (data.metadata) {
             const date = new Date(data.metadata.generated_at);
             elements.generatedDate.textContent = date.toLocaleDateString();
-            elements.schemaVersion.textContent = data.metadata.version;
         }
 
         // Build fix releases map (must be done before flattening issues)
