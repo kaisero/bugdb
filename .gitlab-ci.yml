@@ -18,6 +18,7 @@ pages:
   script:
     - pip install .
     - bugdb generate-sample
+    - bugdb generate-release-notes
     - bugdb build-site-cmd -o public
     # Replace local data.json path with external URL
     - sed -i "s|fetch('assets/data.json')|fetch('https://dependencyhell.net/bugdb/data.json')|g" public/assets/app.js
