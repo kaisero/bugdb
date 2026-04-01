@@ -102,3 +102,48 @@ class BugDatabase(BaseModel):
 
     metadata: Metadata = Field(default_factory=Metadata)
     products: list[Product] = Field(default_factory=list, description="Products list")
+
+
+class FailedFetchEntry(BaseModel):
+    """A failed URL fetch entry for the fetch report."""
+
+    url: str = Field(..., description="URL that failed to fetch")
+    error: str = Field(..., description="Error message")
+    product: str = Field(..., description="Product ID")
+    version: Optional[str] = Field(None, description="Product version")
+    issue_type: Optional[str] = Field(None, description="'known' or 'addressed'")
+
+
+class ProductStats(BaseModel):
+    """Per-product fetch statistics."""
+
+    product_id: str = Field(..., description="Product identifier")
+    product_name: str = Field(..., description="Product display name")
+    versions_fetched: int = Field(..., description="Number of versions fetched")
+    known_issues_count: int = Field(..., description="Number of known issues fetched")
+    addressed_issues_count: int = Field(
+        ..., description="Number of addressed issues fetched"
+    )
+    failed_fetch_count: int = Field(..., description="Number of failed URL fetches")
+
+
+class FetchReport(BaseModel):
+    """Report generated after a fetch operation."""
+
+    generated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Report generation timestamp",
+    )
+    data_file: str = Field(..., description="Path to the associated data output file")
+    total_products: int = Field(..., description="Total number of products fetched")
+    total_versions: int = Field(..., description="Total number of versions fetched")
+    total_known_issues: int = Field(..., description="Total known issues fetched")
+    total_addressed_issues: int = Field(
+        ..., description="Total addressed issues fetched"
+    )
+    product_stats: list[ProductStats] = Field(
+        default_factory=list, description="Per-product statistics"
+    )
+    failed_fetches: list[FailedFetchEntry] = Field(
+        default_factory=list, description="URLs that could not be crawled"
+    )

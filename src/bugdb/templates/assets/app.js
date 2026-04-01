@@ -47,8 +47,8 @@ const elements = {
 let productOptions = [];
 let versionOptions = [];
 const typeOptions = [
-    { value: 'known', label: 'Known Issues' },
-    { value: 'addressed', label: 'Addressed Issues' }
+    { id: 'known', name: 'Known Issues' },
+    { id: 'addressed', name: 'Addressed Issues' }
 ];
 let highlightedProductIndex = -1;
 let highlightedVersionIndex = -1;

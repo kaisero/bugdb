@@ -3900,9 +3900,9 @@ class TestDeviceSecurityCrawler:
         index_html = """
         <html>
         <body>
-            <a href="/iot/iot-security-release-notes/2026">2026</a>
-            <a href="/iot/iot-security-release-notes/2025">2025</a>
-            <a href="/iot/iot-security-release-notes/2024">2024</a>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2026">Known Issues in 2026</a>
+            <a href="/iot/release-notes/addressed-issues/addressed-issues-in-2025">Addressed Issues in 2025</a>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2024">Known Issues in 2024</a>
         </body>
         </html>
         """
@@ -3925,7 +3925,7 @@ class TestDeviceSecurityCrawler:
         # Index page with year links
         index_html = """
         <html><body>
-            <a href="/iot/iot-security-release-notes/2025">2025</a>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2025">Known Issues in 2025</a>
         </body></html>
         """
         issues_html = """
@@ -3966,8 +3966,8 @@ class TestDeviceSecurityCrawler:
         # Index page with multiple year links
         index_html = """
         <html><body>
-            <a href="/iot/iot-security-release-notes/2025">2025</a>
-            <a href="/iot/iot-security-release-notes/2024">2024</a>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2025">Known Issues in 2025</a>
+            <a href="/iot/release-notes/known-issues/known-issues-in-2024">Known Issues in 2024</a>
         </body></html>
         """
         issues_html = """

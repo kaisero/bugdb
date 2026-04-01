@@ -43,7 +43,7 @@ class PrismaSDWANCrawler(BaseCrawler):
 
         async def check_version(version: str) -> Optional[str]:
             """Check if a version URL exists."""
-            url = f"/sdwan/docs/release-notes/{version}"
+            url = f"/prisma-sd-wan/release-notes/{version}"
             try:
                 soup = await self._fetch_page_with_semaphore(url)
                 title = soup.find("title")
@@ -85,7 +85,7 @@ class PrismaSDWANCrawler(BaseCrawler):
             List of VersionInfo objects.
         """
         version_infos = []
-        base_url = f"/sdwan/docs/release-notes/{major_version}"
+        base_url = f"/prisma-sd-wan/release-notes/{major_version}"
 
         try:
             soup = await self._fetch_page_with_semaphore(base_url)
@@ -113,12 +113,14 @@ class PrismaSDWANCrawler(BaseCrawler):
                     if href.endswith(".html"):
                         href = href[:-5]
 
-                    if "known" in href_lower:
-                        if href not in vi.known_issues_urls:
-                            vi.known_issues_urls.append(href)
-                    else:
+                    # Classify by last path segment to avoid false matches
+                    last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
+                    if "addressed" in last_segment or "fixed" in last_segment:
                         if href not in vi.addressed_issues_urls:
                             vi.addressed_issues_urls.append(href)
+                    elif "known" in last_segment:
+                        if href not in vi.known_issues_urls:
+                            vi.known_issues_urls.append(href)
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)

@@ -119,13 +119,15 @@ class GlobalProtectCrawler(BaseCrawler):
                     if href.endswith(".html"):
                         href = href[:-5]
 
-                    # Add to appropriate URL list
-                    if "known" in href_lower:
-                        if href not in vi.known_issues_urls:
-                            vi.known_issues_urls.append(href)
-                    else:
+                    # Classify by last path segment to avoid false matches
+                    # (e.g., "known-issues-related-to-gp-app/addressed-issues")
+                    last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
+                    if "addressed" in last_segment:
                         if href not in vi.addressed_issues_urls:
                             vi.addressed_issues_urls.append(href)
+                    elif "known" in last_segment:
+                        if href not in vi.known_issues_urls:
+                            vi.known_issues_urls.append(href)
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)

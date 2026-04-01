@@ -38,8 +38,8 @@ class CloudNGFWAzureCrawler(BaseCrawler):
         self._log("Crawling Cloud NGFW for Azure...")
         failed_fetches: list[FailedFetch] = []
 
-        known_issues_url = "/cloud-ngfw/azure/release-notes/known-issues"
-        addressed_issues_url = "/cloud-ngfw/azure/release-notes/addressed-issues"
+        known_issues_url = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
+        addressed_issues_url = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
 
         # Fetch both pages in parallel
         fetch_tasks = [
@@ -139,7 +139,7 @@ class CloudNGFWAWSCrawler(BaseCrawler):
         self._log("Crawling Cloud NGFW for AWS...")
         failed_fetches: list[FailedFetch] = []
 
-        known_issues_url = "/cloud-ngfw/aws/release-notes/known-issues"
+        known_issues_url = "/cloud-ngfw-aws/release-notes/cloud-ngfw-for-aws-known-issues"
 
         known_issues = []
 

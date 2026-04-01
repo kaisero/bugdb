@@ -5,9 +5,12 @@ from pydantic import ValidationError
 
 from bugdb.models import (
     BugDatabase,
+    FailedFetchEntry,
+    FetchReport,
     Issue,
     Metadata,
     Product,
+    ProductStats,
     ProductVersion,
 )
 
@@ -150,3 +153,116 @@ class TestMetadata:
         )
         assert metadata.version == "2.0.0"
         assert metadata.source == "Custom Source"
+
+
+class TestFailedFetchEntry:
+    """Tests for FailedFetchEntry model."""
+
+    def test_minimal_entry(self):
+        """Test creating entry with only required fields."""
+        entry = FailedFetchEntry(
+            url="https://example.com/page",
+            error="Timeout",
+            product="panos",
+        )
+        assert entry.url == "https://example.com/page"
+        assert entry.error == "Timeout"
+        assert entry.product == "panos"
+        assert entry.version is None
+        assert entry.issue_type is None
+
+    def test_full_entry(self):
+        """Test creating entry with all fields."""
+        entry = FailedFetchEntry(
+            url="https://example.com/page",
+            error="Timeout",
+            product="panos",
+            version="12.1.5-h2",
+            issue_type="known",
+        )
+        assert entry.version == "12.1.5-h2"
+        assert entry.issue_type == "known"
+
+
+class TestProductStats:
+    """Tests for ProductStats model."""
+
+    def test_product_stats_creation(self):
+        """Test creating product stats."""
+        stats = ProductStats(
+            product_id="panos",
+            product_name="PAN-OS",
+            versions_fetched=45,
+            known_issues_count=1200,
+            addressed_issues_count=1800,
+            failed_fetch_count=2,
+        )
+        assert stats.product_id == "panos"
+        assert stats.versions_fetched == 45
+        assert stats.failed_fetch_count == 2
+
+
+class TestFetchReport:
+    """Tests for FetchReport model."""
+
+    def test_fetch_report_creation(self):
+        """Test creating a fetch report with all fields."""
+        report = FetchReport(
+            data_file="assets/data.json",
+            total_products=2,
+            total_versions=10,
+            total_known_issues=100,
+            total_addressed_issues=200,
+            product_stats=[
+                ProductStats(
+                    product_id="panos",
+                    product_name="PAN-OS",
+                    versions_fetched=5,
+                    known_issues_count=50,
+                    addressed_issues_count=100,
+                    failed_fetch_count=1,
+                ),
+            ],
+            failed_fetches=[
+                FailedFetchEntry(
+                    url="https://example.com/page",
+                    error="Timeout",
+                    product="panos",
+                    version="12.1.5",
+                    issue_type="known",
+                ),
+            ],
+        )
+        assert report.total_products == 2
+        assert len(report.product_stats) == 1
+        assert len(report.failed_fetches) == 1
+        assert report.generated_at is not None
+
+    def test_fetch_report_serialization_roundtrip(self):
+        """Test that a report can be serialized and deserialized."""
+        report = FetchReport(
+            data_file="assets/data.json",
+            total_products=1,
+            total_versions=3,
+            total_known_issues=10,
+            total_addressed_issues=20,
+            product_stats=[],
+            failed_fetches=[],
+        )
+        data = report.model_dump(mode="json")
+        restored = FetchReport.model_validate(data)
+        assert restored.data_file == "assets/data.json"
+        assert restored.total_products == 1
+        assert restored.failed_fetches == []
+
+    def test_fetch_report_empty_failures(self):
+        """Test report with no failures."""
+        report = FetchReport(
+            data_file="data.json",
+            total_products=5,
+            total_versions=20,
+            total_known_issues=500,
+            total_addressed_issues=800,
+        )
+        assert report.failed_fetches == []
+        assert report.product_stats == []

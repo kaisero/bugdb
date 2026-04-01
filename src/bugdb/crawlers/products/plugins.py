@@ -42,8 +42,8 @@ PLUGIN_CONFIGS: dict[str, PluginConfig] = {
     "plugin-vmware-nsx": PluginConfig(
         product_id="plugin-vmware-nsx",
         product_name="Panorama Plugin for VMware NSX",
-        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-nsx",
-        version_link_patterns=["nsx-plugin-", "panorama-plugin-for-nsx-"],
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-vmware-nsx",
+        version_link_patterns=["nsx-plugin-", "vmware-nsx-plugin-", "panorama-plugin-for-vmware-nsx-"],
     ),
     "plugin-vmware-vcenter": PluginConfig(
         product_id="plugin-vmware-vcenter",
@@ -72,7 +72,7 @@ PLUGIN_CONFIGS: dict[str, PluginConfig] = {
     "plugin-ztp": PluginConfig(
         product_id="plugin-ztp",
         product_name="Panorama Plugin for Zero Touch Provisioning",
-        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/zero-touch-provisioning-ztp-plugin",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-zero-touch-provisioning",
         version_link_patterns=["ztp-plugin-", "zero-touch-provisioning-"],
     ),
     "plugin-clustering": PluginConfig(
@@ -174,10 +174,8 @@ class PluginCrawler(BaseCrawler):
                 href = link["href"]
                 href_lower = href.lower()
 
-                is_known = any(kw in href_lower for kw in self.config.known_issues_keywords)
-                is_addressed = any(kw in href_lower for kw in self.config.addressed_issues_keywords)
-
-                if not is_known and not is_addressed:
+                if not any(kw in href_lower for kw in
+                          self.config.known_issues_keywords + self.config.addressed_issues_keywords):
                     continue
 
                 if not any(p in href_lower for p in self.config.version_link_patterns):
@@ -196,12 +194,18 @@ class PluginCrawler(BaseCrawler):
                         addressed_issues_urls=[],
                     )
 
-                if is_known and normalized_url not in version_infos[version].known_issues_urls:
-                    version_infos[version].known_issues_urls.append(normalized_url)
-                    logger.debug("Found known issues URL for %s: %s", version, normalized_url)
-                elif is_addressed and normalized_url not in version_infos[version].addressed_issues_urls:
+                # Classify by last path segment to avoid false matches
+                # (e.g., parent path "known-and-addressed/addressed-issues")
+                last_segment = normalized_url.rstrip("/").rsplit("/", 1)[-1].lower()
+                is_addressed = any(kw in last_segment for kw in self.config.addressed_issues_keywords)
+                is_known = any(kw in last_segment for kw in self.config.known_issues_keywords)
+
+                if is_addressed and normalized_url not in version_infos[version].addressed_issues_urls:
                     version_infos[version].addressed_issues_urls.append(normalized_url)
                     logger.debug("Found addressed issues URL for %s: %s", version, normalized_url)
+                elif is_known and normalized_url not in version_infos[version].known_issues_urls:
+                    version_infos[version].known_issues_urls.append(normalized_url)
+                    logger.debug("Found known issues URL for %s: %s", version, normalized_url)
 
         except Exception as e:
             logger.error("Error discovering %s versions: %s", self.config.product_name, e)

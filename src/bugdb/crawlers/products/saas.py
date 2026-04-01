@@ -35,7 +35,7 @@ class RemoteBrowserIsolationCrawler(BaseCrawler):
         self._log("Crawling Remote Browser Isolation...")
         failed_fetches: list[FailedFetch] = []
 
-        known_issues_url = "/access/docs/remote-browser-isolation/release-notes/known-issues"
+        known_issues_url = "/remote-browser-isolation/release-notes/remote-browser-isolation-release-information/remote-browser-isolation-known-issues"
 
         known_issues = []
 
@@ -104,8 +104,8 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
         self._log("Crawling AI Runtime Security...")
         failed_fetches: list[FailedFetch] = []
 
-        known_issues_url = "/ai-runtime-security/docs/release-notes/known-issues"
-        addressed_issues_url = "/ai-runtime-security/docs/release-notes/addressed-issues"
+        known_issues_url = "/ai-runtime-security/release-notes/known-issues"
+        addressed_issues_url = "/ai-runtime-security/release-notes/addressed-issues"
 
         fetch_tasks = [
             self._fetch_page_with_semaphore(known_issues_url),

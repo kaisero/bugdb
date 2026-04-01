@@ -30,15 +30,15 @@ class DeviceSecurityCrawler(BaseCrawler):
             List of year strings (e.g., ["2026", "2025", "2024"]).
         """
         years = []
-        index_url = "/iot/iot-security-release-notes"
+        index_url = "/iot/release-notes"
 
         try:
             soup = await self._fetch_page_with_semaphore(index_url)
 
             for link in soup.find_all("a", href=True):
                 href = link["href"]
-                # Look for year patterns in URLs (e.g., /2025/ or /2026/)
-                match = re.search(r"/(\d{4})(?:/|$)", href)
+                # Look for year patterns in URLs (e.g., known-issues-in-2025, addressed-issues-in-2026)
+                match = re.search(r"(?:known-issues|addressed-issues)(?:/|-in-)(\d{4})", href)
                 if match:
                     year = match.group(1)
                     if year not in years and int(year) >= 2020:
@@ -126,8 +126,8 @@ class DeviceSecurityCrawler(BaseCrawler):
             self._log(f"Crawling Device Security {year}...")
 
             # Known and addressed issues URLs for this year
-            known_url = f"/iot/iot-security-release-notes/{year}/known-issues"
-            addressed_url = f"/iot/iot-security-release-notes/{year}/addressed-issues"
+            known_url = f"/iot/release-notes/known-issues/known-issues-in-{year}"
+            addressed_url = f"/iot/release-notes/addressed-issues/addressed-issues-in-{year}"
 
             fetch_tasks = [
                 self._fetch_page_with_semaphore(known_url),

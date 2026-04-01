@@ -37,7 +37,7 @@ class PrismaAccessCrawler(BaseCrawler):
 
         async def check_version(version: str) -> Optional[str]:
             """Check if a version URL exists."""
-            url = f"/prisma-access/{version}/prisma-access-cloud-managed-release-notes"
+            url = f"/prisma-access/release-notes/{version}"
             try:
                 soup = await self._fetch_page_with_semaphore(url)
                 title = soup.find("title")
@@ -76,7 +76,7 @@ class PrismaAccessCrawler(BaseCrawler):
             List of VersionInfo objects with URLs for each minor version.
         """
         version_infos = []
-        base_url = f"/prisma-access/{major_version}/prisma-access-cloud-managed-release-notes"
+        base_url = f"/prisma-access/release-notes/{major_version}"
 
         try:
             soup = await self._fetch_page_with_semaphore(base_url)
@@ -88,7 +88,8 @@ class PrismaAccessCrawler(BaseCrawler):
                 if "known" in href_lower or "addressed" in href_lower:
                     version = self._extract_version_from_url(href)
                     if not version:
-                        continue
+                        # Fall back to using major version (e.g., "6.1")
+                        version = major_version.replace("-", ".")
 
                     vi = next(
                         (v for v in version_infos if v.version == version), None
@@ -104,12 +105,14 @@ class PrismaAccessCrawler(BaseCrawler):
                     if href.endswith(".html"):
                         href = href[:-5]
 
-                    if "known" in href_lower:
-                        if href not in vi.known_issues_urls:
-                            vi.known_issues_urls.append(href)
-                    else:
+                    # Classify by last path segment to avoid false matches
+                    last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
+                    if "addressed" in last_segment:
                         if href not in vi.addressed_issues_urls:
                             vi.addressed_issues_urls.append(href)
+                    elif "known" in last_segment:
+                        if href not in vi.known_issues_urls:
+                            vi.known_issues_urls.append(href)
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
