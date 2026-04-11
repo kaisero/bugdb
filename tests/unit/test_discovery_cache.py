@@ -77,8 +77,7 @@ class TestRoundTrip:
         reloaded = DiscoveryCache(path=cache_path)
         assert reloaded.get_url_pattern("panos", "12-1") == "/ngfw/release-notes/12-1"
         assert (
-            reloaded.get_url_pattern("globalprotect", "6-2")
-            == "/globalprotect/6-2/release-notes"
+            reloaded.get_url_pattern("globalprotect", "6-2") == "/globalprotect/6-2/release-notes"
         )
 
 
@@ -190,9 +189,7 @@ class TestAtomicWrite:
         cache.save()
         payload = json.loads(cache_path.read_text())
         assert payload["schema_version"] == SCHEMA_VERSION
-        assert payload["products"]["panos"]["url_patterns"]["12-1"] == (
-            "/ngfw/release-notes/12-1"
-        )
+        assert payload["products"]["panos"]["url_patterns"]["12-1"] == ("/ngfw/release-notes/12-1")
 
     def test_save_creates_parent_directory(self, tmp_path: Path):
         """Parent directory is created on demand — default .cache/bugdb/ may not exist."""

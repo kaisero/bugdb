@@ -7,7 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Persistent discovery cache at `.cache/bugdb/discovery.json`
+  (project-scoped, gitignored, 24-hour TTL) that survives across
+  `bugdb fetch` invocations. Each run loads the cache once via a
+  shared `DiscoveryCache` instance and flushes it once after all
+  crawlers complete. New module `src/bugdb/discovery_cache.py` with
+  22 unit tests covering round-trip, TTL expiry, corrupt-file
+  recovery, schema-version mismatch, atomic writes, and per-product
+  and wholesale invalidation.
+- `bugdb fetch --refresh-discovery` / `-R` flag that bypasses the
+  persistent cache and forces a full re-probe. Useful after a docs
+  reorganisation or when debugging a crawl.
+- `BaseCrawler._resolve_version_infos` — a cache-aware helper that
+  centralises the "which versions do we need to crawl" decision
+  across all probing product crawlers. Five crawlers (panos,
+  globalprotect, prisma_access, prisma_access_agent, prisma_sdwan)
+  now use it in their `crawl()` methods.
+
 ### Changed
+- PAN-OS crawler persists the URL pattern it resolves per major
+  version (e.g. `12-1` → `/ngfw/release-notes/12-1`) in the new
+  discovery cache. Previously `PANOSCrawler._base_url_for_version`
+  was instance-scoped, so every `bugdb fetch` invocation re-probed
+  all candidates from scratch. Warm runs now skip ~20 probe requests.
+- Probing crawlers (panos, globalprotect, prisma_access,
+  prisma_access_agent, prisma_sdwan) skip their entire discovery
+  phase on warm incremental runs when the cache is fresh — no
+  candidate probing, no per-major index fetches — saving ~125-210
+  HTTP requests per run across all five.
 - GitLab CI `pages` deploy job is now explicitly branch-gated to
   `$CI_COMMIT_BRANCH == "main"` (previously used `$CI_DEFAULT_BRANCH`,
   which could silently change behaviour if the repo's default branch
@@ -16,6 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and merge-request-event pipelines cannot accidentally trigger a
   deploy. In practice, the deploy now fires exactly when a merge
   request is merged into `main`.
+
+### Fixed
+- Six crawlers (panos, globalprotect, prisma_access,
+  prisma_access_agent, prisma_sdwan, plugins) previously fetched
+  `known-and-addressed-issues` hub URLs during discovery. These are
+  link-only index pages with no issue tables, so fetching them was
+  pure waste (~55 wasted HTTP requests per PAN-OS run, similar
+  volumes for other products). `discover_version_pages` now filters
+  them out before classification. Regression pin:
+  `TestPaloAltoCrawlerAsync::test_panos_discover_skips_known_and_addressed_hub_pages`.
 
 ## [1.0.2] - 2026-04-11
 

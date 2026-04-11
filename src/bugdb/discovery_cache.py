@@ -41,9 +41,7 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 1
 TTL_SECONDS = 24 * 3600
-DEFAULT_CACHE_PATH = (
-    Path(__file__).resolve().parents[2] / ".cache" / "bugdb" / "discovery.json"
-)
+DEFAULT_CACHE_PATH = Path(__file__).resolve().parents[2] / ".cache" / "bugdb" / "discovery.json"
 
 
 class DiscoveryCache:
@@ -97,8 +95,7 @@ class DiscoveryCache:
         schema_version = payload.get("schema_version")
         if schema_version != SCHEMA_VERSION:
             logger.warning(
-                "Discovery cache at %s has schema_version=%r (expected %d); "
-                "starting fresh.",
+                "Discovery cache at %s has schema_version=%r (expected %d); starting fresh.",
                 self.path,
                 schema_version,
                 SCHEMA_VERSION,
@@ -174,9 +171,7 @@ class DiscoveryCache:
     # Version infos (S3)
     # ------------------------------------------------------------------
 
-    def get_version_infos(
-        self, product_id: str
-    ) -> dict[str, list[VersionInfo]] | None:
+    def get_version_infos(self, product_id: str) -> dict[str, list[VersionInfo]] | None:
         """Return the cached ``{major: [VersionInfo, ...]}`` map or None.
 
         Returns None if there's no entry or if the entry is stale (older
@@ -205,8 +200,7 @@ class DiscoveryCache:
             }
         except (KeyError, TypeError) as e:
             logger.warning(
-                "Discovery cache for %s has unexpected version_infos shape (%s); "
-                "treating as miss.",
+                "Discovery cache for %s has unexpected version_infos shape (%s); treating as miss.",
                 product_id,
                 e,
             )

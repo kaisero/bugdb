@@ -173,9 +173,7 @@ class BaseCrawler:
             return result
 
         # Path 2: fresh cache hit — skip discovery entirely.
-        if self._discovery_cache is not None and self._discovery_cache.is_fresh(
-            self.product_id
-        ):
+        if self._discovery_cache is not None and self._discovery_cache.is_fresh(self.product_id):
             cached = self._discovery_cache.get_version_infos(self.product_id)
             if cached is not None:
                 logger.debug(

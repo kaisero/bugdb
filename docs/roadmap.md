@@ -193,6 +193,70 @@ merge correct from the start.
 
 ---
 
+## v1.0.3 — Crawler optimizations considered but deferred
+
+The v1.0.3 crawler-optimization work (commits on the `v1.0.3` branch)
+landed three optimizations (S1: persistent URL-pattern cache, S2: skip
+hub pages, S3: skip discovery on warm incremental runs). Two more were
+scoped and explicitly deferred from this round, tracked here so a
+future contributor doesn't re-investigate:
+
+### S4 — Reduce crawler retry multiplier from 9 to 3 per URL
+
+**Problem.** `BaseCrawler._retry_failed_fetches_sequentially` retries
+each failed URL 3× in an outer loop. Each outer attempt calls
+`_parse_issues_page` → `_fetch_page_with_semaphore`, and the fetch
+method itself has its own 3× internal retry loop (`self.max_retries`).
+So a single failed URL can burn **up to 9 total fetch attempts**
+(3 outer × 3 inner), which under upstream rate limiting is a big
+waste.
+
+**Refactor.** Pass `max_retries=1` from the outer retry path so the
+inner fetch only tries once per outer attempt, yielding 3 total
+attempts instead of 9. The simplest approach is an optional
+`max_retries` kwarg on `_parse_issues_page` / `_fetch_page_with_semaphore`
+that the retry loop overrides.
+
+**Reason to defer.** Savings are **situational** — only runs that
+actually hit failures benefit. On a healthy upstream run, S4 saves
+zero requests. The v1.0.3 scope prioritised optimizations that help
+the *common case* (warm incremental runs), and retry-multiplier
+reduction is a "worst case gets less worse" change. Worth picking up
+the next time rate limiting bites in practice.
+
+**Effort.** S — a single-line override + test update.
+
+### S5 — Replace hard-coded candidate lists with landing-page link discovery
+
+**Problem.** Five probing crawlers (panos, globalprotect, prisma_access,
+prisma_access_agent, prisma_sdwan) hard-code a `candidate_versions`
+list of ~10 majors and probe each one to decide which exist upstream.
+The product's landing page typically lists all current majors as
+links, so we could fetch the landing page once and parse the link set
+instead of probing 10 speculative candidates.
+
+**Refactor.** Add a `_discover_majors_from_landing_page` helper that
+fetches the product's root release-notes URL, scrapes major-version
+links, and returns them. Each of the 5 crawlers' `discover_versions`
+methods becomes a 2-line call to the helper. The hard-coded candidate
+list can be kept as a fallback for when the landing page is
+unreachable, or deleted entirely. Canary tier is unaffected — it has
+its own independent list in `tests/canary/test_upstream_versions.py`
+(verified during v1.0.3 planning).
+
+**Reason to defer.** Overlaps heavily with S1. Once the URL-pattern
+cache (S1) is warm, probing is amortised away: a ~20-probe cost on
+cold start and zero cost on every subsequent run for 24 hours. The
+marginal value of S5 is **cold-start-only**, which is a rare event.
+If the cache ever proves insufficient under real-world rate limiting,
+revisit S5 as a belt-and-suspenders addition.
+
+**Effort.** M — ~1 day across the 5 crawlers, needs careful landing-
+page link scraping per product because each uses a different HTML
+structure.
+
+---
+
 ## Pre-existing test fragility (not blocking anything)
 
 Two unit tests in `tests/unit/test_cli.py` fail in the devcontainer

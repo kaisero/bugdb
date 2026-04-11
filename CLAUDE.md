@@ -116,6 +116,33 @@ Configuration lives in two places that **must stay in sync**:
 
 When bumping ruff, change both together in the same commit.
 
+### Discovery cache
+
+`bugdb fetch` maintains a persistent discovery cache at
+`.cache/bugdb/discovery.json` in the repo root. It stores resolved
+URL patterns and discovered `VersionInfo` objects per product with a
+24-hour TTL. Warm runs skip URL probing and per-major index fetches
+entirely — expect a significantly faster run on the second invocation
+within 24h.
+
+The cache is gitignored and safe to delete:
+
+```bash
+rm -rf .cache/
+```
+
+To force a fresh discovery without deleting the file, pass:
+
+```bash
+uv run bugdb fetch --refresh-discovery
+# or
+uv run bugdb fetch -R
+```
+
+See `docs/design-decisions.md` — *"2026-04-11 — Discovery cache at
+`.cache/bugdb/` with 24-hour TTL"* — for the full rationale and
+schema.
+
 ### Running Tests
 
 ```bash

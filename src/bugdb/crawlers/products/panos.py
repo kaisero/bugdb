@@ -68,14 +68,10 @@ class PANOSCrawler(BaseCrawler):
         # L2: persistent cache — but only when the product's entry is
         # fresh. A stale cache should fall through to a fresh probe so
         # upstream URL changes are picked up within the TTL window.
-        if self._discovery_cache is not None and self._discovery_cache.is_fresh(
-            self.product_id
-        ):
+        if self._discovery_cache is not None and self._discovery_cache.is_fresh(self.product_id):
             persisted = self._discovery_cache.get_url_pattern(self.product_id, major_version)
             if persisted:
-                logger.debug(
-                    "PAN-OS URL pattern cache hit for %s: %s", major_version, persisted
-                )
+                logger.debug("PAN-OS URL pattern cache hit for %s: %s", major_version, persisted)
                 self._base_url_for_version[major_version] = persisted
                 return persisted
 
@@ -85,9 +81,7 @@ class PANOSCrawler(BaseCrawler):
             if await self._probe_landing_url(candidate):
                 self._base_url_for_version[major_version] = candidate
                 if self._discovery_cache is not None:
-                    self._discovery_cache.put_url_pattern(
-                        self.product_id, major_version, candidate
-                    )
+                    self._discovery_cache.put_url_pattern(self.product_id, major_version, candidate)
                 return candidate
         return None
 

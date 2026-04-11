@@ -24,6 +24,76 @@ in the log but are annotated.
 
 ---
 
+## 2026-04-11 — Discovery cache at `.cache/bugdb/` with 24-hour TTL
+
+**Context:** A full `bugdb fetch` took 10-20 minutes end-to-end and hit
+upstream rate limiting on docs.paloaltonetworks.com when parallelism was
+raised. Static code analysis showed the bulk of requests were **repeat
+work** — every invocation re-probed URL patterns and re-discovered
+version lists from scratch, even in incremental mode where the user was
+only looking for new minor versions. Roughly:
+
+- ~60 URL-pattern probes per run across 5 crawlers (PAN-OS has 10
+  candidates × 2 templates = 20 probes by itself)
+- ~125-210 discovery fetches per warm incremental run (per-major index
+  pages that rarely change)
+- ~55 wasted fetches of hub pages that turned out to be link-only
+  indexes with no issue tables
+
+More concurrency was not an option — we were already at the upstream
+rate-limit ceiling. The only way forward was **fewer requests**.
+
+**Decision:** Persist two kinds of discovery state to a single JSON
+file at `.cache/bugdb/discovery.json` (repo-root-relative, gitignored).
+Schema:
+
+- `url_patterns: {major: url}` per product — winning URL templates
+  resolved by the PAN-OS dual-probe flow, so warm runs skip probing
+  entirely.
+- `version_infos: {major: [VersionInfo, ...]}` per product — cached
+  output of `discover_version_pages`, so warm incremental runs skip
+  the whole discovery phase (probing + per-major index fetches).
+
+Single **global 24-hour TTL** per product entry. Fresh entries short-
+circuit discovery; stale entries fall through to a fresh probe and are
+overwritten on success. No per-field TTL — simpler to reason about,
+and the upstream-canary tier already runs nightly so staleness is
+bounded regardless.
+
+Writes are atomic via `.tmp` + `os.replace` so a SIGKILL mid-save
+can't corrupt the file. Corrupt or schema-mismatched caches are logged
+and discarded; there is no migration path for schema v1.
+
+The CLI exposes `--refresh-discovery` / `-R` to force cache bypass
+after upstream docs reorganisations or during debugging.
+
+**Consequences:**
+
+- **In-repo, not `~/.cache/bugdb/`.** Project-scoped cache, easy to
+  clear (`rm -rf .cache/`), easier to inspect during development. The
+  trade-off is that re-clones start cold and CI runners need the path
+  added to `.gitlab-ci.yml` cache paths if we ever want warm CI runs.
+  For now the benefit is local-only which is where fetches happen.
+- **24h TTL matches canary cadence.** A newly-shipped upstream major
+  will be missed for up to 24h by the crawler, but the canary test
+  tier that exists to detect this runs nightly — so the drift window
+  is already bounded at 24h whether we cache discovery or not.
+- **Shared cache instance per run.** The CLI instantiates one
+  DiscoveryCache and threads it through every crawler wrapper in
+  `registry.py`. One file-read at startup, one write at the end.
+- **Schema is versioned.** If the cache shape ever needs to evolve,
+  bumping `SCHEMA_VERSION` in `discovery_cache.py` invalidates all
+  existing caches cleanly — readers log a warning and start fresh.
+- **Five crawlers benefit today.** panos, globalprotect,
+  prisma_access, prisma_access_agent, prisma_sdwan all use
+  `BaseCrawler._resolve_version_infos` in their `crawl()` methods.
+  sdwan_plugin, cortex_xdr, adem, scm, device_security, and the
+  three saas.py crawlers use different discovery models and are
+  excluded from this round. plugins.py could benefit but is entangled
+  with the roadmap D1 template-method refactor — deferred to v1.1.0.
+
+---
+
 ## 2026-04-11 — Ruff as the single linter and formatter
 
 **Context:** The project had no enforced code style. Contributor diffs

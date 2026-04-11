@@ -578,9 +578,7 @@ class TestPaloAltoCrawlerAsync:
                 )
 
     @pytest.mark.asyncio
-    async def test_panos_warm_cache_skips_discovery(
-        self, mock_playwright_panos, tmp_path
-    ):
+    async def test_panos_warm_cache_skips_discovery(self, mock_playwright_panos, tmp_path):
         """S3 warm-cache path: a fresh version_infos cache short-circuits
         both discover_versions and discover_version_pages entirely.
         """
@@ -615,9 +613,7 @@ class TestPaloAltoCrawlerAsync:
         # Patch both discovery methods to raise — if either fires the
         # cache-skip path is broken.
         async def _raise_discover_versions():
-            raise AssertionError(
-                "discover_versions should not be called on a warm cache hit"
-            )
+            raise AssertionError("discover_versions should not be called on a warm cache hit")
 
         async def _raise_discover_version_pages(major_version: str):
             raise AssertionError(
@@ -642,9 +638,7 @@ class TestPaloAltoCrawlerAsync:
         assert vi_by_major["12-1"][0].version == "12.1.5"
 
     @pytest.mark.asyncio
-    async def test_panos_warm_cache_filters_skip_versions(
-        self, mock_playwright_panos, tmp_path
-    ):
+    async def test_panos_warm_cache_filters_skip_versions(self, mock_playwright_panos, tmp_path):
         """S3 warm-cache path + skip_versions: cached entries are filtered
         by the passed-in skip_versions set so already-fetched versions
         don't get re-crawled.
@@ -679,9 +673,7 @@ class TestPaloAltoCrawlerAsync:
         assert vi_by_major["12-1"][0].version == "12.1.5"
 
     @pytest.mark.asyncio
-    async def test_panos_explicit_majors_bypasses_cache(
-        self, mock_playwright_panos, tmp_path
-    ):
+    async def test_panos_explicit_majors_bypasses_cache(self, mock_playwright_panos, tmp_path):
         """S3 explicit-majors path: when the caller passes explicit_majors
         (i.e. `bugdb fetch panos --version 12-1`), the cache must be
         ignored and discover_pages_fn must be called for each named major.
@@ -723,9 +715,7 @@ class TestPaloAltoCrawlerAsync:
         assert "12.1.5" in versions  # real discovery found this from fixtures
 
     @pytest.mark.asyncio
-    async def test_panos_stale_cache_re_discovers(
-        self, mock_playwright_panos, tmp_path
-    ):
+    async def test_panos_stale_cache_re_discovers(self, mock_playwright_panos, tmp_path):
         """S3 stale-cache path: a cache older than 24h must trigger a
         fresh discovery, and the fresh result must replace the stale
         cache entry.
@@ -772,9 +762,7 @@ class TestPaloAltoCrawlerAsync:
         assert "12.1.5" in versions
 
     @pytest.mark.asyncio
-    async def test_panos_url_pattern_cache_hit_skips_probe(
-        self, mock_playwright_panos, tmp_path
-    ):
+    async def test_panos_url_pattern_cache_hit_skips_probe(self, mock_playwright_panos, tmp_path):
         """S1 cache-hit path: a fresh persistent cache short-circuits the
         dual-template probe in ``_resolve_landing_url``. Second crawl
         invocation with the same cache must not call ``_probe_landing_url``.
@@ -815,9 +803,7 @@ class TestPaloAltoCrawlerAsync:
         assert probe_called is False
 
     @pytest.mark.asyncio
-    async def test_panos_url_pattern_cache_miss_still_probes(
-        self, mock_playwright_panos, tmp_path
-    ):
+    async def test_panos_url_pattern_cache_miss_still_probes(self, mock_playwright_panos, tmp_path):
         """S1 cache-miss path: when the cache has no entry for the major,
         fall through to the normal probe chain and populate the cache.
         """
@@ -835,9 +821,7 @@ class TestPaloAltoCrawlerAsync:
         assert cache.get_url_pattern("panos", "12-1") == "/ngfw/release-notes/12-1"
 
     @pytest.mark.asyncio
-    async def test_panos_discover_skips_known_and_addressed_hub_pages(
-        self, mock_playwright_panos
-    ):
+    async def test_panos_discover_skips_known_and_addressed_hub_pages(self, mock_playwright_panos):
         """Regression pin for S2: discover_version_pages must filter out
         hub pages whose last path segment contains "known-and-addressed".
 
@@ -874,12 +858,12 @@ class TestPaloAltoCrawlerAsync:
 
                 # Positive assertion: the leaf known/addressed pages
                 # for 12.1.5 ARE present, so the filter didn't overshoot.
-                assert any(
-                    url.endswith("/pan-os-12-1-5-known-issues") for url in all_urls
-                ), "12.1.5 known-issues leaf URL is missing from discover_version_pages output"
-                assert any(
-                    url.endswith("/pan-os-12-1-5-addressed-issues") for url in all_urls
-                ), "12.1.5 addressed-issues leaf URL is missing from discover_version_pages output"
+                assert any(url.endswith("/pan-os-12-1-5-known-issues") for url in all_urls), (
+                    "12.1.5 known-issues leaf URL is missing from discover_version_pages output"
+                )
+                assert any(url.endswith("/pan-os-12-1-5-addressed-issues") for url in all_urls), (
+                    "12.1.5 addressed-issues leaf URL is missing from discover_version_pages output"
+                )
 
     @pytest.mark.asyncio
     async def test_crawl_prisma_access_agent(self, mock_playwright_prisma):
