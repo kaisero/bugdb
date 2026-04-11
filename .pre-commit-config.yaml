@@ -1,0 +1,17 @@
+# Pre-commit hooks for bugdb.
+#
+# Install once per clone:  uv run pre-commit install
+# Run manually on all files: uv run pre-commit run --all-files
+#
+# IMPORTANT: the `rev` below MUST match the ruff version pinned in
+# [dependency-groups] dev in pyproject.toml. If you bump one, bump the
+# other in the same commit — otherwise contributors will see different
+# findings locally vs. CI and spend an hour chasing a phantom.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.10
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format

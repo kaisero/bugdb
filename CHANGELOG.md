@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `ruff` linting and formatting, enforced via a local pre-commit hook
+  (`astral-sh/ruff-pre-commit`) and a GitLab CI `lint` job that runs on
+  every develop commit and merge request. Conservative starter ruleset
+  (`E, W, F, I, B, UP, SIM, RUF`), line-length 100, per-file ignores for
+  tests.
+- `dev` dependency group in `pyproject.toml` for contributor tooling
+  (ruff, pre-commit) — kept separate from the `test` group so the fast
+  CI tier doesn't pull lint tools and the lint job doesn't pull Playwright.
+- `.pre-commit-config.yaml` with `ruff-check --fix` and `ruff-format`
+  hooks, version-pinned to match the ruff version in `dev`.
 - Data-fidelity integration test tier (`tests/integration/`, `@pytest.mark.data_baseline`)
   that compares `assets/data.json` against a committed baseline snapshot
   (`tests/baselines/data_baseline.json`) and fails if any previously-fetched product,

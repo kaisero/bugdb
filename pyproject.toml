@@ -19,6 +19,10 @@ dependencies = [
 ]
 
 [dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "ruff>=0.15.10",
+]
 test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -51,3 +55,39 @@ markers = [
     "canary: probes real docs.paloaltonetworks.com URLs to catch upstream version releases. Nightly pipeline only.",
     "slow: marks tests as slow (reserved for future use).",
 ]
+
+# ---------------------------------------------------------------------------
+# Ruff — linter + formatter, enforced via pre-commit locally and the GitLab
+# `lint` CI job. The pre-commit hook rev in .pre-commit-config.yaml MUST
+# match the ruff version pinned in [dependency-groups] dev above, or
+# contributors will see different findings locally vs. in CI.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [
+    "tests/fixtures",
+    "tests/baselines",
+    "src/bugdb/templates",
+]
+
+[tool.ruff.lint]
+# Conservative starter set. Widen only after the codebase has adapted.
+#   E, W = pycodestyle
+#   F    = pyflakes
+#   I    = isort
+#   B    = flake8-bugbear
+#   UP   = pyupgrade
+#   SIM  = flake8-simplify
+#   RUF  = ruff-specific
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files may carry long assertion messages.
+"tests/**/*.py" = ["E501"]
+# conftest.py files re-export fixtures for pytest's import discovery; those
+# "unused" imports are load-bearing.
+"tests/**/conftest.py" = ["F401"]
+
+[tool.ruff.format]
+# Defaults: black-compatible style, double quotes, spaces.

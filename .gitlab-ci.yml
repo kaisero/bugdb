@@ -17,6 +17,28 @@ stages:
   - deploy
 
 # ---------------------------------------------------------------------------
+# Lint: ruff check + format-check. Uses only the `dev` dependency group
+# (no Playwright install) so it runs in seconds. Runs on every develop
+# commit AND on every merge request — style must be green before merge.
+# ---------------------------------------------------------------------------
+lint:
+  stage: test
+  script:
+    - uv sync --locked --group dev
+    - uv run ruff check --output-format=gitlab . > ruff-report.json || (uv run ruff check . && exit 1)
+    - uv run ruff format --check .
+  artifacts:
+    when: always
+    reports:
+      codequality: ruff-report.json
+    paths:
+      - ruff-report.json
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_MERGE_REQUEST_IID
+
+# ---------------------------------------------------------------------------
 # Fast tier: unit + mock-crawler tests. Runs on every commit to develop.
 # ---------------------------------------------------------------------------
 test:

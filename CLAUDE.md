@@ -86,6 +86,36 @@ Follow this workflow:
    uv run bugdb build-site-cmd
    ```
 
+### Linting
+
+This project uses **ruff** for linting and formatting, enforced by both a
+local pre-commit hook and a GitLab CI `lint` job. You must set up the hook
+once per clone:
+
+```bash
+uv run pre-commit install
+```
+
+After that, `git commit` will auto-run `ruff check --fix` and `ruff format`
+on staged files. To run ruff manually across the whole project:
+
+```bash
+uv run ruff check .          # report issues
+uv run ruff check --fix .    # report + auto-fix
+uv run ruff format .         # format in place
+uv run ruff format --check . # verify format without modifying (CI mode)
+```
+
+Configuration lives in two places that **must stay in sync**:
+
+- `pyproject.toml` `[dependency-groups] dev` pins the ruff version used
+  locally and in CI.
+- `.pre-commit-config.yaml` pins the `ruff-pre-commit` hook `rev` — this
+  must match the ruff version in `dev` or contributors will see different
+  findings locally vs. CI.
+
+When bumping ruff, change both together in the same commit.
+
 ### Running Tests
 
 ```bash

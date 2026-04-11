@@ -24,6 +24,41 @@ in the log but are annotated.
 
 ---
 
+## 2026-04-11 — Ruff as the single linter and formatter
+
+**Context:** The project had no enforced code style. Contributor diffs
+mixed tab/space drift, inconsistent import ordering, and `Optional[X]` /
+`X | None` spread randomly across the 19 files that had type hints. The
+standard Python approach (black + flake8 + isort + pyupgrade + pydocstyle)
+requires reconciling four tool configs that routinely disagree, and CI
+cycles multiply.
+
+**Decision:** Adopt [ruff](https://github.com/astral-sh/ruff) as the single
+linter and formatter. Start with a conservative rule set
+(`E, W, F, I, B, UP, SIM, RUF`) — enough to catch the important things
+without triggering a multi-hundred-line rewrite on day one. Line length
+100 (pragmatic middle ground between black's 88 and the 120 that long
+assertion messages drift toward). Enforced two ways:
+
+1. **Local pre-commit hook** (`.pre-commit-config.yaml`) runs
+   `ruff check --fix` and `ruff format` on every commit.
+2. **GitLab CI `lint` job** runs `ruff check` (with GitLab codequality
+   output) and `ruff format --check` on every develop commit and MR.
+
+The pre-commit hook `rev` must stay pinned to the same ruff version that
+`[dependency-groups] dev` pins. Version drift between the two is the #1
+pre-commit footgun and would cause "passes locally, fails in CI"
+confusion.
+
+**Consequences:** One tool, one config block in `pyproject.toml`, one
+process to learn. First-pass auto-fix produces a medium mechanical diff
+(~250–380 lines) that's landed in a dedicated commit recorded in
+`.git-blame-ignore-revs` so `git blame` skips over it. Future rule
+expansion is one line in `[tool.ruff.lint] select`. The `dev` group is
+separate from `test` so CI's fast tier doesn't install lint tools it
+doesn't need, and the lint job doesn't install Playwright (~30s saved
+per pipeline).
+
 ## 2026-03-31 — Use uv for package and Python-version management
 
 **Context:** The project started with pip + venv, which left the CI pipeline
