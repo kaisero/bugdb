@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **XSS hardening in the static frontend.** The previous
+  `src/bugdb/templates/assets/app.js` built card markup and modal
+  content via template-literal string concatenation with inline
+  `onclick=` handlers (`onclick="showKnownIssueModal('${escapeHtml(issue.bug_id)}', ...)"`),
+  and its `escapeHtml` helper used the `div.textContent = x; return
+  div.innerHTML` idiom which does NOT escape single or double quotes.
+  A vendor-controlled `bug_id`, `productId`, or `version` containing
+  `'` could break out of the JS string literal and execute arbitrary
+  code in the user's browser. The chain was not exploitable in
+  practice today (crawled fields match safe regexes) but the code
+  was fundamentally unsafe and any regex relaxation would activate
+  the vulnerability silently. Fixed by:
+  - Rewriting `escapeHtml` with an explicit character map
+    (`& < > " ' /`) so attribute-context callers have a safe fallback.
+  - Wrapping all of `app.js` in an IIFE with `'use strict'` so no
+    function leaks onto `window`.
+  - Rebuilding `createIssueCard`, the shared fix/known-issue modal,
+    and the release-notes modal with `createElement` + `textContent`
+    + `addEventListener`. Every badge, button, description, and list
+    row is now a real DOM node; zero `innerHTML` interpolation with
+    vendor data anywhere on the render path.
+  - Replacing the sole inline `onclick=` in `index.html` (on the
+    `#release-notes-link` element) with an `addEventListener` wired
+    up inside the IIFE. The `<a href="#">` also becomes a `<button
+    type="button">` for semantic correctness.
+  - Unifying `showFixModal` and `showKnownIssueModal` into a single
+    `renderReleaseListModal` helper so the list-rendering fix lives
+    in one place.
+  - Replacing `getChangeTypeIcon`'s SVG string literals with a
+    `createSvgIcon(pathD, className)` helper that builds nodes via
+    `createElementNS`.
+  - Consolidating two stacked `document` Escape handlers into a
+    single delegated listener (was M1 in the review).
+  - Adding `validateBugDatabase()` runtime validation of the
+    fetched `data.json` payload before feeding it to the render
+    pipeline (was H3) — logs a warning on unexpected content-type
+    and throws early on malformed structure.
+  - Replacing the `Array`-based `HIDDEN_VERSIONS` + five `.includes`
+    call sites with a `Set` + `isHiddenVersion` helper (was H6).
+  - Swapping `innerHTML` out of the init error path for
+    `createElement` + `textContent` (was L3).
+  - Batching issue-card rendering into a `DocumentFragment` to
+    avoid per-card reflow on filter keystrokes (was M4).
+  - Upgrading `loadReleaseNotes` error path from `console.log` to
+    `console.warn` with the actual error (was M2).
+  - Verified end-to-end in headless Chromium: an adversarial
+    `data.json` with `bug_id = "PAN-EVIL',alert('xss'),'"`,
+    `description = "<script>alert('xss')</script>"`, and
+    `affected_components = ["Component <img src=x onerror=alert(1)>"]`
+    fires zero alert dialogs and renders every field as visible
+    text. All functional flows (Fix Available modal, Known Issue
+    modal, Escape-to-close) continue to work.
+
+  Note: this commit intentionally does NOT add a CSP meta tag yet —
+  the Tailwind Play CDN (`cdn.tailwindcss.com`) compiles at runtime
+  via `'unsafe-eval'`, which is incompatible with a strong CSP. CSP
+  + Tailwind precompile will land as a follow-up commit.
+
 ### Added
 - `bugdb build` — unified one-command workflow for end users. Runs
   `fetch` → `generate-release-notes` → `build-site-cmd` in sequence
