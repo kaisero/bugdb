@@ -268,20 +268,3 @@ revisit S5 as a belt-and-suspenders addition.
 **Effort.** M — ~1 day across the 5 crawlers, needs careful landing-
 page link scraping per product because each uses a different HTML
 structure.
-
----
-
-## Pre-existing test fragility (not blocking anything)
-
-Two unit tests in `tests/unit/test_cli.py` fail in the devcontainer
-because Rich wraps long tmpdir paths across newlines, splitting the
-asserted substrings `"not found"` and `"already exists"` across two
-lines:
-
-- `TestGenerateSample::test_generate_sample_refuses_overwrite_without_force`
-- `TestFetchWithRetry::test_retry_missing_data_file`
-
-Both were pre-existing before v1.0.2 (they fail against `main` without
-any of this release's changes). Not tracked as a roadmap item — fix
-when someone hits it in anger, by either widening the CliRunner
-terminal width or loosening the substring assertion.
