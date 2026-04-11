@@ -578,6 +578,53 @@ class TestPaloAltoCrawlerAsync:
                 )
 
     @pytest.mark.asyncio
+    async def test_panos_discover_skips_known_and_addressed_hub_pages(
+        self, mock_playwright_panos
+    ):
+        """Regression pin for S2: discover_version_pages must filter out
+        hub pages whose last path segment contains "known-and-addressed".
+
+        The fixture ``panos/12-1-index.html`` lists six such hub URLs
+        (12.1.0 through 12.1.5). They are link-only indexes with no
+        issue tables (verified in
+        ``panos/12-1-5-known-and-addressed-issues.html``), so fetching
+        them wastes a request per hotfix. Before the S2 fix the
+        substring classification in discover_version_pages added them
+        to ``addressed_issues_urls`` because "addressed" appears in the
+        slug; after the S2 fix the filter runs first and skips them.
+        """
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler() as crawler:
+                version_infos = await crawler.discover_version_pages("12-1")
+
+                assert version_infos, "discover_version_pages returned nothing"
+
+                # No URL in any VersionInfo's known or addressed list may
+                # contain the "known-and-addressed" hub substring.
+                all_urls: list[str] = []
+                for vi in version_infos:
+                    all_urls.extend(vi.known_issues_urls)
+                    all_urls.extend(vi.addressed_issues_urls)
+
+                hub_urls = [url for url in all_urls if "known-and-addressed" in url.lower()]
+                assert not hub_urls, (
+                    f"PAN-OS discover_version_pages is still emitting "
+                    f"'known-and-addressed' hub URLs: {hub_urls}. These "
+                    f"pages are link-only indexes and fetching them is "
+                    f"pure waste. Check the S2 filter in "
+                    f"src/bugdb/crawlers/products/panos.py::discover_version_pages."
+                )
+
+                # Positive assertion: the leaf known/addressed pages
+                # for 12.1.5 ARE present, so the filter didn't overshoot.
+                assert any(
+                    url.endswith("/pan-os-12-1-5-known-issues") for url in all_urls
+                ), "12.1.5 known-issues leaf URL is missing from discover_version_pages output"
+                assert any(
+                    url.endswith("/pan-os-12-1-5-addressed-issues") for url in all_urls
+                ), "12.1.5 addressed-issues leaf URL is missing from discover_version_pages output"
+
+    @pytest.mark.asyncio
     async def test_crawl_prisma_access_agent(self, mock_playwright_prisma):
         """Test crawling Prisma Access Agent."""
         with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_prisma):

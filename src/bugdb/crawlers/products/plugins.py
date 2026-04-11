@@ -202,8 +202,15 @@ class PluginCrawler(BaseCrawler):
                     )
 
                 # Classify by last path segment to avoid false matches
-                # (e.g., parent path "known-and-addressed/addressed-issues")
+                # (e.g., parent path "known-and-addressed/addressed-issues").
                 last_segment = normalized_url.rstrip("/").rsplit("/", 1)[-1].lower()
+                # Skip "known-and-addressed-issues" hub pages — they are
+                # link-only indexes with no issue tables, so fetching
+                # them is pure waste. Defensive: the same keyword-based
+                # classification below would otherwise match both
+                # "known" and "addressed" on these hub URLs.
+                if "known-and-addressed" in last_segment:
+                    continue
                 is_addressed = any(
                     kw in last_segment for kw in self.config.addressed_issues_keywords
                 )

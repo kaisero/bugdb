@@ -109,8 +109,12 @@ class PrismaAccessCrawler(BaseCrawler):
                     if href.endswith(".html"):
                         href = href[:-5]
 
-                    # Classify by last path segment to avoid false matches
+                    # Classify by last path segment to avoid false matches.
                     last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
+                    # Skip "known-and-addressed-issues" hub pages — they
+                    # are link-only indexes with no issue tables.
+                    if "known-and-addressed" in last_segment:
+                        continue
                     if "addressed" in last_segment and href not in vi.addressed_issues_urls:
                         vi.addressed_issues_urls.append(href)
                     elif "known" in last_segment and href not in vi.known_issues_urls:
