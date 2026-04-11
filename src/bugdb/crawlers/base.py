@@ -93,11 +93,15 @@ class BaseCrawler:
             await self._playwright.stop()
 
     def _log(self, message: str) -> None:
-        """Print a log message if verbose mode is enabled."""
-        if self.verbose:
-            print(message)
-        # Also log at info level for debug mode
-        logger.info(message)
+        """Emit a progress/status message via the module logger.
+
+        Previously this method both called ``print(message)`` (when
+        ``verbose=True``) AND ``logger.info(message)`` unconditionally,
+        which double-emitted to any terminal that had logging
+        configured. It's now logger-only; callers that want console
+        output attach a handler (e.g. ``RichHandler``) in the CLI.
+        """
+        logger.info("%s", message)
 
     def _is_connection_refused_error(self, error: Exception) -> bool:
         """Check if an error is a connection refused error.

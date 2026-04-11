@@ -3,7 +3,13 @@
 from datetime import UTC, datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+# Shared configuration: reject unexpected fields during validation. This is a
+# cheap way to catch schema drift — if the crawler starts emitting a new field
+# that the model doesn't declare, validation fails loudly instead of silently
+# dropping data. Applied per-model via `model_config = STRICT_MODEL_CONFIG`.
+STRICT_MODEL_CONFIG = ConfigDict(extra="forbid")
 
 
 class ChangeType(str, Enum):
@@ -18,12 +24,16 @@ class ChangeType(str, Enum):
 class ReleaseChange(BaseModel):
     """A single change in a release."""
 
+    model_config = STRICT_MODEL_CONFIG
+
     type: ChangeType = Field(..., description="Type of change")
     description: str = Field(..., description="Description of the change")
 
 
 class Release(BaseModel):
     """A release with its changes."""
+
+    model_config = STRICT_MODEL_CONFIG
 
     version: str = Field(..., description="Version string (e.g., 1.0.0)")
     date: str = Field(..., description="Release date (YYYY-MM-DD)")
@@ -36,11 +46,15 @@ class Release(BaseModel):
 class ReleaseNotes(BaseModel):
     """Root model for release notes."""
 
+    model_config = STRICT_MODEL_CONFIG
+
     releases: list[Release] = Field(default_factory=list, description="List of releases")
 
 
 class Issue(BaseModel):
     """A bug or issue entry."""
+
+    model_config = STRICT_MODEL_CONFIG
 
     bug_id: str = Field(..., description="Unique bug identifier (e.g., PAN-300637)")
     description: str = Field(..., description="Issue description")
@@ -59,6 +73,8 @@ class Issue(BaseModel):
 class ProductVersion(BaseModel):
     """A specific version of a product with its known and addressed issues."""
 
+    model_config = STRICT_MODEL_CONFIG
+
     version: str = Field(..., description="Version string (e.g., 11.1.13)")
     release_date: str | None = Field(None, description="Release date (YYYY-MM-DD)")
     known_issues: list[Issue] = Field(
@@ -72,6 +88,8 @@ class ProductVersion(BaseModel):
 class Product(BaseModel):
     """A product with its versions and issues."""
 
+    model_config = STRICT_MODEL_CONFIG
+
     id: str = Field(..., description="Product identifier (e.g., pan-os)")
     name: str = Field(..., description="Display name (e.g., PAN-OS)")
     versions: list[ProductVersion] = Field(default_factory=list, description="Product versions")
@@ -79,6 +97,8 @@ class Product(BaseModel):
 
 class Metadata(BaseModel):
     """Database metadata."""
+
+    model_config = STRICT_MODEL_CONFIG
 
     generated_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
@@ -91,12 +111,16 @@ class Metadata(BaseModel):
 class BugDatabase(BaseModel):
     """Root model for the bug database."""
 
+    model_config = STRICT_MODEL_CONFIG
+
     metadata: Metadata = Field(default_factory=Metadata)
     products: list[Product] = Field(default_factory=list, description="Products list")
 
 
 class FailedFetchEntry(BaseModel):
     """A failed URL fetch entry for the fetch report."""
+
+    model_config = STRICT_MODEL_CONFIG
 
     url: str = Field(..., description="URL that failed to fetch")
     error: str = Field(..., description="Error message")
@@ -108,6 +132,8 @@ class FailedFetchEntry(BaseModel):
 class ProductStats(BaseModel):
     """Per-product fetch statistics."""
 
+    model_config = STRICT_MODEL_CONFIG
+
     product_id: str = Field(..., description="Product identifier")
     product_name: str = Field(..., description="Product display name")
     versions_fetched: int = Field(..., description="Number of versions fetched")
@@ -118,6 +144,8 @@ class ProductStats(BaseModel):
 
 class FetchReport(BaseModel):
     """Report generated after a fetch operation."""
+
+    model_config = STRICT_MODEL_CONFIG
 
     generated_at: datetime = Field(
         default_factory=lambda: datetime.now(UTC),

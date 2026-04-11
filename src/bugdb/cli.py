@@ -88,7 +88,7 @@ def generate_sample(
         # Write JSON file
         with open(output, "w", encoding="utf-8") as f:
             json.dump(
-                database.model_dump(mode="json"),
+                database.model_dump(mode="json", exclude_none=True),
                 f,
                 indent=2,
                 default=str,
@@ -492,7 +492,7 @@ def fetch(
             # Write JSON file
             with open(output, "w", encoding="utf-8") as f:
                 json.dump(
-                    database.model_dump(mode="json"),
+                    database.model_dump(mode="json", exclude_none=True),
                     f,
                     indent=2,
                     default=str,

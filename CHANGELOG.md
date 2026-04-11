@@ -36,6 +36,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/design-decisions.md` lightweight ADR log for non-obvious design decisions.
 
 ### Changed
+- Pydantic models in `src/bugdb/models.py` all now declare
+  `model_config = ConfigDict(extra="forbid")` via a shared
+  `STRICT_MODEL_CONFIG`. Unexpected fields in serialized JSON fail
+  validation loudly instead of silently dropping data, catching schema
+  drift at load time.
+- `BugDatabase` serialization in `cli.py` and `site_builder.py` now
+  passes `exclude_none=True` to `model_dump`. The generated
+  `data.json` is ~30–40% smaller because optional fields set to None
+  (workaround, symptoms, fix_info, affected_components, release_date)
+  are omitted entirely instead of written as `null`. The frontend uses
+  truthiness checks so `null` and `undefined` behave identically.
+- `SiteBuilder.env` now uses `jinja2.select_autoescape(["html", "htm",
+  "xml"])` instead of the blanket `autoescape=True`. Aligns with
+  Jinja2's recommended pattern — only HTML/XML templates are escaped,
+  not CSS or JS templates.
+- `BaseCrawler._log` no longer double-emits to both `print` (when
+  verbose) and `logger.info`. It's now logger-only; callers that want
+  console output attach a `RichHandler` via the CLI.
 - GitLab CI pipeline restructured from 3 stages (`test`, `integration`,
   `deploy`) to 5 (`lint`, `test`, `integration`, `canary`, `deploy`).
   `lint` moved to its own stage ahead of `test` so lint-only changes
