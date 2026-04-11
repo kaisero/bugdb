@@ -295,22 +295,24 @@ class PluginCrawler(BaseCrawler):
             for i, result in enumerate(results):
                 issue_type, url = url_types[i]
                 if isinstance(result, Exception):
-                    if issue_type == "known":
-                        failed_fetches.append(
-                            FailedFetch(
-                                url=url,
-                                error=str(result),
-                                product=self.config.product_id,
-                                version=version_info.version,
-                                issue_type="known",
-                            )
+                    # Record the failure for BOTH issue_types. Previously only
+                    # the "known" branch appended a FailedFetch, so addressed-
+                    # issue fetch errors disappeared from the retry pass and
+                    # the fetch report entirely.
+                    failed_fetches.append(
+                        FailedFetch(
+                            url=url,
+                            error=str(result),
+                            product=self.config.product_id,
+                            version=version_info.version,
+                            issue_type=issue_type,
                         )
+                    )
                     logger.debug("Error fetching %s issues %s: %s", issue_type, url, result)
+                elif issue_type == "known":
+                    known_issues.extend(result)
                 else:
-                    if issue_type == "known":
-                        known_issues.extend(result)
-                    else:
-                        addressed_issues.extend(result)
+                    addressed_issues.extend(result)
 
             known_issues = self._deduplicate_issues(known_issues)
             addressed_issues = self._deduplicate_issues(addressed_issues)

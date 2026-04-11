@@ -57,6 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heavy tiers by default via `addopts = "--strict-markers -m 'not data_baseline and not canary'"`.
 
 ### Fixed
+- `PluginCrawler` now records `FailedFetch` entries for **addressed-issue**
+  fetch errors. Previously the exception branch only logged addressed-issue
+  failures at debug level and dropped them, so the retry pass and the
+  fetch-report JSON never saw them for any of the 11 plugin crawlers.
 - `BaseCrawler._fetch_page_with_semaphore` and
   `_fetch_cortex_page_with_semaphore` previously raised a confusing
   `TypeError` (instead of the real failure) when `max_retries == 0`, and
