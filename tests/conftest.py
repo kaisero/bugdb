@@ -136,8 +136,15 @@ PANOS_URL_MAPPING = {
     # Known-and-addressed parent pages (contain hotfix sub-page links)
     "/pan-os-12-1-5-known-and-addressed-issues": "panos/12-1-5-known-and-addressed-issues.html",
     "/pan-os-11-2-4-known-and-addressed-issues": "panos/11-2-4-known-and-addressed-issues.html",
-    # Index pages (least specific, must come last)
-    "/pan-os/12-1/pan-os-release-notes": "panos/12-1-index.html",
+    # Index pages (least specific, must come last).
+    #
+    # IMPORTANT: /pan-os/12-1/pan-os-release-notes is INTENTIONALLY NOT
+    # MAPPED. Palo Alto moved PAN-OS 12.1+ release notes to the
+    # /ngfw/release-notes/<v> tree; the legacy URL 404s on the real site.
+    # A prior revision of this file mapped both URLs to the same fixture,
+    # which masked a crawler bug (see
+    # test_panos_12_1_only_discoverable_via_ngfw_url for the regression
+    # pin).
     "/ngfw/release-notes/12-1": "panos/12-1-index.html",
     "/pan-os/11-2/pan-os-release-notes": "panos/11-2-index.html",
 }

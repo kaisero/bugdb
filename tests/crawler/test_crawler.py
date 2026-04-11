@@ -515,6 +515,72 @@ class TestPaloAltoCrawlerAsync:
                 assert "11.2.4-h1" in versions
 
     @pytest.mark.asyncio
+    async def test_panos_12_1_only_discoverable_via_ngfw_url(
+        self, mock_playwright_panos
+    ):
+        """Regression pin for the PAN-OS 12.1 URL-pattern bug.
+
+        Starting with PAN-OS 12.1, Palo Alto Networks moved release notes
+        from ``/pan-os/<v>/pan-os-release-notes`` onto the shared NGFW
+        release-notes book at ``/ngfw/release-notes/<v>``. The crawler
+        used to hard-code only the legacy path and silently dropped 12-1
+        from discovery. A prior conftest.py revision masked this by
+        mapping BOTH URLs to the same fixture.
+
+        This test pins three things:
+
+        1. Probing the legacy URL for 12-1 must fail — we rely on
+           conftest.py no longer mapping ``/pan-os/12-1/...`` to anything.
+        2. Probing the NGFW URL for 12-1 must succeed.
+        3. ``discover_versions`` must still return "12-1" (via the
+           fallback-to-NGFW code path in PANOSCrawler._resolve_landing_url).
+
+        If any of these fail, the PAN-OS crawler has silently lost 12.1
+        coverage again.
+        """
+        with patch(
+            "bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos
+        ):
+            async with PANOSCrawler() as crawler:
+                # 1. Legacy URL for 12-1 must not resolve.
+                legacy_ok = await crawler._probe_landing_url(
+                    "/pan-os/12-1/pan-os-release-notes"
+                )
+                assert legacy_ok is False, (
+                    "Legacy URL pattern for 12-1 unexpectedly resolved. "
+                    "Check conftest.py — it must NOT map "
+                    "/pan-os/12-1/pan-os-release-notes to a fixture. "
+                    "Mapping it would mask the PAN-OS 12.1 URL bug again."
+                )
+
+                # 2. NGFW URL for 12-1 must resolve.
+                ngfw_ok = await crawler._probe_landing_url(
+                    "/ngfw/release-notes/12-1"
+                )
+                assert ngfw_ok is True, (
+                    "NGFW URL pattern for 12-1 failed to resolve against "
+                    "the fixture. Check PANOS_URL_MAPPING in conftest.py."
+                )
+
+                # 3. discover_versions must fall back to NGFW and still
+                # include 12-1.
+                versions = await crawler.discover_versions()
+                assert "12-1" in versions, (
+                    "discover_versions dropped 12-1 even though the NGFW "
+                    "URL resolves. The fallback chain in "
+                    "PANOSCrawler._resolve_landing_url is broken."
+                )
+
+                # 4. The resolved landing URL must be the NGFW one, not
+                # the legacy one.
+                assert crawler._base_url_for_version.get("12-1") == (
+                    "/ngfw/release-notes/12-1"
+                ), (
+                    "Landing URL for 12-1 should be the NGFW pattern, got "
+                    f"{crawler._base_url_for_version.get('12-1')!r}"
+                )
+
+    @pytest.mark.asyncio
     async def test_crawl_prisma_access_agent(self, mock_playwright_prisma):
         """Test crawling Prisma Access Agent."""
         with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_prisma):

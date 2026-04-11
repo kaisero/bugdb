@@ -19,11 +19,57 @@ class PANOSCrawler(BaseCrawler):
     product_id = "panos"
     product_name = "PAN-OS"
 
+    # Palo Alto Networks moved PAN-OS release notes from the legacy
+    # `/pan-os/<v>/pan-os-release-notes` path onto the shared NGFW release
+    # notes book at `/ngfw/release-notes/<v>` starting with PAN-OS 12.1.
+    # We probe the new pattern first and fall back to the legacy one so a
+    # single crawler handles both newer and older versions.
+    _NGFW_BASE = "/ngfw/release-notes/{v}"
+    _LEGACY_BASE = "/pan-os/{v}/pan-os-release-notes"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Per-major-version landing URL that actually responded with a real
+        # page. Populated by discover_versions() and reused by
+        # discover_version_pages() so the probe only happens once.
+        self._base_url_for_version: dict[str, str] = {}
+
+    async def _probe_landing_url(self, url: str) -> bool:
+        """Return True if the given URL renders a real PAN-OS page (not 404)."""
+        try:
+            soup = await self._fetch_page_with_semaphore(url)
+        except Exception:
+            return False
+        title = soup.find("title")
+        title_text = title.get_text().lower() if title else ""
+        if "404" in title_text or "not found" in title_text or "error" in title_text:
+            return False
+        return soup.find("h1") is not None
+
+    async def _resolve_landing_url(self, major_version: str) -> Optional[str]:
+        """Resolve the landing URL for a major version, probing if needed.
+
+        Tries the NGFW path first (used by 12.1+) and falls back to the
+        legacy `/pan-os/<v>/pan-os-release-notes` path. Caches the result
+        in ``self._base_url_for_version``.
+        """
+        cached = self._base_url_for_version.get(major_version)
+        if cached:
+            return cached
+        for template in (self._NGFW_BASE, self._LEGACY_BASE):
+            candidate = template.format(v=major_version)
+            if await self._probe_landing_url(candidate):
+                self._base_url_for_version[major_version] = candidate
+                return candidate
+        return None
+
     async def discover_versions(self) -> list[str]:
         """Discover available PAN-OS major versions.
 
         The version dropdown is JavaScript-rendered, so we probe for known
-        version patterns by checking if the URLs exist.
+        version patterns by checking if the URLs exist. Both the legacy
+        `/pan-os/<v>/pan-os-release-notes` and the newer
+        `/ngfw/release-notes/<v>` paths are tried per candidate.
 
         Returns:
             List of major version strings (e.g., ["12-1", "11-2", "11-1"]).
@@ -38,31 +84,14 @@ class PANOSCrawler(BaseCrawler):
             "9-1",
         ]
 
-        valid_versions = []
-
-        async def check_version(version: str) -> Optional[str]:
-            """Check if a version URL exists."""
-            url = f"/pan-os/{version}/pan-os-release-notes"
-            try:
-                soup = await self._fetch_page_with_semaphore(url)
-                title = soup.find("title")
-                title_text = title.get_text().lower() if title else ""
-                if "404" in title_text or "not found" in title_text or "error" in title_text:
-                    return None
-                h1 = soup.find("h1")
-                if h1:
-                    logger.debug("Found valid PAN-OS version: %s", version)
-                    return version
-                return None
-            except Exception:
-                return None
-
-        tasks = [check_version(v) for v in candidate_versions]
+        tasks = [self._resolve_landing_url(v) for v in candidate_versions]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for result in results:
-            if isinstance(result, str):
-                valid_versions.append(result)
+        valid_versions: list[str] = []
+        for version, result in zip(candidate_versions, results):
+            if isinstance(result, str) and result:
+                logger.debug("Found valid PAN-OS version: %s -> %s", version, result)
+                valid_versions.append(version)
 
         sorted_versions = sorted(
             valid_versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
@@ -81,7 +110,16 @@ class PANOSCrawler(BaseCrawler):
             List of VersionInfo objects with URLs for each minor version.
         """
         version_infos = []
-        base_url = f"/pan-os/{major_version}/pan-os-release-notes"
+        base_url = await self._resolve_landing_url(major_version)
+        if not base_url:
+            logger.warning(
+                "No landing URL found for PAN-OS %s (tried NGFW and legacy paths)",
+                major_version,
+            )
+            self._log(
+                f"  No landing URL found for PAN-OS {major_version}"
+            )
+            return version_infos
 
         try:
             soup = await self._fetch_page_with_semaphore(base_url)
