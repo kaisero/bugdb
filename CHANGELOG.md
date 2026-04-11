@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-04-11
+
 ### Changed
 - **Unified `assets/` working directory and `bugdb.json` filename.**
   Previously the CLI spread its artifacts across three locations:
@@ -416,7 +418,8 @@ product-specific web crawlers.
 - GitLab Pages deployment configuration.
 - README with full product list and CLI usage examples.
 
-[Unreleased]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.2...HEAD
+[Unreleased]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.3...HEAD
+[1.0.3]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.2...v1.0.3
 [1.0.2]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.1...v1.0.2
 [1.0.1]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.0...v1.0.1
 [1.0.0]: https://gitlab.com/dependencyhell/bugdb/-/tags/v1.0.0
