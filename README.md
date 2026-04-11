@@ -66,9 +66,31 @@ All `bugdb` commands below should be prefixed with `uv run` (e.g.
 
 ## Usage
 
+### Unified Build (Recommended)
+
+Single command that fetches all bug data, regenerates release notes,
+and builds the static site. This is the shortest path from a clean
+checkout to a deployable website.
+
+```bash
+# Full build: fetch everything, build into dist/
+bugdb build
+
+# Incremental: only fetch versions not already in assets/data.json
+bugdb build --incremental
+
+# Skip fetch entirely and just rebuild the site from existing data
+# (useful for iterative frontend work)
+bugdb build --skip-fetch
+
+# Force re-probe of upstream URLs (bypasses 24-hour discovery cache)
+bugdb build --refresh-discovery
+```
+
 ### Fetch Release Notes
 
-Crawl release notes from Palo Alto Networks documentation:
+If you want more control over which products to fetch, use `bugdb fetch`
+directly:
 
 ```bash
 # Fetch a single product
@@ -90,7 +112,7 @@ bugdb fetch panos -o data/data.json --force
 
 ### Build Static Site
 
-Generate the HTML website from bug data:
+If you already have a data file and just want to rebuild the HTML:
 
 ```bash
 bugdb build-site-cmd                     # Uses assets/data.json, outputs to dist/
@@ -110,10 +132,12 @@ open dist/index.html
 
 | Command | Description |
 |---------|-------------|
-| `bugdb fetch <product>` | Fetch release notes for a product |
+| `bugdb build` | Unified workflow: fetch → release notes → build site |
+| `bugdb fetch <product>` | Fetch release notes for a single product |
 | `bugdb fetch` | Fetch all supported products |
-| `bugdb build-site-cmd` | Build static HTML site |
-| `bugdb generate-sample` | Generate sample data for testing |
+| `bugdb build-site-cmd` | Build the static HTML site from an existing data file |
+| `bugdb generate-release-notes` | Regenerate the release notes JSON for the site |
+| `bugdb validate` | Validate a bug database JSON file against the schema |
 | `bugdb --version` | Show version |
 | `bugdb --help` | Show help |
 

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `bugdb build` — unified one-command workflow for end users. Runs
+  `fetch` → `generate-release-notes` → `build-site-cmd` in sequence
+  so a single invocation produces a deployable site with real data.
+  Flags: `--skip-fetch` (rebuild from existing data.json), `-i`
+  (incremental fetch), `--refresh-discovery` (bypass probe cache),
+  `--headless`, `--debug`.
 - Persistent discovery cache at `.cache/bugdb/discovery.json`
   (project-scoped, gitignored, 24-hour TTL) that survives across
   `bugdb fetch` invocations. Each run loads the cache once via a
@@ -44,6 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and merge-request-event pipelines cannot accidentally trigger a
   deploy. In practice, the deploy now fires exactly when a merge
   request is merged into `main`.
+
+### Removed
+- `bugdb generate-sample` command and `src/bugdb/sample_data.py`
+  module. Superseded by the new `bugdb build` unified workflow which
+  fetches real data instead of generating placeholder data. Tests that
+  previously invoked `generate-sample` to seed a data file now use a
+  local `_write_minimal_data_file()` helper in `tests/unit/test_cli.py`
+  that constructs a minimal `BugDatabase` via the Pydantic models.
+  The GitLab CI `pages` deploy job now inlines a tiny empty-database
+  JSON placeholder (~1 line of Python) for the same purpose — the
+  deployed site loads real data from the CDN at runtime anyway.
 
 ### Fixed
 - Six crawlers (panos, globalprotect, prisma_access,

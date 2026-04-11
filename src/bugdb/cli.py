@@ -12,7 +12,6 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from bugdb import __version__
 from bugdb.models import BugDatabase
-from bugdb.sample_data import generate_sample_data
 from bugdb.site_builder import build_site
 
 app = typer.Typer(
@@ -48,70 +47,6 @@ def main(
 
 
 @app.command()
-def generate_sample(
-    output: Annotated[
-        Path,
-        typer.Option(
-            "--output",
-            "-o",
-            help="Output JSON file path.",
-        ),
-    ] = Path("assets/data.json"),
-    force: Annotated[
-        bool,
-        typer.Option(
-            "--force",
-            "-f",
-            help="Overwrite existing file.",
-        ),
-    ] = False,
-) -> None:
-    """Generate sample bug database JSON file."""
-    # Check if file exists
-    if output.exists() and not force:
-        console.print(f"[red]Error:[/red] File {output} already exists. Use --force to overwrite.")
-        raise typer.Exit(1)
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        progress.add_task("Generating sample data...", total=None)
-
-        # Generate sample data
-        database = generate_sample_data()
-
-        # Create output directory if needed
-        output.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write JSON file
-        with open(output, "w", encoding="utf-8") as f:
-            json.dump(
-                database.model_dump(mode="json", exclude_none=True),
-                f,
-                indent=2,
-                default=str,
-            )
-
-    # Count issues
-    total_known = sum(len(v.known_issues) for p in database.products for v in p.versions)
-    total_addressed = sum(len(v.addressed_issues) for p in database.products for v in p.versions)
-
-    console.print(
-        Panel(
-            f"[green]✓[/green] Generated sample data:\n"
-            f"  • Products: {len(database.products)}\n"
-            f"  • Known issues: {total_known}\n"
-            f"  • Addressed issues: {total_addressed}\n"
-            f"  • Output: {output}",
-            title="Sample Data Generated",
-            border_style="green",
-        )
-    )
-
-
-@app.command()
 def build_site_cmd(
     data: Annotated[
         Path,
@@ -134,7 +69,9 @@ def build_site_cmd(
     # Check if data file exists
     if not data.exists():
         console.print(f"[red]Error:[/red] Data file {data} not found.")
-        console.print("[dim]Hint: Run 'bugdb generate-sample' to create sample data.[/dim]")
+        console.print(
+            "[dim]Hint: Run 'bugdb fetch' or 'bugdb build' to populate the data file first.[/dim]"
+        )
         raise typer.Exit(1)
 
     with Progress(
@@ -718,6 +655,145 @@ def generate_release_notes(
             f"  • Total changes: {total_changes}\n"
             f"  • Output: {output}",
             title="Release Notes Generated",
+            border_style="green",
+        )
+    )
+
+
+@app.command()
+def build(
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output directory for the static site.",
+        ),
+    ] = Path("dist"),
+    data: Annotated[
+        Path,
+        typer.Option(
+            "--data",
+            "-d",
+            help="Data JSON file path (fetch writes here, build-site reads from here).",
+        ),
+    ] = Path("assets/data.json"),
+    skip_fetch: Annotated[
+        bool,
+        typer.Option(
+            "--skip-fetch",
+            help=(
+                "Skip the fetch stage and use the existing data file. Useful for "
+                "iterative frontend work where the data is already populated."
+            ),
+        ),
+    ] = False,
+    incremental: Annotated[
+        bool,
+        typer.Option(
+            "--incremental",
+            "-i",
+            help="Incremental fetch — only fetch versions not already in the data file.",
+        ),
+    ] = False,
+    headless: Annotated[
+        bool,
+        typer.Option(
+            "--headless/--no-headless",
+            help="Run the crawler browser in headless mode.",
+        ),
+    ] = True,
+    debug: Annotated[
+        bool,
+        typer.Option(
+            "--debug",
+            help="Enable debug logging for the crawler.",
+        ),
+    ] = False,
+    refresh_discovery: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-discovery",
+            "-R",
+            help="Bypass the persistent discovery cache and re-probe upstream URLs.",
+        ),
+    ] = False,
+) -> None:
+    """Fetch bug data, generate release notes, and build the static site.
+
+    The unified one-command workflow for producing a deployable site with
+    real data. Runs three stages in sequence:
+
+    \b
+    1. `bugdb fetch`               — crawls release notes into DATA
+    2. `bugdb generate-release-notes` — regenerates release-notes.json
+    3. `bugdb build-site-cmd`      — builds the site into OUTPUT
+
+    Re-running `bugdb build` on a populated workspace overwrites the
+    existing data.json by default (force). Pass `--incremental` to
+    fetch only new versions, or `--skip-fetch` to rebuild the site
+    from existing data without hitting the network at all.
+    """
+    # Stage 1: fetch (unless --skip-fetch). Force overwrites existing
+    # data.json unless incremental mode is active.
+    if skip_fetch:
+        if not data.exists():
+            console.print(
+                f"[red]Error:[/red] --skip-fetch was passed but {data} does not exist. "
+                f"Run without --skip-fetch first to populate it."
+            )
+            raise typer.Exit(1)
+        console.print(f"[dim]Skipping fetch — reusing existing {data}[/dim]")
+    else:
+        console.print(
+            Panel(
+                "[bold]Stage 1/3:[/bold] Fetching bug data from docs.paloaltonetworks.com",
+                border_style="cyan",
+            )
+        )
+        fetch(
+            product=None,
+            version="all",
+            output=data,
+            force=not incremental,
+            incremental=incremental,
+            headless=headless,
+            debug=debug,
+            report=False,
+            retry=None,
+            refresh_discovery=refresh_discovery,
+        )
+
+    # Stage 2: regenerate release-notes.json. Always force — this is
+    # the unified build's canonical output, stale content must lose.
+    console.print(
+        Panel(
+            "[bold]Stage 2/3:[/bold] Generating release notes",
+            border_style="cyan",
+        )
+    )
+    generate_release_notes(
+        output=Path("src/bugdb/templates/assets/release-notes.json"),
+        force=True,
+    )
+
+    # Stage 3: build the static site from the fetched data.
+    console.print(
+        Panel(
+            "[bold]Stage 3/3:[/bold] Building static site",
+            border_style="cyan",
+        )
+    )
+    build_site_cmd(data=data, output=output)
+
+    console.print(
+        Panel(
+            f"[green]✓[/green] Unified build complete!\n"
+            f"  • Data:  {data}\n"
+            f"  • Site:  {output}/index.html\n\n"
+            f"[dim]Open in browser:[/dim]\n"
+            f"  open {output}/index.html",
+            title="Build Finished",
             border_style="green",
         )
     )

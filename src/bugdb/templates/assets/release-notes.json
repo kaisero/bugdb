@@ -26,107 +26,107 @@
         },
         {
           "type": "feature",
-          "description": "PAN-OS Support"
+          "description": "PAN-OS release notes crawler"
         },
         {
           "type": "feature",
-          "description": "GlobalProtect Support"
+          "description": "GlobalProtect release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Prisma Access Support"
+          "description": "Prisma Access release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Prisma Access Agent Support"
+          "description": "Prisma Access Agent release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Prisma SD-WAN Support"
+          "description": "Prisma SD-WAN release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Cloud NGFW for AWS Support"
+          "description": "Cloud NGFW for AWS release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Cloud NGFW for Azure Support"
+          "description": "Cloud NGFW for Azure release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Cortex XDR Agent Support"
+          "description": "Cortex XDR Agent release notes crawler"
         },
         {
           "type": "feature",
-          "description": "AI Runtime Security"
+          "description": "AI Runtime Security release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Device Security Support"
+          "description": "Device Security release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Remote Browser Isolation Support"
+          "description": "Remote Browser Isolation release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Strata Cloud Manager (SCM) Support"
+          "description": "Strata Cloud Manager (SCM) release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Strata Logging Service Support"
+          "description": "Strata Logging Service release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Autonomous DEM (ADEM) Support"
+          "description": "Autonomous DEM (ADEM) release notes crawler"
         },
         {
           "type": "feature",
-          "description": "VM-Series Plugin Support"
+          "description": "VM-Series Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "SD-WAN Plugin Support"
+          "description": "SD-WAN Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "AWS Plugin Support"
+          "description": "AWS Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Azure Plugin Support"
+          "description": "Azure Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "GCP Plugin Support"
+          "description": "GCP Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Cisco ACI Plugin Support"
+          "description": "Cisco ACI Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Cisco TrustSec Plugin Support"
+          "description": "Cisco TrustSec Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "VMware NSX Plugin Support"
+          "description": "VMware NSX Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "VMware vCenter Plugin Support"
+          "description": "VMware vCenter Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Kubernetes Plugin Support"
+          "description": "Kubernetes Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "Clustering Plugin Support"
+          "description": "Clustering Plugin release notes crawler"
         },
         {
           "type": "feature",
-          "description": "ZTP Plugin Support"
+          "description": "ZTP Plugin release notes crawler"
         }
       ]
     }

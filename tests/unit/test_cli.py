@@ -33,57 +33,36 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
-class TestGenerateSample:
-    """Tests for generate-sample command."""
+def _write_minimal_data_file(path) -> None:
+    """Write a minimal valid BugDatabase JSON to ``path``.
 
-    def test_generate_sample_creates_file(self, tmp_path):
-        """Test that generate-sample creates a JSON file."""
-        output_file = tmp_path / "bugs.json"
-        result = runner.invoke(app, ["generate-sample", "-o", str(output_file)])
-
-        assert result.exit_code == 0
-        assert output_file.exists()
-        assert "Generated sample data" in result.stdout
-
-    def test_generate_sample_creates_valid_json(self, tmp_path):
-        """Test that generated file is valid JSON with expected structure."""
-        output_file = tmp_path / "bugs.json"
-        runner.invoke(app, ["generate-sample", "-o", str(output_file)])
-
-        with open(output_file) as f:
-            data = json.load(f)
-
-        assert "metadata" in data
-        assert "products" in data
-        assert len(data["products"]) > 0
-
-    def test_generate_sample_refuses_overwrite_without_force(self, tmp_path):
-        """Test that generate-sample refuses to overwrite without --force."""
-        output_file = tmp_path / "bugs.json"
-        output_file.write_text("{}")
-
-        result = runner.invoke(app, ["generate-sample", "-o", str(output_file)])
-
-        assert result.exit_code == 1
-        assert "already exists" in _flat(result.stdout)
-
-    def test_generate_sample_overwrites_with_force(self, tmp_path):
-        """Test that generate-sample overwrites with --force."""
-        output_file = tmp_path / "bugs.json"
-        output_file.write_text("{}")
-
-        result = runner.invoke(app, ["generate-sample", "-o", str(output_file), "--force"])
-
-        assert result.exit_code == 0
-        assert "Generated sample data" in result.stdout
-
-    def test_generate_sample_creates_parent_directories(self, tmp_path):
-        """Test that generate-sample creates parent directories."""
-        output_file = tmp_path / "nested" / "dir" / "bugs.json"
-        result = runner.invoke(app, ["generate-sample", "-o", str(output_file)])
-
-        assert result.exit_code == 0
-        assert output_file.exists()
+    Replaces the pre-v1.0.3 pattern of invoking the now-removed
+    ``bugdb generate-sample`` command to populate a test data file.
+    Only used by tests that need *any* valid data file, not tests that
+    exercise specific data content.
+    """
+    database = BugDatabase(
+        products=[
+            Product(
+                id="panos",
+                name="PAN-OS",
+                versions=[
+                    ProductVersion(
+                        version="11.2.1",
+                        known_issues=[
+                            Issue(bug_id="PAN-1", description="Test known issue"),
+                        ],
+                        addressed_issues=[
+                            Issue(bug_id="PAN-2", description="Test fixed issue"),
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(database.model_dump(mode="json", exclude_none=True), f, default=str)
 
 
 class TestBuildSite:
@@ -91,9 +70,9 @@ class TestBuildSite:
 
     def test_build_site_creates_output(self, tmp_path):
         """Test that build-site creates output files."""
-        # First generate sample data
+        # First populate a minimal data file (replaces old generate-sample call)
         data_file = tmp_path / "bugs.json"
-        runner.invoke(app, ["generate-sample", "-o", str(data_file)])
+        _write_minimal_data_file(data_file)
 
         # Then build site
         output_dir = tmp_path / "dist"
@@ -131,7 +110,7 @@ class TestValidate:
     def test_validate_valid_file(self, tmp_path):
         """Test that validate passes for valid file."""
         data_file = tmp_path / "bugs.json"
-        runner.invoke(app, ["generate-sample", "-o", str(data_file)])
+        _write_minimal_data_file(data_file)
 
         result = runner.invoke(app, ["validate", str(data_file)])
 
@@ -169,7 +148,7 @@ class TestValidate:
     def test_validate_shows_statistics(self, tmp_path):
         """Test that validate shows database statistics."""
         data_file = tmp_path / "bugs.json"
-        runner.invoke(app, ["generate-sample", "-o", str(data_file)])
+        _write_minimal_data_file(data_file)
 
         result = runner.invoke(app, ["validate", str(data_file)])
 
@@ -566,3 +545,44 @@ class TestFetchWithRetry:
         # Report should be regenerated
         new_report = json.loads(report_file.read_text())
         assert "total_products" in new_report
+
+
+class TestBuildCommand:
+    """Tests for the unified `bugdb build` command.
+
+    `build` orchestrates fetch → generate-release-notes → build-site-cmd.
+    The happy path with real fetch is covered implicitly by the underlying
+    commands' own tests; these tests focus on the `build`-specific wiring
+    (skip-fetch escape hatch, missing-data error path).
+    """
+
+    def test_build_skip_fetch_missing_data_errors(self, tmp_path):
+        """--skip-fetch with no data file must fail cleanly."""
+        missing = tmp_path / "no-such-file.json"
+        site_out = tmp_path / "dist"
+
+        result = runner.invoke(
+            app,
+            ["build", "--skip-fetch", "-d", str(missing), "-o", str(site_out)],
+        )
+
+        assert result.exit_code == 1
+        assert "does not exist" in _flat(result.stdout)
+
+    def test_build_skip_fetch_reuses_existing_data(self, tmp_path):
+        """--skip-fetch with a valid data file must skip fetch, regenerate
+        release notes, and build the site — without touching the network."""
+        data_file = tmp_path / "bugs.json"
+        _write_minimal_data_file(data_file)
+        site_out = tmp_path / "dist"
+
+        result = runner.invoke(
+            app,
+            ["build", "--skip-fetch", "-d", str(data_file), "-o", str(site_out)],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        assert "Skipping fetch" in _flat(result.stdout)
+        assert "Build Finished" in _flat(result.stdout)
+        assert (site_out / "index.html").exists()
+        assert (site_out / "assets" / "data.json").exists()
