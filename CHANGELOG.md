@@ -36,6 +36,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/design-decisions.md` lightweight ADR log for non-obvious design decisions.
 
 ### Changed
+- GitLab CI pipeline restructured from 3 stages (`test`, `integration`,
+  `deploy`) to 5 (`lint`, `test`, `integration`, `canary`, `deploy`).
+  `lint` moved to its own stage ahead of `test` so lint-only changes
+  get feedback without waiting on test setup. The fast `test` job no
+  longer runs `playwright install --with-deps chromium` — all fast-tier
+  crawler tests use the MockPlaywright fixture, so installing ~200 MB
+  of Chromium on every commit was pure waste. `data-baseline-integration`
+  and `upstream-canary` now live in separate stages so a canary flake
+  can't block a green data-baseline run. The fast `test` stage also
+  now runs on MRs (previously develop-only) so merge requests get full
+  unit coverage before merge.
 - `cli.py::fetch` now derives its `supported_products` mapping from
   `PRODUCT_WRAPPERS` in `src/bugdb/crawlers/registry.py`, instead of
   maintaining a parallel hand-written dict. Drift between the CLI and

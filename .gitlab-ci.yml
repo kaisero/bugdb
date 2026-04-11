@@ -12,17 +12,20 @@ cache:
     - .uv-cache
 
 stages:
+  - lint
   - test
   - integration
+  - canary
   - deploy
 
 # ---------------------------------------------------------------------------
-# Lint: ruff check + format-check. Uses only the `dev` dependency group
-# (no Playwright install) so it runs in seconds. Runs on every develop
-# commit AND on every merge request — style must be green before merge.
+# Lint: ruff check + format-check. In its own stage ahead of `test` so
+# lint-only changes get feedback in seconds without waiting on test setup.
+# Uses only the `dev` dependency group (no Playwright install).
+# Runs on every develop commit AND on every merge request.
 # ---------------------------------------------------------------------------
 lint:
-  stage: test
+  stage: lint
   script:
     - uv sync --locked --group dev
     - uv run ruff check --output-format=gitlab . > ruff-report.json || (uv run ruff check . && exit 1)
@@ -40,12 +43,17 @@ lint:
 
 # ---------------------------------------------------------------------------
 # Fast tier: unit + mock-crawler tests. Runs on every commit to develop.
+#
+# No `playwright install` step: all fast-tier crawler tests use the
+# MockPlaywright fixture defined in tests/conftest.py, so installing a
+# real Chromium (~200 MB, ~30s) on every commit is pure waste. If a
+# genuinely-browser-needing test is ever added, mark it and move it to
+# the integration stage.
 # ---------------------------------------------------------------------------
 test:
   stage: test
   script:
     - uv sync --locked --group test
-    - uv run playwright install --with-deps chromium
     - uv run pytest --junitxml=report.xml -v
   artifacts:
     when: always
@@ -53,10 +61,11 @@ test:
       junit: report.xml
   rules:
     - if: $CI_COMMIT_BRANCH == "develop"
+    - if: $CI_MERGE_REQUEST_IID
 
 # ---------------------------------------------------------------------------
 # Heavy tier: data-fidelity integration tests against the committed
-# baseline. This job is deliberately isolated from the fast `test` stage:
+# baseline. Deliberately isolated from the fast `test` stage:
 #   - loads 13 MB data.json once per session
 #   - parametrizes ~1900 assertions per (product, version) pair
 #   - signal "did the fetch lose data" must not be drowned by parser churn
@@ -102,11 +111,15 @@ data-baseline-integration:
 # list doesn't know about. This is the only tier that catches the
 # PAN-OS 12.1 class of bug.
 #
+# Lives in its OWN stage (not alongside data-baseline-integration) so a
+# flaky upstream network probe can't block a green data-baseline run from
+# deploying. Different failure modes deserve different blast radii.
+#
 # Scheduled nightly only — we don't want MRs blocked on upstream network
 # availability.
 # ---------------------------------------------------------------------------
 upstream-canary:
-  stage: integration
+  stage: canary
   script:
     - uv sync --locked --group test
     - uv run pytest tests/canary/
