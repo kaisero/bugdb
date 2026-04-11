@@ -299,6 +299,16 @@
         </div>
     </div>
 
-    <script src="assets/app.js"></script>
+    <!--
+        `type="module"` gets us two things for free:
+        1. Strict mode (on top of the IIFE's 'use strict' — belt and braces).
+        2. Deferred execution by default (the browser waits for the DOM to
+           be parsed before running the script), so the script tag's
+           position no longer matters and the internal initElements()
+           call is guaranteed to find its targets.
+        It also enables native ESM `import`/`export` if we ever need
+        to break app.js into modules.
+    -->
+    <script src="assets/app.js" type="module"></script>
 </body>
 </html>

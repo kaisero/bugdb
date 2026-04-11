@@ -27,6 +27,17 @@
     let knownIssuesMap = {}; // Map of bug_id -> array of known-in releases
     let releaseNotesData = null;
 
+    // Precomputed map of product_id -> sorted version string list, built
+    // once in init() after data.json loads. Replaces the pattern where
+    // every filter function threaded the full `data` object through its
+    // closure and re-walked `data.products` on each product selection.
+    let productVersions = {};
+
+    // Monotonic card id counter. Each createIssueCard() consumes one so
+    // the rendered <article> can point its aria-labelledby at a unique
+    // h3 id without having to hash bug_id + productId + version.
+    let nextCardId = 0;
+
     // Pagination state
     let currentPage = 1;
     let pageSize = 50;
@@ -47,28 +58,36 @@
     let highlightedVersionIndex = -1;
     let highlightedTypeIndex = -1;
 
-    // DOM Elements — captured at IIFE eval time. The <script> tag is at
-    // the end of <body> so the DOM is already parsed by the time this
-    // runs; init() additionally waits for DOMContentLoaded before
-    // touching state.
-    const elements = {
-        search: document.getElementById('search'),
-        productFilter: document.getElementById('product-filter'),
-        productDropdown: document.getElementById('product-dropdown'),
-        versionFilter: document.getElementById('version-filter'),
-        versionDropdown: document.getElementById('version-dropdown'),
-        typeFilter: document.getElementById('type-filter'),
-        typeDropdown: document.getElementById('type-dropdown'),
-        results: document.getElementById('results'),
-        resultsCount: document.getElementById('results-count'),
-        resultsRange: document.getElementById('results-range'),
-        pagination: document.getElementById('pagination'),
-        pageSize: document.getElementById('page-size'),
-        noResults: document.getElementById('no-results'),
-        loading: document.getElementById('loading'),
-        clearFilters: document.getElementById('clear-filters'),
-        generatedDate: document.getElementById('generated-date'),
-    };
+    // DOM element cache. Populated by initElements() at the top of
+    // init() — lazy rather than captured at IIFE eval time so the
+    // script placement can change without breaking element lookups,
+    // and so that adding `type="module"` (which defers script
+    // execution) stays safe.
+    const elements = {};
+
+    function initElements() {
+        const ids = {
+            search: 'search',
+            productFilter: 'product-filter',
+            productDropdown: 'product-dropdown',
+            versionFilter: 'version-filter',
+            versionDropdown: 'version-dropdown',
+            typeFilter: 'type-filter',
+            typeDropdown: 'type-dropdown',
+            results: 'results',
+            resultsCount: 'results-count',
+            resultsRange: 'results-range',
+            pagination: 'pagination',
+            pageSize: 'page-size',
+            noResults: 'no-results',
+            loading: 'loading',
+            clearFilters: 'clear-filters',
+            generatedDate: 'generated-date',
+        };
+        for (const [key, id] of Object.entries(ids)) {
+            elements[key] = document.getElementById(id);
+        }
+    }
 
     // =====================================================================
     // Helpers
@@ -258,7 +277,36 @@
                !lowered.includes('addressed in');
     }
 
-    // Compare versions for sorting (handles 11.2.5, 2025.r5.0, SaaS, -h9 suffixes)
+    // Parse one base-version segment to a (numeric, textual) tuple.
+    //
+    // The previous `parseInt(x, 10) || 0` idiom silently collapsed any
+    // NaN to 0, so "10.0" and "10.0.beta" sorted equal. This version
+    // separates the numeric prefix from any trailing non-digits and
+    // compares numerics first, then the remainder lexicographically.
+    // So "10.0" < "10.0.beta" and "10.0.beta" < "10.0.gamma".
+    function parseVersionSegment(segment) {
+        if (segment === undefined || segment === null) {
+            return { num: 0, rest: '' };
+        }
+        const match = /^(\d+)(.*)$/.exec(String(segment));
+        if (match) {
+            const num = Number.parseInt(match[1], 10);
+            return { num: Number.isFinite(num) ? num : 0, rest: match[2] };
+        }
+        // No leading digits at all (e.g. "beta"). Treat as numerically
+        // zero and fall back to lexicographic comparison on the text.
+        return { num: 0, rest: String(segment) };
+    }
+
+    // Compare versions for sorting (handles 11.2.5, 2025.r5.0, SaaS, -h9 suffixes).
+    //
+    // Tiebreak documented rules:
+    //   1. `SaaS` sorts LAST (we want it at the bottom of version lists).
+    //   2. `Unknown` sorts FIRST.
+    //   3. Otherwise, split on `.` (and treat `r` as a separator) and
+    //      compare segment-by-segment. Each segment's numeric prefix
+    //      dominates; remainder text only matters as a tiebreak.
+    //   4. If the base versions tie, the hotfix suffix (`-h9`) breaks.
     function compareVersions(a, b) {
         if (a === 'SaaS') return 1;
         if (b === 'SaaS') return -1;
@@ -268,7 +316,11 @@
         const parseVersion = (v) => {
             const hotfixMatch = v.match(/^(.+?)-h(\d+)$/i);
             if (hotfixMatch) {
-                return { base: hotfixMatch[1], hotfix: parseInt(hotfixMatch[2], 10) };
+                const hotfixNum = Number.parseInt(hotfixMatch[2], 10);
+                return {
+                    base: hotfixMatch[1],
+                    hotfix: Number.isFinite(hotfixNum) ? hotfixNum : 0,
+                };
             }
             return { base: v, hotfix: 0 };
         };
@@ -282,10 +334,14 @@
         const partsA = normalizeBase(parsedA.base);
         const partsB = normalizeBase(parsedB.base);
 
-        for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-            const numA = parseInt(partsA[i], 10) || 0;
-            const numB = parseInt(partsB[i], 10) || 0;
-            if (numA !== numB) return numA - numB;
+        const limit = Math.max(partsA.length, partsB.length);
+        for (let i = 0; i < limit; i++) {
+            const segA = parseVersionSegment(partsA[i]);
+            const segB = parseVersionSegment(partsB[i]);
+            if (segA.num !== segB.num) return segA.num - segB.num;
+            if (segA.rest !== segB.rest) {
+                return segA.rest < segB.rest ? -1 : 1;
+            }
         }
 
         return parsedA.hotfix - parsedB.hotfix;
@@ -307,12 +363,46 @@
     // Filter state
     // =====================================================================
 
-    function populateFilters(data) {
-        productOptions = data.products.map((p) => ({ id: p.id, name: p.name }));
-        updateVersionFilter(data);
+    // Precompute product_id -> visible sorted version list from the
+    // initial data.json payload. Called once from init(); subsequent
+    // filter operations read from `productVersions` without
+    // re-walking `data.products`.
+    function buildProductVersionsMap(data) {
+        const map = {};
+        for (const product of data.products) {
+            const visibleVersions = [];
+            for (const version of product.versions) {
+                if (!isHiddenVersion(version.version)) {
+                    visibleVersions.push(version.version);
+                }
+            }
+            // Sort descending (newest first) using a stable numeric-first
+            // comparator; falls back to segment text for ties.
+            visibleVersions.sort((a, b) => {
+                const partsA = a.split('.');
+                const partsB = b.split('.');
+                const limit = Math.max(partsA.length, partsB.length);
+                for (let i = 0; i < limit; i++) {
+                    const segA = parseVersionSegment(partsA[i]);
+                    const segB = parseVersionSegment(partsB[i]);
+                    if (segA.num !== segB.num) return segB.num - segA.num;
+                    if (segA.rest !== segB.rest) {
+                        return segA.rest < segB.rest ? 1 : -1;
+                    }
+                }
+                return 0;
+            });
+            map[product.id] = visibleVersions;
+        }
+        return map;
     }
 
-    function updateVersionFilter(data) {
+    function populateFilters(data) {
+        productOptions = data.products.map((p) => ({ id: p.id, name: p.name }));
+        updateVersionFilter();
+    }
+
+    function updateVersionFilter() {
         const selectedProduct = currentFilters.product;
 
         if (!selectedProduct) {
@@ -326,27 +416,8 @@
         elements.versionFilter.disabled = false;
         elements.versionFilter.placeholder = 'All Versions';
 
-        const versions = new Set();
-        for (const product of data.products) {
-            if (product.id === selectedProduct) {
-                for (const version of product.versions) {
-                    if (!isHiddenVersion(version.version)) {
-                        versions.add(version.version);
-                    }
-                }
-            }
-        }
-
-        versionOptions = Array.from(versions).sort((a, b) => {
-            const partsA = a.split('.').map(Number);
-            const partsB = b.split('.').map(Number);
-            for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-                const numA = partsA[i] || 0;
-                const numB = partsB[i] || 0;
-                if (numA !== numB) return numB - numA;
-            }
-            return 0;
-        });
+        // Read from the precomputed map instead of re-walking data.products.
+        versionOptions = productVersions[selectedProduct] || [];
     }
 
     function applyFilters() {
@@ -548,12 +619,19 @@
 
         const showFixInfo = shouldShowFixInfo(issue.fix_info);
 
+        // Unique id for the card's heading — lets the outer <article>
+        // point its aria-labelledby at the bug_id h3, so screen readers
+        // announce the card's accessible name from visible text rather
+        // than a synthetic aria-label.
+        const headingId = `issue-card-heading-${nextCardId++}`;
+
         // Header block: bug id + product/version caption
         const titleBlock = el('div', {
             children: [
                 el('h3', {
                     className: 'text-lg font-semibold text-gray-900',
                     text: issue.bug_id,
+                    attrs: { id: headingId },
                 }),
                 el('p', {
                     className: 'text-sm text-gray-500',
@@ -634,10 +712,11 @@
             text: issue.description,
         });
 
-        const card = el('div', {
+        const card = el('article', {
             className:
                 'bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow',
             children: [header, description],
+            attrs: { 'aria-labelledby': headingId },
         });
 
         if (issue.symptoms) {
@@ -816,7 +895,26 @@
         }
     }
 
+    // Allow-list of recognised change types. Anything else is logged
+    // once (via `warnedUnknownChangeTypes`) and falls back to the
+    // generic grey style + Title-Cased text label. We never throw
+    // because a single bad entry in release-notes.json must not
+    // break the whole release notes modal.
+    const KNOWN_CHANGE_TYPES = new Set(['feature', 'improvement', 'fix', 'breaking']);
+    const warnedUnknownChangeTypes = new Set();
+
+    function warnUnknownChangeType(type) {
+        if (KNOWN_CHANGE_TYPES.has(type) || warnedUnknownChangeTypes.has(type)) return;
+        warnedUnknownChangeTypes.add(type);
+        console.warn(
+            `Unknown change type in release-notes.json: ${JSON.stringify(type)}. ` +
+                `Falling back to generic badge style. Add it to KNOWN_CHANGE_TYPES ` +
+                `in app.js if it's intentional.`
+        );
+    }
+
     function getChangeTypeStyles(type) {
+        warnUnknownChangeType(type);
         switch (type) {
             case 'feature':
                 return 'bg-emerald-100 text-emerald-800';
@@ -844,6 +942,9 @@
             'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
     };
     function getChangeTypeIcon(type) {
+        // Unknown types intentionally return null so the badge still
+        // renders, just without an icon. The warning already fired
+        // from getChangeTypeStyles which is called first.
         const paths = CHANGE_TYPE_ICONS[type];
         if (!paths) return null;
         return createSvgIcon(paths);
@@ -860,7 +961,15 @@
             case 'breaking':
                 return 'Breaking';
             default:
-                return String(type || '');
+                // Title-case the raw type as a best-effort fallback.
+                // The value has already been through a switch at the
+                // getChangeTypeStyles call site above so we've warned
+                // about it; here we just produce a readable label.
+                // The return value is rendered via textContent, not
+                // innerHTML, so even a malicious string is safe.
+                return String(type || '')
+                    .replace(/[_-]+/g, ' ')
+                    .replace(/\b\w/g, (c) => c.toUpperCase());
         }
     }
 
@@ -1022,7 +1131,12 @@
 
             const div = el('div', { className, text: label });
             div.dataset.value = value;
-            div.addEventListener('mousedown', (e) => {
+            // Use `pointerdown` instead of `mousedown` so touch + stylus
+            // selection works identically to mouse click, and still
+            // fires before the input's `blur` handler so
+            // preventDefault() keeps focus in the input until we've
+            // dispatched the selection.
+            div.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
                 onSelect(value, label);
             });
@@ -1040,7 +1154,7 @@
         dropdown.classList.add('hidden');
     }
 
-    function clearFilters(data) {
+    function clearFilters() {
         currentFilters = { search: '', product: '', version: '', type: '' };
 
         elements.search.value = '';
@@ -1052,7 +1166,7 @@
         pageSize = 50;
         elements.pageSize.value = '50';
 
-        updateVersionFilter(data);
+        updateVersionFilter();
 
         hideDropdown(elements.productDropdown);
         hideDropdown(elements.versionDropdown);
@@ -1061,7 +1175,7 @@
         applyFilters();
     }
 
-    function setupEventListeners(data) {
+    function setupEventListeners() {
         elements.search.addEventListener(
             'input',
             debounce((e) => {
@@ -1081,7 +1195,7 @@
                 elements.productFilter.value = label;
                 currentFilters.version = '';
                 elements.versionFilter.value = '';
-                updateVersionFilter(data);
+                updateVersionFilter();
                 hideDropdown(elements.productDropdown);
                 currentPage = 1;
                 applyFilters();
@@ -1094,7 +1208,7 @@
                 currentFilters.product = '';
                 currentFilters.version = '';
                 elements.versionFilter.value = '';
-                updateVersionFilter(data);
+                updateVersionFilter();
                 currentPage = 1;
                 applyFilters();
             }
@@ -1153,7 +1267,7 @@
             renderResults();
         });
 
-        elements.clearFilters.addEventListener('click', () => clearFilters(data));
+        elements.clearFilters.addEventListener('click', () => clearFilters());
 
         document.addEventListener('click', (e) => {
             if (
@@ -1334,7 +1448,18 @@
     }
 
     async function init() {
+        // Populate the elements cache lazily on init() rather than at
+        // IIFE eval time — this keeps the script movable and makes it
+        // safe to switch to `<script type="module">` (deferred) without
+        // worrying about the cache being built before the DOM exists.
+        initElements();
+
         try {
+            // Fetch is intentionally a relative URL. The deployed
+            // GitLab Pages site loads from the same origin as the HTML,
+            // which the CSP's `connect-src 'self'` directive allows. If
+            // the fetch URL is ever pointed at a different origin, the
+            // CSP meta tag in index.html must be widened to match.
             const response = await fetch('assets/data.json');
             if (!response.ok) {
                 throw new Error(`Failed to load bug database (HTTP ${response.status})`);
@@ -1358,13 +1483,18 @@
                     : date.toLocaleDateString();
             }
 
+            // Build derived state once. `productVersions` replaces the
+            // pre-v1.0.3 pattern of threading `data` through every
+            // filter closure and re-walking data.products on each
+            // product selection.
             fixReleasesMap = buildFixReleasesMap(data);
             knownIssuesMap = buildKnownIssuesMap(data);
+            productVersions = buildProductVersionsMap(data);
             allIssues = flattenIssues(data);
             filteredIssues = [...allIssues];
 
             populateFilters(data);
-            setupEventListeners(data);
+            setupEventListeners();
             setupModalEventListeners();
             setupGlobalKeydownHandler();
 
