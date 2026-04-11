@@ -77,8 +77,8 @@ Follow this workflow:
 
 2. **After verifying the crawler works** - Add the new product to the existing database using incremental mode:
    ```bash
-   # Add new product to existing data.json
-   uv run bugdb fetch new-product -o data/data.json --incremental
+   # Add new product to existing bugdb.json
+   uv run bugdb fetch new-product -o assets/bugdb.json --incremental
    ```
 
 3. **Build the site** to verify everything works:
@@ -206,7 +206,7 @@ Chromium is never needed — is tracked as roadmap item D3 in
 ### Building the Site
 
 ```bash
-# Build static site from data.json
+# Build static site from bugdb.json
 uv run bugdb build-site-cmd
 
 # Open in browser

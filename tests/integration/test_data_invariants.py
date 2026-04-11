@@ -1,4 +1,4 @@
-"""Baseline-independent shape checks for assets/data.json.
+"""Baseline-independent shape checks for assets/bugdb.json.
 
 These tests run without a baseline and catch schema-level regressions
 — empty products, malformed version strings, issues missing bug ids,
@@ -61,12 +61,12 @@ class TestTopLevelStructure:
     """Sanity checks on the root JSON shape."""
 
     def test_has_metadata(self, data_json: dict[str, Any]):
-        assert "metadata" in data_json, "data.json missing top-level 'metadata'"
+        assert "metadata" in data_json, "bugdb.json missing top-level 'metadata'"
 
     def test_has_products_list(self, data_json: dict[str, Any]):
         assert "products" in data_json
         assert isinstance(data_json["products"], list)
-        assert len(data_json["products"]) > 0, "data.json has zero products"
+        assert len(data_json["products"]) > 0, "bugdb.json has zero products"
 
     def test_metadata_generated_at_is_iso_parseable(self, data_json: dict[str, Any]):
         ts = data_json.get("metadata", {}).get("generated_at")
@@ -79,7 +79,7 @@ class TestTopLevelStructure:
 
         Freshness (within N days) is checked in the nightly pipeline only
         via the `--check-freshness` flag; we don't want old PRs to fail
-        just because their data.json is stale.
+        just because their bugdb.json is stale.
         """
         ts = data_json["metadata"]["generated_at"].replace("Z", "+00:00")
         parsed = datetime.fromisoformat(ts)

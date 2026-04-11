@@ -1,6 +1,6 @@
 """Baseline snapshot utilities for data-fidelity integration tests.
 
-A *baseline* is a compressed fingerprint of `assets/data.json`. For every
+A *baseline* is a compressed fingerprint of `assets/bugdb.json`. For every
 `(product, version)` pair it records:
 
 - the number of known issues
@@ -8,7 +8,7 @@ A *baseline* is a compressed fingerprint of `assets/data.json`. For every
 - the full set of bug ids (sorted)
 
 The baseline is committed under `tests/baselines/data_baseline.json` and
-compared against the current `data.json` by the `tests/integration/` suite
+compared against the current `bugdb.json` by the `tests/integration/` suite
 to catch crawler regressions that silently drop data.
 
 This module is the single source of truth for how snapshots are built,
@@ -98,7 +98,7 @@ class Baseline:
 
 
 def build_baseline(data_json: dict[str, Any]) -> BaselineSnapshot:
-    """Compute a fingerprint from a loaded `data.json` dict.
+    """Compute a fingerprint from a loaded `bugdb.json` dict.
 
     Accepts the full BugDatabase JSON shape (``{"products": [...]}``).
     Orders product ids and versions deterministically so two runs produce
@@ -311,7 +311,7 @@ def _cli() -> int:
         "refresh",
         help="Print a diff of current vs. baseline and optionally rewrite it.",
     )
-    refresh.add_argument("--data", required=True, type=Path, help="Path to assets/data.json")
+    refresh.add_argument("--data", required=True, type=Path, help="Path to assets/bugdb.json")
     refresh.add_argument(
         "--baseline",
         required=True,
@@ -320,7 +320,7 @@ def _cli() -> int:
     )
     refresh.add_argument("--yes", action="store_true", help="Actually write the new baseline.")
 
-    diff_cmd = sub.add_parser("diff", help="Show diff between current data.json and baseline.")
+    diff_cmd = sub.add_parser("diff", help="Show diff between current bugdb.json and baseline.")
     diff_cmd.add_argument("--data", required=True, type=Path)
     diff_cmd.add_argument("--baseline", required=True, type=Path)
 

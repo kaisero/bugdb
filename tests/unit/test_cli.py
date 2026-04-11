@@ -80,7 +80,7 @@ class TestBuildSite:
 
         assert result.exit_code == 0
         assert (output_dir / "index.html").exists()
-        assert (output_dir / "assets" / "data.json").exists()
+        assert (output_dir / "assets" / "bugdb.json").exists()
         assert (output_dir / "assets" / "app.js").exists()
 
     def test_build_site_missing_data_file(self, tmp_path):
@@ -205,7 +205,7 @@ class TestFetchWithReport:
 
     def test_report_creates_report_file(self, tmp_path):
         """Test that --report creates a .report.json file."""
-        output_file = tmp_path / "data.json"
+        output_file = tmp_path / "bugdb.json"
         mock_result = _make_fetch_result()
 
         with patch.dict(
@@ -215,7 +215,7 @@ class TestFetchWithReport:
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
-        report_file = tmp_path / "data.report.json"
+        report_file = tmp_path / "bugdb.report.json"
         assert report_file.exists()
 
         report = json.loads(report_file.read_text())
@@ -226,7 +226,7 @@ class TestFetchWithReport:
 
     def test_report_contains_product_stats(self, tmp_path):
         """Test that report contains per-product statistics."""
-        output_file = tmp_path / "data.json"
+        output_file = tmp_path / "bugdb.json"
         mock_result = _make_fetch_result()
 
         with patch.dict(
@@ -236,7 +236,7 @@ class TestFetchWithReport:
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
-        report = json.loads((tmp_path / "data.report.json").read_text())
+        report = json.loads((tmp_path / "bugdb.report.json").read_text())
         assert len(report["product_stats"]) == 1
         stats = report["product_stats"][0]
         assert stats["product_id"] == "panos"
@@ -248,7 +248,7 @@ class TestFetchWithReport:
 
     def test_report_contains_failed_fetches(self, tmp_path):
         """Test that report captures failed fetches."""
-        output_file = tmp_path / "data.json"
+        output_file = tmp_path / "bugdb.json"
         mock_result = _make_fetch_result(
             failed_fetches=[
                 FailedFetch(
@@ -268,7 +268,7 @@ class TestFetchWithReport:
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
-        report = json.loads((tmp_path / "data.report.json").read_text())
+        report = json.loads((tmp_path / "bugdb.report.json").read_text())
         assert len(report["failed_fetches"]) == 1
         assert report["failed_fetches"][0]["url"] == "https://example.com/page"
         assert report["failed_fetches"][0]["product"] == "panos"
@@ -276,7 +276,7 @@ class TestFetchWithReport:
 
     def test_report_written_with_no_failures(self, tmp_path):
         """Test that report is written even when there are no failures."""
-        output_file = tmp_path / "data.json"
+        output_file = tmp_path / "bugdb.json"
         mock_result = _make_fetch_result()
 
         with patch.dict(
@@ -286,12 +286,12 @@ class TestFetchWithReport:
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
-        report = json.loads((tmp_path / "data.report.json").read_text())
+        report = json.loads((tmp_path / "bugdb.report.json").read_text())
         assert report["failed_fetches"] == []
 
     def test_no_report_file_without_flag(self, tmp_path):
         """Test that no report is written without --report."""
-        output_file = tmp_path / "data.json"
+        output_file = tmp_path / "bugdb.json"
         mock_result = _make_fetch_result()
 
         with patch.dict(
@@ -301,11 +301,11 @@ class TestFetchWithReport:
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file)])
 
         assert result.exit_code == 0
-        assert not (tmp_path / "data.report.json").exists()
+        assert not (tmp_path / "bugdb.report.json").exists()
 
     def test_report_path_shown_in_output(self, tmp_path):
         """Test that report path is shown in the summary panel."""
-        output_file = tmp_path / "data.json"
+        output_file = tmp_path / "bugdb.json"
         mock_result = _make_fetch_result()
 
         with patch.dict(
@@ -322,7 +322,7 @@ class TestFetchWithRetry:
     """Tests for fetch --retry flag."""
 
     def _write_data_file(self, path):
-        """Helper to write a minimal data.json."""
+        """Helper to write a minimal bugdb.json."""
         db = BugDatabase(
             metadata=Metadata(),
             products=[
@@ -364,8 +364,8 @@ class TestFetchWithRetry:
 
     def test_retry_refetches_failed_products(self, tmp_path):
         """Test that retry calls only crawlers for failed products."""
-        data_file = tmp_path / "data.json"
-        report_file = tmp_path / "data.report.json"
+        data_file = tmp_path / "bugdb.json"
+        report_file = tmp_path / "bugdb.report.json"
 
         self._write_data_file(data_file)
         self._write_report(
@@ -399,8 +399,8 @@ class TestFetchWithRetry:
 
     def test_retry_merges_into_existing_data(self, tmp_path):
         """Test that retry merges results into existing data file."""
-        data_file = tmp_path / "data.json"
-        report_file = tmp_path / "data.report.json"
+        data_file = tmp_path / "bugdb.json"
+        report_file = tmp_path / "bugdb.report.json"
 
         self._write_data_file(data_file)
         self._write_report(
@@ -442,8 +442,8 @@ class TestFetchWithRetry:
 
     def test_retry_no_failures_exits_cleanly(self, tmp_path):
         """Test that retry with no failures in report exits with message."""
-        data_file = tmp_path / "data.json"
-        report_file = tmp_path / "data.report.json"
+        data_file = tmp_path / "bugdb.json"
+        report_file = tmp_path / "bugdb.report.json"
 
         self._write_data_file(data_file)
         self._write_report(report_file, data_file, failed_fetches=[])
@@ -492,7 +492,7 @@ class TestFetchWithRetry:
 
     def test_retry_missing_data_file(self, tmp_path):
         """Test that --retry fails when data file from report is missing."""
-        report_file = tmp_path / "data.report.json"
+        report_file = tmp_path / "bugdb.report.json"
         missing_data = tmp_path / "missing.json"
 
         self._write_report(
@@ -514,8 +514,8 @@ class TestFetchWithRetry:
 
     def test_retry_with_report_generates_new_report(self, tmp_path):
         """Test that --retry combined with --report generates a new report."""
-        data_file = tmp_path / "data.json"
-        report_file = tmp_path / "data.report.json"
+        data_file = tmp_path / "bugdb.json"
+        report_file = tmp_path / "bugdb.report.json"
 
         self._write_data_file(data_file)
         self._write_report(
@@ -585,4 +585,4 @@ class TestBuildCommand:
         assert "Skipping fetch" in _flat(result.stdout)
         assert "Build Finished" in _flat(result.stdout)
         assert (site_out / "index.html").exists()
-        assert (site_out / "assets" / "data.json").exists()
+        assert (site_out / "assets" / "bugdb.json").exists()

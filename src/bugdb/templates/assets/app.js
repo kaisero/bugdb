@@ -28,7 +28,7 @@
     let releaseNotesData = null;
 
     // Precomputed map of product_id -> sorted version string list, built
-    // once in init() after data.json loads. Replaces the pattern where
+    // once in init() after bugdb.json loads. Replaces the pattern where
     // every filter function threaded the full `data` object through its
     // closure and re-walked `data.products` on each product selection.
     let productVersions = {};
@@ -170,26 +170,26 @@
         };
     }
 
-    // Minimal runtime validator for the data.json payload. Pydantic
+    // Minimal runtime validator for the bugdb.json payload. Pydantic
     // enforces this server-side, but the file is fetched from a CDN at
     // runtime — any corruption or tampering between writer and reader
     // must not silently feed the render pipeline.
     function validateBugDatabase(data) {
         if (data === null || typeof data !== 'object') {
-            throw new Error('data.json root is not an object');
+            throw new Error('bugdb.json root is not an object');
         }
         if (!Array.isArray(data.products)) {
-            throw new Error('data.json: products is not an array');
+            throw new Error('bugdb.json: products is not an array');
         }
         for (const product of data.products) {
             if (!product || typeof product !== 'object') {
-                throw new Error('data.json contains a non-object product entry');
+                throw new Error('bugdb.json contains a non-object product entry');
             }
             if (typeof product.id !== 'string' || typeof product.name !== 'string') {
-                throw new Error('data.json product missing id/name strings');
+                throw new Error('bugdb.json product missing id/name strings');
             }
             if (!Array.isArray(product.versions)) {
-                throw new Error(`data.json product ${product.id} has non-array versions`);
+                throw new Error(`bugdb.json product ${product.id} has non-array versions`);
             }
         }
         return data;
@@ -364,7 +364,7 @@
     // =====================================================================
 
     // Precompute product_id -> visible sorted version list from the
-    // initial data.json payload. Called once from init(); subsequent
+    // initial bugdb.json payload. Called once from init(); subsequent
     // filter operations read from `productVersions` without
     // re-walking `data.products`.
     function buildProductVersionsMap(data) {
@@ -1460,7 +1460,7 @@
             // which the CSP's `connect-src 'self'` directive allows. If
             // the fetch URL is ever pointed at a different origin, the
             // CSP meta tag in index.html must be widened to match.
-            const response = await fetch('assets/data.json');
+            const response = await fetch('assets/bugdb.json');
             if (!response.ok) {
                 throw new Error(`Failed to load bug database (HTTP ${response.status})`);
             }
@@ -1469,7 +1469,7 @@
                 // Not fatal — some CDNs serve JSON as application/octet-stream.
                 // Just warn so we notice in the console.
                 console.warn(
-                    `Unexpected content-type for data.json: ${contentType}`
+                    `Unexpected content-type for bugdb.json: ${contentType}`
                 );
             }
 

@@ -76,7 +76,7 @@ checkout to a deployable website.
 # Full build: fetch everything, build into dist/
 bugdb build
 
-# Incremental: only fetch versions not already in assets/data.json
+# Incremental: only fetch versions not already in assets/bugdb.json
 bugdb build --incremental
 
 # Skip fetch entirely and just rebuild the site from existing data
@@ -94,20 +94,20 @@ directly:
 
 ```bash
 # Fetch a single product
-bugdb fetch panos -o data/data.json
+bugdb fetch panos -o assets/bugdb.json
 
 # Fetch all supported products
-bugdb fetch -o data/data.json
+bugdb fetch -o assets/bugdb.json
 
 # Fetch specific version(s)
-bugdb fetch panos --version 11-2 -o data/data.json
-bugdb fetch panos --version 11-2,11-1,10-2 -o data/data.json
+bugdb fetch panos --version 11-2 -o assets/bugdb.json
+bugdb fetch panos --version 11-2,11-1,10-2 -o assets/bugdb.json
 
 # Incremental update (add new versions to existing data)
-bugdb fetch panos -o data/data.json --incremental
+bugdb fetch panos -o assets/bugdb.json --incremental
 
 # Force overwrite existing file
-bugdb fetch panos -o data/data.json --force
+bugdb fetch panos -o assets/bugdb.json --force
 ```
 
 ### Build Static Site
@@ -115,8 +115,8 @@ bugdb fetch panos -o data/data.json --force
 If you already have a data file and just want to rebuild the HTML:
 
 ```bash
-bugdb build-site-cmd                     # Uses assets/data.json, outputs to dist/
-bugdb build-site-cmd -d data/data.json   # Custom data file
+bugdb build-site-cmd                     # Uses assets/bugdb.json, outputs to dist/
+bugdb build-site-cmd -d assets/bugdb.json   # Custom data file
 bugdb build-site-cmd -o output/          # Custom output directory
 ```
 
@@ -232,7 +232,7 @@ bugdb/
 │   └── templates/
 │       └── index.html          # Main HTML template
 ├── data/
-│   └── data.json               # Bug database
+│   └── bugdb.json               # Bug database
 ├── dist/                       # Generated static site
 └── tests/
     ├── test_cli.py

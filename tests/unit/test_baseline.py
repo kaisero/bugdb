@@ -27,7 +27,7 @@ from bugdb.baseline import (
 
 @pytest.fixture
 def sample_data() -> dict:
-    """A minimal two-product data.json payload."""
+    """A minimal two-product bugdb.json payload."""
     return {
         "metadata": {"generated_at": "2026-04-11T00:00:00Z"},
         "products": [

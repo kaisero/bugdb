@@ -53,9 +53,21 @@ def build_site_cmd(
         typer.Option(
             "--data",
             "-d",
-            help="Input JSON data file.",
+            help="Input JSON data file (bug database).",
         ),
-    ] = Path("assets/data.json"),
+    ] = Path("assets/bugdb.json"),
+    release_notes: Annotated[
+        Path | None,
+        typer.Option(
+            "--release-notes",
+            "-r",
+            help=(
+                "Optional path to a release-notes.json file produced by "
+                "`bugdb generate-release-notes`. Defaults to "
+                "`<data_file_dir>/release-notes.json` if that file exists."
+            ),
+        ),
+    ] = None,
     output: Annotated[
         Path,
         typer.Option(
@@ -82,7 +94,7 @@ def build_site_cmd(
         progress.add_task("Building static site...", total=None)
 
         try:
-            build_site(data, output)
+            build_site(data, output, release_notes_file=release_notes)
         except ValidationError as e:
             progress.stop()
             console.print(f"[red]Error:[/red] Invalid data file: {e}")
@@ -184,9 +196,9 @@ def fetch(
         typer.Option(
             "--output",
             "-o",
-            help="Output JSON file path.",
+            help="Output JSON file path for the bug database.",
         ),
-    ] = Path("assets/data.json"),
+    ] = Path("assets/bugdb.json"),
     force: Annotated[
         bool,
         typer.Option(
@@ -347,9 +359,13 @@ def fetch(
             console.print("[yellow]Warning:[/yellow] No retryable products found in the report.")
             raise typer.Exit(1)
 
-        # Use data_file from report unless --output was explicitly set
+        # Use data_file from report unless --output was explicitly set.
+        # The sentinel check `output == default` detects whether the user
+        # passed --output or accepted the default; if they accepted the
+        # default AND the report points somewhere else, follow the report.
         data_path = Path(prev_report.data_file)
-        if output == Path("assets/data.json") and data_path != Path("assets/data.json"):
+        default_output = Path("assets/bugdb.json")
+        if output == default_output and data_path != default_output:
             output = data_path
 
         if output.exists():
@@ -603,9 +619,9 @@ def generate_release_notes(
         typer.Option(
             "--output",
             "-o",
-            help="Output JSON file path.",
+            help="Output JSON file path (release notes).",
         ),
-    ] = Path("src/bugdb/templates/assets/release-notes.json"),
+    ] = Path("assets/release-notes.json"),
     force: Annotated[
         bool,
         typer.Option(
@@ -675,9 +691,21 @@ def build(
         typer.Option(
             "--data",
             "-d",
-            help="Data JSON file path (fetch writes here, build-site reads from here).",
+            help="Bug database JSON file path (fetch writes here, build-site reads from here).",
         ),
-    ] = Path("assets/data.json"),
+    ] = Path("assets/bugdb.json"),
+    release_notes: Annotated[
+        Path,
+        typer.Option(
+            "--release-notes",
+            "-r",
+            help=(
+                "Release notes JSON file path (generate-release-notes writes here, "
+                "build-site copies into the output site). Defaults to a sibling of "
+                "the --data file in the same directory."
+            ),
+        ),
+    ] = Path("assets/release-notes.json"),
     skip_fetch: Annotated[
         bool,
         typer.Option(
@@ -726,16 +754,24 @@ def build(
 
     \b
     1. `bugdb fetch`               — crawls release notes into DATA
-    2. `bugdb generate-release-notes` — regenerates release-notes.json
-    3. `bugdb build-site-cmd`      — builds the site into OUTPUT
+                                     (default: assets/bugdb.json)
+    2. `bugdb generate-release-notes` — writes release notes JSON to
+                                     RELEASE_NOTES (default:
+                                     assets/release-notes.json, same
+                                     folder as DATA)
+    3. `bugdb build-site-cmd`      — builds the site into OUTPUT,
+                                     baking DATA as bugdb.json and
+                                     copying RELEASE_NOTES as
+                                     release-notes.json under the
+                                     output assets directory.
 
     Re-running `bugdb build` on a populated workspace overwrites the
-    existing data.json by default (force). Pass `--incremental` to
+    existing bugdb.json by default (force). Pass `--incremental` to
     fetch only new versions, or `--skip-fetch` to rebuild the site
     from existing data without hitting the network at all.
     """
     # Stage 1: fetch (unless --skip-fetch). Force overwrites existing
-    # data.json unless incremental mode is active.
+    # bugdb.json unless incremental mode is active.
     if skip_fetch:
         if not data.exists():
             console.print(
@@ -773,18 +809,18 @@ def build(
         )
     )
     generate_release_notes(
-        output=Path("src/bugdb/templates/assets/release-notes.json"),
+        output=release_notes,
         force=True,
     )
 
-    # Stage 3: build the static site from the fetched data.
+    # Stage 3: build the static site from the fetched data + release notes.
     console.print(
         Panel(
             "[bold]Stage 3/3:[/bold] Building static site",
             border_style="cyan",
         )
     )
-    build_site_cmd(data=data, output=output)
+    build_site_cmd(data=data, release_notes=release_notes, output=output)
 
     console.print(
         Panel(

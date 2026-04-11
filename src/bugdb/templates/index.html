@@ -22,10 +22,10 @@
                                      style attributes from user data.
         img-src 'self' data:       — self-hosted assets + inline data: URIs.
         font-src 'self'            — self-hosted fonts (none today).
-        connect-src 'self'         — fetch() of data.json and
+        connect-src 'self'         — fetch() of bugdb.json and
                                      release-notes.json. Both live at the
                                      same origin as the page (the GitLab
-                                     Pages deploy rewrites data.json's URL
+                                     Pages deploy rewrites bugdb.json's URL
                                      via a build-time sed; if that URL
                                      ever points at a different origin
                                      this directive must be widened).

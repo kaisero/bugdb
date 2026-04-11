@@ -73,7 +73,7 @@ test:
 # ---------------------------------------------------------------------------
 # Heavy tier: data-fidelity integration tests against the committed
 # baseline. Deliberately isolated from the fast `test` stage:
-#   - loads 13 MB data.json once per session
+#   - loads 13 MB bugdb.json once per session
 #   - parametrizes ~1900 assertions per (product, version) pair
 #   - signal "did the fetch lose data" must not be drowned by parser churn
 #
@@ -107,7 +107,7 @@ data-baseline-integration:
     # MRs that touch data, the baseline, or the integration tests.
     - if: $CI_MERGE_REQUEST_IID
       changes:
-        - assets/data.json
+        - assets/bugdb.json
         - tests/baselines/**/*
         - tests/integration/**/*
         - src/bugdb/baseline.py
@@ -161,20 +161,23 @@ pages:
   stage: deploy
   script:
     - uv sync --locked
-    # The deployed site loads data.json at runtime from an external CDN
-    # URL (see sed below), so we bake a minimal empty BugDatabase just
-    # to satisfy build-site-cmd's file requirement. The placeholder is
-    # deleted before artifacts are uploaded. This replaces the pre-v1.0.3
-    # `uv run bugdb generate-sample` step which was removed alongside
-    # the generate-sample command.
+    # The deployed site loads bugdb.json at runtime from an external
+    # CDN URL (see sed below), so we bake a minimal empty BugDatabase
+    # just to satisfy build-site-cmd's file requirement. The
+    # placeholder is deleted before artifacts are uploaded.
     - mkdir -p assets
     - |
-      python -c "import json; json.dump({'metadata': {'generated_at': '1970-01-01T00:00:00Z', 'version': '1.0.0', 'source': 'GitLab Pages shell (placeholder; real data loaded from CDN at runtime)'}, 'products': []}, open('assets/data.json', 'w'))"
-    - uv run bugdb build-site-cmd -o public
-    # Replace local data.json path with external URL
-    - sed -i "s|fetch('assets/data.json')|fetch('https://repo.dependencyhell.net/bugdb/data.json')|g" public/assets/app.js
-    # Remove local data.json since we're using external
-    - rm -f public/assets/data.json
+      python -c "import json; json.dump({'metadata': {'generated_at': '1970-01-01T00:00:00Z', 'version': '1.0.0', 'source': 'GitLab Pages shell (placeholder; real data loaded from CDN at runtime)'}, 'products': []}, open('assets/bugdb.json', 'w'))"
+    # Generate release-notes.json next to bugdb.json so build-site-cmd
+    # auto-discovers it (see SiteBuilder.build_site in site_builder.py).
+    - uv run bugdb generate-release-notes -o assets/release-notes.json --force
+    - uv run bugdb build-site-cmd -d assets/bugdb.json -o public
+    # Replace local bugdb.json path with external URL so the deployed
+    # site loads real data from the CDN at runtime. If the CDN file is
+    # renamed, update BOTH sides together (site deploy + CDN host).
+    - sed -i "s|fetch('assets/bugdb.json')|fetch('https://repo.dependencyhell.net/bugdb/bugdb.json')|g" public/assets/app.js
+    # Remove local bugdb.json since we're using external
+    - rm -f public/assets/bugdb.json
   artifacts:
     paths:
       - public
