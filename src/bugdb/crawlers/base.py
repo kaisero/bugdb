@@ -778,39 +778,51 @@ class BaseCrawler:
     async def _parse_issues_page(self, url: str) -> list[Issue]:
         """Parse issues from a known/addressed issues page.
 
+        Propagates exceptions from fetch and parse layers to its callers.
+        Historically this method swallowed all exceptions and returned an
+        empty list, which caused two downstream correctness bugs:
+          - `_crawl_version`'s `asyncio.gather(..., return_exceptions=True)`
+            dispatcher never saw failures, so its `FailedFetch` branch was
+            dead code and errors were silently lost.
+          - `_retry_failed_fetches_sequentially` always reported "success"
+            even when the retry hit the same parse error, because the
+            exception was swallowed here too.
+        Both were reported in the v1.0.2 architecture review. Propagating
+        the error wakes up the correct handling in both callers.
+
         Args:
             url: URL of the issues page.
 
         Returns:
             List of Issue objects.
+
+        Raises:
+            Exception: If fetch or parse fails. Callers are expected to
+                catch via ``asyncio.gather(..., return_exceptions=True)``
+                or a local try/except and record a ``FailedFetch``.
         """
-        issues = []
         logger.debug("Parsing issues page: %s", url)
 
-        try:
-            soup = await self._fetch_page_with_semaphore(url)
+        soup = await self._fetch_page_with_semaphore(url)
 
-            # Find tables with issue data (only top-level, not nested tables)
-            tables = soup.find_all("table")
-            logger.debug("Found %d tables on page: %s", len(tables), url)
+        # Find tables with issue data (only top-level, not nested tables)
+        tables = soup.find_all("table")
+        logger.debug("Found %d tables on page: %s", len(tables), url)
 
-            for table in tables:
-                # Skip nested tables (tables inside another table's cell)
-                if table.find_parent("table"):
-                    logger.debug("Skipping nested table")
-                    continue
+        issues: list[Issue] = []
+        for table in tables:
+            # Skip nested tables (tables inside another table's cell)
+            if table.find_parent("table"):
+                logger.debug("Skipping nested table")
+                continue
 
-                # Reuse _parse_issues_table for actual parsing
-                table_issues = self._parse_issues_table(table)
-                issues.extend(table_issues)
+            # Reuse _parse_issues_table for actual parsing
+            table_issues = self._parse_issues_table(table)
+            issues.extend(table_issues)
 
-            # If no issues found in tables, try div.topic format (used by plugins)
-            if not issues:
-                issues = self._parse_topic_format_issues(soup)
-
-        except Exception as e:
-            logger.error("Error parsing %s: %s", url, e)
-            self._log(f"Error parsing {url}: {e}")
+        # If no issues found in tables, try div.topic format (used by plugins)
+        if not issues:
+            issues = self._parse_topic_format_issues(soup)
 
         logger.debug("Parsed %d issues from page: %s", len(issues), url)
         return issues

@@ -97,6 +97,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fetch errors. Previously the exception branch only logged addressed-issue
   failures at debug level and dropped them, so the retry pass and the
   fetch-report JSON never saw them for any of the 11 plugin crawlers.
+- `BaseCrawler._parse_issues_page` now propagates fetch and parse
+  exceptions to its callers instead of swallowing them and returning
+  an empty list. Previously the silent swallow rendered the
+  `asyncio.gather(..., return_exceptions=True)` dispatcher in
+  `_crawl_version` dead code — failures were invisible to the
+  `FailedFetch` accounting and to the retry loop. Propagating lets the
+  existing dispatcher do its job. Related known issue: the retry loop
+  itself still discards recovered issues (they are returned but every
+  caller ignores them); fixing that properly requires threading
+  `product_versions` through every product crawler's `crawl()` call
+  site and is tracked as roadmap item D6 in `docs/roadmap.md`.
 - `BaseCrawler._fetch_page_with_semaphore` and
   `_fetch_cortex_page_with_semaphore` previously raised a confusing
   `TypeError` (instead of the real failure) when `max_retries == 0`, and
