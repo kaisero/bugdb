@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- **Dropped Tailwind Play CDN; added Content Security Policy.** The
+  previous `index.html` loaded `https://cdn.tailwindcss.com` without
+  Subresource Integrity and compiled Tailwind at runtime via
+  `'unsafe-eval'` — a supply-chain attack surface and a blocker for
+  any meaningful CSP. This commit ships a pre-built 15 KB minified
+  `tailwind.css` in `src/bugdb/templates/assets/` (tree-shaken from
+  the HTML + JS templates via `tailwindcss@3.4.17`), removes the
+  CDN script and the inline `tailwind.config = {...}` block from
+  `index.html`, and adds a `<meta http-equiv="Content-Security-Policy">`
+  tag with `default-src 'none'` plus explicit allowlists:
+  `script-src 'self'; style-src 'self' 'unsafe-inline'; img-src
+  'self' data:; font-src 'self'; connect-src 'self'; base-uri
+  'none'; form-action 'none'`. Clickjacking protection via
+  `frame-ancestors` is intentionally omitted from the meta-CSP
+  because browsers ignore it there — that directive has to come
+  from an HTTP header set by the deploy target (GitLab Pages
+  already sends `X-Frame-Options: SAMEORIGIN`).
+  - Verified in headless Chromium against the same adversarial
+    data.json payload as the XSS commit below: zero CSP violations,
+    zero alert dialogs, Tailwind styles correctly applied (card
+    backgrounds, spacing, colors all computed as expected), and all
+    modal click flows still work.
+  - Rebuilding Tailwind (only needed when HTML/JS templates add or
+    remove utility classes): `bash tools/rebuild-tailwind.sh`. The
+    script requires Node.js at rebuild time but the generated CSS
+    is committed, so `bugdb build` and the GitLab Pages deploy
+    never touch Node.
+
 - **XSS hardening in the static frontend.** The previous
   `src/bugdb/templates/assets/app.js` built card markup and modal
   content via template-literal string concatenation with inline

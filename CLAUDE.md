@@ -116,6 +116,31 @@ Configuration lives in two places that **must stay in sync**:
 
 When bumping ruff, change both together in the same commit.
 
+### Rebuilding Tailwind CSS
+
+The static site ships a pre-built, tree-shaken Tailwind bundle at
+`src/bugdb/templates/assets/tailwind.css` (~15 KB). It's committed to
+the repo so `bugdb build` and the GitLab Pages deploy don't need
+Node.js at runtime.
+
+You only need to rebuild when the HTML or JS templates add or remove
+Tailwind utility classes that aren't yet in the bundle (symptom: a
+class appears in the page but has no visual effect). Rebuild with:
+
+```bash
+bash tools/rebuild-tailwind.sh
+```
+
+The script uses `npx --yes -p tailwindcss@3.4.17` under the hood —
+Node.js is required at rebuild time only. Config lives in
+`tools/tailwind.config.js`; input CSS in `tools/tailwind.input.css`.
+
+The deployed site uses a strict Content Security Policy
+(`default-src 'none'` with explicit allowlists), which forbids inline
+scripts, `eval`, and third-party CDNs. Do not add inline `onclick=`
+attributes or `<script>` blocks to `index.html` — they will break at
+runtime.
+
 ### Discovery cache
 
 `bugdb fetch` maintains a persistent discovery cache at
