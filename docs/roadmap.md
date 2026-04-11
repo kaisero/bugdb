@@ -85,7 +85,7 @@ This is *exactly* what masked the PAN-OS 12.1 URL-pattern bug in
 v1.0.1 — the mock served the same fixture for both URL patterns, so
 the probe logic couldn't be exercised.
 
-**Refactor.** Two parts.
+**Refactor.** Three parts.
 
 (a) Promote `MockPage` to return None/raise for unmapped URLs by
 default, with an explicit opt-in allowlist. Add a `MockResponse`
@@ -98,8 +98,22 @@ provenance metadata. Pair with a pytest parametrised "smoke" test per
 product that asserts `discover_versions()` returns non-empty against a
 minimal fixture set for all 15 products.
 
-**Effort:** ~1 day for (a), ~2-3 days for (b). Can land independently
-of D1/D2.
+(c) **Make `BaseCrawler.__aenter__` lazy.** Currently `__aenter__`
+eagerly calls `async_playwright().start()` → `chromium.launch()`
+regardless of whether the crawler actually needs a real browser.
+Many tests (`TestCortexXDRCrawlerAsync`, `TestADEMCrawler`,
+`TestSCMCrawler`, `TestCloudNGFW*`, `TestDeviceSecurityCrawler`,
+`TestPluginVersionDiscovery`) patch individual fetch methods but
+still enter the crawler via `async with CrawlerClass()`, which
+triggers the real browser launch. The v1.0.3 workaround installs
+Chromium in CI + devcontainer, but the proper fix is to defer
+browser launch until the first `_new_page()` call so tests that
+fully mock the fetch layer never need Chromium at all. Couples
+naturally with D4 (BaseCrawler split) since `PageFetcher` would
+own the lazy-start logic.
+
+**Effort:** ~1 day for (a), ~2-3 days for (b), ~half a day for (c).
+All can land independently of D1/D2.
 
 ### D4 — Split `BaseCrawler` into PageFetcher / IssueParser / CrawlOrchestrator
 

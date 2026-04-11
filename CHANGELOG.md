@@ -54,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   volumes for other products). `discover_version_pages` now filters
   them out before classification. Regression pin:
   `TestPaloAltoCrawlerAsync::test_panos_discover_skips_known_and_addressed_hub_pages`.
+- GitLab CI `test` job now runs `uv run playwright install --with-deps
+  chromium` before pytest. v1.0.2 removed this step on the (incorrect)
+  assumption that all crawler tests use the MockPlaywright fixture;
+  in reality several tests (`TestCortexXDRCrawlerAsync`,
+  `TestADEMCrawler`, `TestSCMCrawler`, `TestCloudNGFW*`,
+  `TestDeviceSecurityCrawler`, `TestPluginVersionDiscovery`) patch
+  individual fetch methods but enter the crawler via
+  `async with CrawlerClass()`, which triggers
+  `BaseCrawler.__aenter__` → `async_playwright().start()` and needs
+  real Chromium. 27 tests were silently failing in environments
+  without Chromium installed. The proper architectural fix (lazy
+  `__aenter__` or complete MockPlaywright coverage) is tracked as
+  roadmap item D3.
 
 ## [1.0.2] - 2026-04-11
 

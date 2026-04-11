@@ -156,6 +156,28 @@ uv run pytest tests/crawler/test_crawler.py -v
 uv run pytest -k "cloud_ngfw" -v
 ```
 
+**One-time setup:** several crawler tests instantiate real
+`BaseCrawler` subclasses via `async with CrawlerClass()`, which
+triggers Playwright's `async_playwright().start()` → `chromium.launch()`
+even when the individual fetch methods are mocked. You need a real
+Chromium binary installed locally:
+
+```bash
+# After the first `uv sync --group test`, run once:
+uv run playwright install chromium
+```
+
+The devcontainer (and GitLab CI) already install the required system
+libraries (`libglib2.0-0t64`, `libnss3`, `libxkbcommon0`, ...) via
+their image layers, so `playwright install chromium` (without
+`--with-deps`) is enough. Only outside those environments would you
+need `--with-deps` and sudo.
+
+A cleaner architectural fix — either making `BaseCrawler.__aenter__`
+lazy or expanding MockPlaywright coverage to all products so real
+Chromium is never needed — is tracked as roadmap item D3 in
+`docs/roadmap.md`.
+
 ### Building the Site
 
 ```bash

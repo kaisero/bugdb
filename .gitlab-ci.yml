@@ -42,18 +42,25 @@ lint:
     - if: $CI_MERGE_REQUEST_IID
 
 # ---------------------------------------------------------------------------
-# Fast tier: unit + mock-crawler tests. Runs on every commit to develop.
+# Fast tier: unit + crawler tests. Runs on every commit to develop and
+# on every merge request.
 #
-# No `playwright install` step: all fast-tier crawler tests use the
-# MockPlaywright fixture defined in tests/conftest.py, so installing a
-# real Chromium (~200 MB, ~30s) on every commit is pure waste. If a
-# genuinely-browser-needing test is ever added, mark it and move it to
-# the integration stage.
+# The `playwright install --with-deps chromium` step is required even
+# though most crawler tests use the MockPlaywright fixture from
+# tests/conftest.py. The root cause: several tests (TestCortexXDRCrawler,
+# TestADEMCrawler, TestSCMCrawler, TestCloudNGFW*, TestDeviceSecurityCrawler,
+# TestPluginVersionDiscovery) patch individual fetch methods but enter
+# the crawler via `async with CortexXDRCrawler()`, which triggers
+# BaseCrawler.__aenter__ → async_playwright().start() → chromium.launch().
+# Until __aenter__ is made lazy or those tests are refactored to patch
+# `async_playwright` at module level, a real Chromium must be installed.
+# Tracked as roadmap item D3 (mock fixture coverage expansion).
 # ---------------------------------------------------------------------------
 test:
   stage: test
   script:
     - uv sync --locked --group test
+    - uv run playwright install --with-deps chromium
     - uv run pytest --junitxml=report.xml -v
   artifacts:
     when: always
