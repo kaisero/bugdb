@@ -458,8 +458,7 @@ def fetch(
                 progress.update(
                     task,
                     description=(
-                        f"Fetching {prod_name} "
-                        f"(skipping {len(skip_versions)} existing versions)..."
+                        f"Fetching {prod_name} (skipping {len(skip_versions)} existing versions)..."
                     ),
                 )
 

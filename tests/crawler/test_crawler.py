@@ -6,8 +6,19 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from bs4 import BeautifulSoup
 
-from bugdb.crawler import (
-    PaloAltoCrawler,
+# Import specific crawler classes for product-specific tests
+from bugdb.crawlers import (
+    ADEMCrawler,
+    CloudNGFWAWSCrawler,
+    CloudNGFWAzureCrawler,
+    CortexXDRCrawler,
+    DeviceSecurityCrawler,
+    GlobalProtectCrawler,
+    PANOSCrawler,
+    PluginCrawler,
+    PrismaAccessAgentCrawler,
+    SCMCrawler,
+    SDWANPluginCrawler,
     VersionInfo,
     crawl_globalprotect,
     crawl_panos,
@@ -24,20 +35,8 @@ from bugdb.crawler import (
     normalize_text,
     table_to_text,
 )
-
-# Import specific crawler classes for product-specific tests
 from bugdb.crawlers import (
-    ADEMCrawler,
-    CloudNGFWAWSCrawler,
-    CloudNGFWAzureCrawler,
-    CortexXDRCrawler,
-    DeviceSecurityCrawler,
-    GlobalProtectCrawler,
-    PANOSCrawler,
-    PluginCrawler,
-    PrismaAccessAgentCrawler,
-    SCMCrawler,
-    SDWANPluginCrawler,
+    BaseCrawler as PaloAltoCrawler,
 )
 from bugdb.crawlers.utils import configure_logging
 from bugdb.models import BugDatabase, Issue, Metadata, Product, ProductVersion
