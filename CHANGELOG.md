@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-04-11
+
 ### Added
 - `ruff` linting and formatting, enforced via a local pre-commit hook
   (`astral-sh/ruff-pre-commit`) and a GitLab CI `lint` job that runs on
@@ -200,6 +202,7 @@ product-specific web crawlers.
 - GitLab Pages deployment configuration.
 - README with full product list and CLI usage examples.
 
-[Unreleased]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.1...HEAD
+[Unreleased]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.2...HEAD
+[1.0.2]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.1...v1.0.2
 [1.0.1]: https://gitlab.com/dependencyhell/bugdb/-/compare/v1.0.0...v1.0.1
 [1.0.0]: https://gitlab.com/dependencyhell/bugdb/-/tags/v1.0.0
