@@ -296,6 +296,19 @@ def fetch(
             help="Path to a previously generated report JSON. Re-fetches only failed products.",
         ),
     ] = None,
+    refresh_discovery: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-discovery",
+            "-R",
+            help=(
+                "Bypass the persistent discovery cache at .cache/bugdb/discovery.json. "
+                "Forces every crawler to re-probe URL patterns and re-discover "
+                "version lists from upstream. Useful after a docs reorganisation "
+                "or when debugging a crawl."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Fetch bug data from Palo Alto Networks release notes website."""
     from datetime import UTC, datetime
@@ -306,6 +319,7 @@ def fetch(
         get_existing_versions,
         merge_databases,
     )
+    from bugdb.discovery_cache import DiscoveryCache
     from bugdb.models import (
         BugDatabase,
         FailedFetchEntry,
@@ -313,6 +327,16 @@ def fetch(
         Metadata,
         ProductStats,
     )
+
+    # One DiscoveryCache instance shared across every crawler in this run.
+    # Loading once keeps warm-run I/O to a single JSON read + single write.
+    discovery_cache = DiscoveryCache()
+    if refresh_discovery:
+        console.print(
+            "[dim]Refreshing discovery cache (ignoring any existing "
+            ".cache/bugdb/discovery.json)...[/dim]"
+        )
+        discovery_cache.invalidate()
 
     # Handle incremental mode
     existing_database: BugDatabase | None = None
@@ -468,6 +492,7 @@ def fetch(
                     headless=headless,
                     debug=debug,
                     skip_versions=skip_versions,
+                    discovery_cache=discovery_cache,
                 )
             except Exception as e:
                 progress.stop()
@@ -475,6 +500,17 @@ def fetch(
                 raise typer.Exit(1) from e
             all_products.extend(result.database.products)
             all_failed_fetches.extend(result.failed_fetches)
+
+        # Flush the discovery cache after all crawlers have populated it,
+        # so the next run can start warm. A cache-write failure must
+        # never block a successful crawl — log and continue.
+        try:
+            discovery_cache.save()
+        except OSError as cache_err:
+            console.print(
+                f"[yellow]Warning:[/yellow] could not persist discovery cache "
+                f"({cache_err}); next run will start cold."
+            )
 
         # Create combined database
         database = BugDatabase(
