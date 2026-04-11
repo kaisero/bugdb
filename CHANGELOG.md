@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/design-decisions.md` lightweight ADR log for non-obvious design decisions.
 
 ### Changed
+- `FetchResult` dataclass no longer does `from bugdb.models import BugDatabase`
+  inside its class body — the import is hoisted to module scope where it
+  belongs. The inline form was a brittle workaround for a perceived
+  circular import that didn't actually exist.
+- `PluginConfig` default factories for `known_issues_keywords` and
+  `addressed_issues_keywords` now use `field(default_factory=...)`
+  instead of `= None` + `__post_init__`, which was lying about the
+  declared type.
 - `datetime.timezone.utc` replaced with `datetime.UTC` (Python 3.11+
   idiom) in `src/bugdb/models.py` and `src/bugdb/cli.py`.
 - Codebase reformatted and linted by ruff as a one-time mechanical sweep

@@ -1,8 +1,8 @@
 """Data classes for the crawler module."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from bugdb.models import Product, ProductVersion
+from bugdb.models import BugDatabase, Product, ProductVersion
 
 
 @dataclass
@@ -45,8 +45,6 @@ class VersionCrawlResult:
 class FetchResult:
     """Result of a complete fetch operation (module-level)."""
 
-    from bugdb.models import BugDatabase
-
     database: BugDatabase
     failed_fetches: list[FailedFetch]
 
@@ -72,11 +70,9 @@ class PluginConfig:
     version_link_patterns: list[str]  # e.g., ["aws-plugin-", "panorama-plugin-for-aws-"]
 
     # Keywords to identify known/addressed issues links
-    known_issues_keywords: list[str] = None  # Default: ["known-issues"]
-    addressed_issues_keywords: list[str] = None  # Default: ["addressed-issues", "fixed-issues"]
-
-    def __post_init__(self):
-        if self.known_issues_keywords is None:
-            self.known_issues_keywords = ["known-issues"]
-        if self.addressed_issues_keywords is None:
-            self.addressed_issues_keywords = ["addressed-issues", "fixed-issues"]
+    known_issues_keywords: list[str] = field(
+        default_factory=lambda: ["known-issues"],
+    )
+    addressed_issues_keywords: list[str] = field(
+        default_factory=lambda: ["addressed-issues", "fixed-issues"],
+    )
