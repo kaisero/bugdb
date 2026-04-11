@@ -91,10 +91,6 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
 # sample_data.py is demo/fixture data with intentionally narrative issue
 # descriptions; rewrapping them hurts readability.
 "src/bugdb/sample_data.py" = ["E501"]
-# crawler.py is a deprecated backward-compat shim. Its layout (imports ->
-# PaloAltoCrawler alias -> more imports) is intentional; __all__ is grouped
-# by category for human readability, not alphabetically.
-"src/bugdb/crawler.py" = ["E402", "RUF022"]
 # crawlers/__init__.py re-exports the public API grouped by category
 # (models, utils, base, products, plugins, registry) with comment headers;
 # __all__ mirrors that grouping intentionally.

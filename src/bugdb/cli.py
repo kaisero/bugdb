@@ -442,54 +442,70 @@ def fetch(
     ) as progress:
         task = progress.add_task("Launching browser and crawling pages...", total=None)
 
-        try:
-            all_products = []
+        all_products = []
 
-            for prod_name in products_to_fetch:
-                progress.update(task, description=f"Fetching {prod_name}...")
-                crawler_func = supported_products[prod_name]
+        # Per-product crawl loop: a failure in one product should be
+        # surfaced with the product name, not masked as a generic
+        # "Error" on exit. Narrow the except so we know WHICH product
+        # blew up and can report it specifically.
+        for prod_name in products_to_fetch:
+            progress.update(task, description=f"Fetching {prod_name}...")
+            crawler_func = supported_products[prod_name]
 
-                # Get skip_versions for this product (if in incremental mode)
-                skip_versions = existing_versions.get(prod_name, set())
-                if skip_versions:
-                    progress.update(
-                        task,
-                        description=(
-                            f"Fetching {prod_name} "
-                            f"(skipping {len(skip_versions)} existing versions)..."
-                        ),
-                    )
+            # Get skip_versions for this product (if in incremental mode)
+            skip_versions = existing_versions.get(prod_name, set())
+            if skip_versions:
+                progress.update(
+                    task,
+                    description=(
+                        f"Fetching {prod_name} "
+                        f"(skipping {len(skip_versions)} existing versions)..."
+                    ),
+                )
 
+            try:
                 result = crawler_func(
                     major_versions,
                     headless=headless,
                     debug=debug,
                     skip_versions=skip_versions,
                 )
-                all_products.extend(result.database.products)
-                all_failed_fetches.extend(result.failed_fetches)
+            except Exception as e:
+                progress.stop()
+                console.print(f"[red]Error fetching {prod_name}:[/red] {e}")
+                raise typer.Exit(1) from e
+            all_products.extend(result.database.products)
+            all_failed_fetches.extend(result.failed_fetches)
 
-            # Create combined database
-            database = BugDatabase(
-                metadata=Metadata(
-                    generated_at=datetime.now(UTC),
-                    version="1.0.0",
-                    source="Palo Alto Networks Release Notes",
-                ),
-                products=all_products,
-            )
+        # Create combined database
+        database = BugDatabase(
+            metadata=Metadata(
+                generated_at=datetime.now(UTC),
+                version="1.0.0",
+                source="Palo Alto Networks Release Notes",
+            ),
+            products=all_products,
+        )
 
-            # Merge with existing database if in incremental mode
-            if existing_database is not None:
-                progress.update(task, description="Merging with existing data...")
+        # Merge with existing database if in incremental mode
+        if existing_database is not None:
+            progress.update(task, description="Merging with existing data...")
+            try:
                 database = merge_databases(existing_database, database)
+            except Exception as e:
+                progress.stop()
+                console.print(f"[red]Error merging databases:[/red] {e}")
+                raise typer.Exit(1) from e
 
-            progress.update(task, description="Writing JSON file...")
+        progress.update(task, description="Writing JSON file...")
 
-            # Create output directory if needed
-            output.parent.mkdir(parents=True, exist_ok=True)
+        # Create output directory if needed
+        output.parent.mkdir(parents=True, exist_ok=True)
 
-            # Write JSON file
+        # Write JSON file — narrow except around the IO write so disk
+        # errors report as "Error writing output" rather than a bare
+        # "Error" attributable to anything in the pipeline.
+        try:
             with open(output, "w", encoding="utf-8") as f:
                 json.dump(
                     database.model_dump(mode="json", exclude_none=True),
@@ -497,10 +513,9 @@ def fetch(
                     indent=2,
                     default=str,
                 )
-
-        except Exception as e:
+        except OSError as e:
             progress.stop()
-            console.print(f"[red]Error:[/red] {e}")
+            console.print(f"[red]Error writing {output}:[/red] {e}")
             raise typer.Exit(1) from e
 
     # Count issues

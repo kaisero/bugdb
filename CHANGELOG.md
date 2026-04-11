@@ -54,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BaseCrawler._log` no longer double-emits to both `print` (when
   verbose) and `logger.info`. It's now logger-only; callers that want
   console output attach a `RichHandler` via the CLI.
+- `cli.py::fetch` now narrows its exception scope around the per-product
+  crawl loop, the database merge, and the JSON write. Previously a
+  single `except Exception` wrapped the entire ~100-line block and
+  printed a generic "Error: {e}" on exit, hiding which product failed.
+  Errors now surface as "Error fetching <product_name>: {e}" or
+  "Error writing <path>: {e}" so users and bug reports can pin the
+  failure to a specific stage.
+- `src/bugdb/crawler.py` is collapsed to a thin `from bugdb.crawlers
+  import *` shim (plus a `PaloAltoCrawler = BaseCrawler` alias and a
+  `DeprecationWarning`). It was never actually deprecated — the
+  project's own CLI imported from it — but v1.0.2 moved the CLI to
+  `bugdb.crawlers` and this commit reduces the shim to pure re-export
+  so that the "deprecated" label now matches reality.
 - GitLab CI pipeline restructured from 3 stages (`test`, `integration`,
   `deploy`) to 5 (`lint`, `test`, `integration`, `canary`, `deploy`).
   `lint` moved to its own stage ahead of `test` so lint-only changes
