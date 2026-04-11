@@ -1,0 +1,9 @@
+# Commits listed here are skipped by `git blame --ignore-revs-file`.
+# GitLab's blame UI respects this file automatically.
+#
+# Add a commit here when it's a pure, mechanical reformat or lint fix
+# that would otherwise pollute blame history for everyone — NEVER add a
+# commit that changed behaviour.
+
+# style: apply ruff auto-fix and format sweep
+28a2ffad2cbc8ff2850aec61308580f1b2d1ffe8
