@@ -1,6 +1,9 @@
 """Product registry and wrapper factory for crawlers."""
 
+from __future__ import annotations
+
 import asyncio
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from bugdb.models import BugDatabase, Metadata
@@ -837,3 +840,46 @@ crawl_plugin_cisco_aci = _make_plugin_crawler("plugin-cisco-aci")
 crawl_plugin_cisco_trustsec = _make_plugin_crawler("plugin-cisco-trustsec")
 crawl_plugin_ztp = _make_plugin_crawler("plugin-ztp")
 crawl_plugin_clustering = _make_plugin_crawler("plugin-clustering")
+
+
+# ==============================================================================
+# PRODUCT_WRAPPERS: single source of truth mapping product_id -> sync wrapper
+# ==============================================================================
+#
+# Every crawler that PRODUCT_CRAWLERS lists MUST also have an entry here.
+# The invariant is enforced by tests/unit/test_registry.py — if you add a
+# product to PRODUCT_CRAWLERS without adding it here, the test fails.
+#
+# cli.supported_products is derived from this dict, so adding a product to
+# both PRODUCT_CRAWLERS and PRODUCT_WRAPPERS is enough to wire it up through
+# the CLI. (The deeper refactor that collapses the ~20 hand-written
+# _crawl_*_async / crawl_* functions above is roadmap D5, deferred to
+# v1.1.0.)
+PRODUCT_WRAPPERS: dict[str, Callable[..., FetchResult]] = {
+    "adem": crawl_adem,
+    "ai-runtime-security": crawl_ai_runtime_security,
+    "cloud-ngfw-aws": crawl_cloud_ngfw_aws,
+    "cloud-ngfw-azure": crawl_cloud_ngfw_azure,
+    "cortex-xdr": crawl_cortex_xdr,
+    "device-security": crawl_device_security,
+    "globalprotect": crawl_globalprotect,
+    "panos": crawl_panos,
+    "plugin-aws": crawl_plugin_aws,
+    "plugin-azure": crawl_plugin_azure,
+    "plugin-cisco-aci": crawl_plugin_cisco_aci,
+    "plugin-cisco-trustsec": crawl_plugin_cisco_trustsec,
+    "plugin-clustering": crawl_plugin_clustering,
+    "plugin-gcp": crawl_plugin_gcp,
+    "plugin-kubernetes": crawl_plugin_kubernetes,
+    "plugin-vmware-nsx": crawl_plugin_vmware_nsx,
+    "plugin-vmware-vcenter": crawl_plugin_vmware_vcenter,
+    "plugin-ztp": crawl_plugin_ztp,
+    "prisma-access": crawl_prisma_access,
+    "prisma-access-agent": crawl_prisma_access_agent,
+    "prisma-sdwan": crawl_prisma_sdwan,
+    "remote-browser-isolation": crawl_remote_browser_isolation,
+    "scm": crawl_scm,
+    "sdwan-plugin": crawl_sdwan_plugin,
+    "strata-logging-service": crawl_strata_logging_service,
+    "vm-series-plugin": crawl_vm_series_plugin,
+}

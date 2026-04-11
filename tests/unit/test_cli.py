@@ -1,7 +1,7 @@
 """Tests for BugDB CLI commands."""
 
 import json
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
@@ -217,7 +217,10 @@ class TestFetchWithReport:
         output_file = tmp_path / "data.json"
         mock_result = _make_fetch_result()
 
-        with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
@@ -235,7 +238,10 @@ class TestFetchWithReport:
         output_file = tmp_path / "data.json"
         mock_result = _make_fetch_result()
 
-        with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
@@ -264,7 +270,10 @@ class TestFetchWithReport:
             ],
         )
 
-        with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
@@ -279,7 +288,10 @@ class TestFetchWithReport:
         output_file = tmp_path / "data.json"
         mock_result = _make_fetch_result()
 
-        with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
@@ -291,7 +303,10 @@ class TestFetchWithReport:
         output_file = tmp_path / "data.json"
         mock_result = _make_fetch_result()
 
-        with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file)])
 
         assert result.exit_code == 0
@@ -302,7 +317,10 @@ class TestFetchWithReport:
         output_file = tmp_path / "data.json"
         mock_result = _make_fetch_result()
 
-        with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
             result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
@@ -375,7 +393,11 @@ class TestFetchWithRetry:
 
         mock_result = _make_fetch_result()
 
-        with patch("bugdb.crawler.crawl_panos", return_value=mock_result) as mock_crawl:
+        mock_crawl = MagicMock(return_value=mock_result)
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": mock_crawl},
+        ):
             result = runner.invoke(
                 app, ["fetch", "--retry", str(report_file), "-o", str(data_file)]
             )
@@ -411,7 +433,10 @@ class TestFetchWithRetry:
             ],
         )
 
-        with patch("bugdb.crawler.crawl_panos", return_value=retry_result):
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=retry_result)},
+        ):
             result = runner.invoke(
                 app, ["fetch", "--retry", str(report_file), "-o", str(data_file)]
             )
@@ -516,7 +541,10 @@ class TestFetchWithRetry:
 
         mock_result = _make_fetch_result()
 
-        with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
             result = runner.invoke(
                 app,
                 ["fetch", "--retry", str(report_file), "--report", "-o", str(data_file)],

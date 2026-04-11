@@ -69,6 +69,7 @@ from .products.plugins import PLUGIN_CONFIGS
 # Sync wrapper functions
 from .registry import (
     PRODUCT_CRAWLERS,
+    PRODUCT_WRAPPERS,
     # Main products
     crawl_adem,
     crawl_ai_runtime_security,
@@ -189,4 +190,5 @@ __all__ = [
     # Registry
     "get_crawler_class",
     "PRODUCT_CRAWLERS",
+    "PRODUCT_WRAPPERS",
 ]

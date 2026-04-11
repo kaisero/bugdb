@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/design-decisions.md` lightweight ADR log for non-obvious design decisions.
 
 ### Changed
+- `cli.py::fetch` now derives its `supported_products` mapping from
+  `PRODUCT_WRAPPERS` in `src/bugdb/crawlers/registry.py`, instead of
+  maintaining a parallel hand-written dict. Drift between the CLI and
+  the registry was previously silent — a product added to the registry
+  but forgotten in the CLI would fail lookup at runtime. The new test
+  file `tests/unit/test_registry.py` pins the invariant.
+- `cli.py` now imports from `bugdb.crawlers` (the modular package)
+  rather than `bugdb.crawler` (the deprecated backward-compat shim), so
+  the shim is no longer on the live production path.
 - `FetchResult` dataclass no longer does `from bugdb.models import BugDatabase`
   inside its class body — the import is hoisted to module scope where it
   belongs. The inline form was a brittle workaround for a perceived
