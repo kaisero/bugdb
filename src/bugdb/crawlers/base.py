@@ -1,8 +1,11 @@
 """Base crawler class with shared functionality."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -11,6 +14,9 @@ from playwright.async_api import Browser, Page, async_playwright
 from bugdb.models import Issue, ProductVersion
 
 from .models import FailedFetch, VersionCrawlResult, VersionInfo
+
+if TYPE_CHECKING:
+    from bugdb.discovery_cache import DiscoveryCache
 from .utils import (
     BASE_URL,
     configure_logging,
@@ -47,6 +53,7 @@ class BaseCrawler:
         max_concurrency: int = 3,
         max_retries: int = 3,
         retry_delay: float = 2.0,
+        discovery_cache: DiscoveryCache | None = None,
     ):
         """Initialize the crawler.
 
@@ -57,6 +64,11 @@ class BaseCrawler:
             max_concurrency: Maximum number of concurrent page fetches.
             max_retries: Maximum number of retry attempts for failed requests.
             retry_delay: Base delay between retries in seconds (exponential backoff).
+            discovery_cache: Optional persistent cache for URL patterns and
+                discovered version infos, shared across crawlers by the CLI.
+                If ``None``, the crawler runs without cache (always probes
+                from scratch). Backwards-compatible for direct instantiation
+                in tests.
         """
         self.headless = headless
         self.verbose = verbose
@@ -64,6 +76,7 @@ class BaseCrawler:
         self.max_concurrency = max_concurrency
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self._discovery_cache = discovery_cache
         self._playwright = None
         self._browser: Browser | None = None
         self._semaphore: asyncio.Semaphore | None = None

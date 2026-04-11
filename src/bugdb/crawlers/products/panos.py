@@ -48,16 +48,46 @@ class PANOSCrawler(BaseCrawler):
         """Resolve the landing URL for a major version, probing if needed.
 
         Tries the NGFW path first (used by 12.1+) and falls back to the
-        legacy `/pan-os/<v>/pan-os-release-notes` path. Caches the result
-        in ``self._base_url_for_version``.
+        legacy ``/pan-os/<v>/pan-os-release-notes`` path. Results are
+        cached in three layers, each checked in order:
+
+        1. Instance-scoped ``self._base_url_for_version`` — fastest,
+           resets on every ``PANOSCrawler()`` instantiation.
+        2. Persistent ``self._discovery_cache`` (``.cache/bugdb/``) —
+           survives across ``bugdb fetch`` invocations under a 24-hour
+           TTL. Only consulted when the cache entry is fresh so stale
+           upstream URL reorganisations don't silently mask failures.
+        3. Network probes — actually hit docs.paloaltonetworks.com.
+           On success, the winning URL is written back to both L1 and
+           L2 so subsequent calls (same run or next run) skip probing.
         """
         cached = self._base_url_for_version.get(major_version)
         if cached:
             return cached
+
+        # L2: persistent cache — but only when the product's entry is
+        # fresh. A stale cache should fall through to a fresh probe so
+        # upstream URL changes are picked up within the TTL window.
+        if self._discovery_cache is not None and self._discovery_cache.is_fresh(
+            self.product_id
+        ):
+            persisted = self._discovery_cache.get_url_pattern(self.product_id, major_version)
+            if persisted:
+                logger.debug(
+                    "PAN-OS URL pattern cache hit for %s: %s", major_version, persisted
+                )
+                self._base_url_for_version[major_version] = persisted
+                return persisted
+
+        # L3: probe both templates. First success wins.
         for template in (self._NGFW_BASE, self._LEGACY_BASE):
             candidate = template.format(v=major_version)
             if await self._probe_landing_url(candidate):
                 self._base_url_for_version[major_version] = candidate
+                if self._discovery_cache is not None:
+                    self._discovery_cache.put_url_pattern(
+                        self.product_id, major_version, candidate
+                    )
                 return candidate
         return None
 

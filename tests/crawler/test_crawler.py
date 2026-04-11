@@ -578,6 +578,69 @@ class TestPaloAltoCrawlerAsync:
                 )
 
     @pytest.mark.asyncio
+    async def test_panos_url_pattern_cache_hit_skips_probe(
+        self, mock_playwright_panos, tmp_path
+    ):
+        """S1 cache-hit path: a fresh persistent cache short-circuits the
+        dual-template probe in ``_resolve_landing_url``. Second crawl
+        invocation with the same cache must not call ``_probe_landing_url``.
+        """
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+
+        # First run: probe normally, populate the cache.
+        cache = DiscoveryCache(path=cache_path)
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=cache) as crawler:
+                first_url = await crawler._resolve_landing_url("12-1")
+                assert first_url == "/ngfw/release-notes/12-1"
+        cache.save()
+
+        # Second run: fresh crawler, same cache file. Patch _probe_landing_url
+        # to raise if called — if the cache-hit path works, it's never called.
+        reloaded_cache = DiscoveryCache(path=cache_path)
+        assert reloaded_cache.is_fresh("panos")
+        assert reloaded_cache.get_url_pattern("panos", "12-1") == "/ngfw/release-notes/12-1"
+
+        probe_called = False
+
+        async def _raising_probe(url: str) -> bool:
+            nonlocal probe_called
+            probe_called = True
+            raise AssertionError(
+                f"_probe_landing_url should not be called on cache hit, got {url!r}"
+            )
+
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded_cache) as crawler:
+                crawler._probe_landing_url = _raising_probe  # type: ignore[assignment]
+                second_url = await crawler._resolve_landing_url("12-1")
+
+        assert second_url == "/ngfw/release-notes/12-1"
+        assert probe_called is False
+
+    @pytest.mark.asyncio
+    async def test_panos_url_pattern_cache_miss_still_probes(
+        self, mock_playwright_panos, tmp_path
+    ):
+        """S1 cache-miss path: when the cache has no entry for the major,
+        fall through to the normal probe chain and populate the cache.
+        """
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+        assert cache.get_url_pattern("panos", "12-1") is None
+
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=cache) as crawler:
+                url = await crawler._resolve_landing_url("12-1")
+
+        assert url == "/ngfw/release-notes/12-1"
+        assert cache.get_url_pattern("panos", "12-1") == "/ngfw/release-notes/12-1"
+
+    @pytest.mark.asyncio
     async def test_panos_discover_skips_known_and_addressed_hub_pages(
         self, mock_playwright_panos
     ):
