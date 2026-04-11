@@ -97,7 +97,7 @@ class Baseline:
         return sorted(product.versions.keys()) if product else []
 
 
-def build_baseline(data_json: dict[str, Any]) -> BaselineSnapshot:
+def build_baseline(bugdb_json: dict[str, Any]) -> BaselineSnapshot:
     """Compute a fingerprint from a loaded `bugdb.json` dict.
 
     Accepts the full BugDatabase JSON shape (``{"products": [...]}``).
@@ -106,7 +106,7 @@ def build_baseline(data_json: dict[str, Any]) -> BaselineSnapshot:
     """
     products: dict[str, ProductFingerprint] = {}
 
-    for product in data_json.get("products", []):
+    for product in bugdb_json.get("products", []):
         pid = product.get("id")
         if not pid:
             continue
@@ -311,7 +311,7 @@ def _cli() -> int:
         "refresh",
         help="Print a diff of current vs. baseline and optionally rewrite it.",
     )
-    refresh.add_argument("--data", required=True, type=Path, help="Path to assets/bugdb.json")
+    refresh.add_argument("--bugdb", required=True, type=Path, help="Path to assets/bugdb.json")
     refresh.add_argument(
         "--baseline",
         required=True,
@@ -321,12 +321,12 @@ def _cli() -> int:
     refresh.add_argument("--yes", action="store_true", help="Actually write the new baseline.")
 
     diff_cmd = sub.add_parser("diff", help="Show diff between current bugdb.json and baseline.")
-    diff_cmd.add_argument("--data", required=True, type=Path)
+    diff_cmd.add_argument("--bugdb", required=True, type=Path, help="Path to assets/bugdb.json")
     diff_cmd.add_argument("--baseline", required=True, type=Path)
 
     args = parser.parse_args()
 
-    with args.data.open("r", encoding="utf-8") as fh:
+    with args.bugdb.open("r", encoding="utf-8") as fh:
         data = json.load(fh)
     current = build_baseline(data)
 

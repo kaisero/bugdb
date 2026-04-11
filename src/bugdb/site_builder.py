@@ -103,8 +103,8 @@ class SiteBuilder:
 
     def _generate_bugdb_json(self, database: BugDatabase, assets_dir: Path) -> None:
         """Write the bug database to ``<assets>/bugdb.json`` for client use."""
-        data_file = assets_dir / BUGDB_JSON_FILENAME
-        with open(data_file, "w", encoding="utf-8") as f:
+        bugdb_file = assets_dir / BUGDB_JSON_FILENAME
+        with open(bugdb_file, "w", encoding="utf-8") as f:
             # exclude_none=True drops optional fields whose value is None
             # (workaround, symptoms, fix_info, affected_components,
             # release_date), shrinking the generated bugdb.json by
@@ -136,34 +136,35 @@ class SiteBuilder:
 
 
 def build_site(
-    data_file: Path,
+    bugdb_file: Path,
     output_dir: Path,
     release_notes_file: Path | None = None,
 ) -> None:
-    """Build static site from a JSON data file.
+    """Build static site from a bug database JSON file.
 
     Args:
-        data_file: Path to the bug database JSON file (typically
+        bugdb_file: Path to the bug database JSON file (typically
             ``assets/bugdb.json``).
         output_dir: Directory where the static site will be generated.
         release_notes_file: Optional path to a release-notes.json file.
-            If omitted, auto-discover as ``<data_file.parent>/release-notes.json``
-            — which is the convention used by ``bugdb build`` and the
-            unified ``assets/`` workflow. Pass ``None`` explicitly to
-            build a site without any release notes.
+            If omitted, auto-discover as
+            ``<bugdb_file.parent>/release-notes.json`` — which is the
+            convention used by ``bugdb build`` and the unified
+            ``assets/`` workflow. Pass ``None`` explicitly to build a
+            site without any release notes.
     """
-    # Load and validate data
-    with open(data_file, encoding="utf-8") as f:
+    # Load and validate the bug database
+    with open(bugdb_file, encoding="utf-8") as f:
         data = json.load(f)
 
     database = BugDatabase.model_validate(data)
 
-    # Auto-discover release-notes.json next to the data file if the
-    # caller didn't specify. This is the default for `bugdb
+    # Auto-discover release-notes.json next to the bug database file
+    # if the caller didn't specify. This is the default for `bugdb
     # build-site-cmd` when the user has the unified assets/ layout.
     resolved_release_notes = release_notes_file
     if resolved_release_notes is None:
-        candidate = data_file.parent / RELEASE_NOTES_FILENAME
+        candidate = bugdb_file.parent / RELEASE_NOTES_FILENAME
         if candidate.exists():
             resolved_release_notes = candidate
 

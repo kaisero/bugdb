@@ -49,6 +49,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   uses the latest release, so there is no migration layer. Version is
   bumped accordingly.
 
+- **CLI flag and Python API rename: `data` → `bugdb`.** Follow-up to
+  the `data.json` → `bugdb.json` rename above, finishing the job so
+  the CLI vocabulary, Python API, Pydantic schema, and test
+  infrastructure all read consistently on `bugdb`.
+  - `bugdb build-site-cmd` and `bugdb build` now accept `--bugdb` /
+    `-b` instead of `--data` / `-d`. `bugdb build -d assets/bugdb.json`
+    no longer works — use `bugdb build -b assets/bugdb.json`.
+  - `bugdb validate`'s positional argument is renamed from `DATA_FILE`
+    to `BUGDB_FILE` in `--help` output.
+  - `python -m bugdb.baseline refresh|diff` argparse sub-CLI: `--data`
+    renamed to `--bugdb`.
+  - Python API: `site_builder.build_site(data_file=...)` renamed to
+    `site_builder.build_site(bugdb_file=...)`. All internal callers
+    updated.
+  - **BREAKING: `FetchReport` schema.** The `FetchReport.data_file`
+    Pydantic field is renamed to `FetchReport.bugdb_file`. Any
+    `.report.json` file from a pre-rename run becomes incompatible
+    and must be regenerated. No compatibility shim per project
+    policy; since v1.0.3 has not actually released yet, no external
+    consumers are affected.
+  - Test infrastructure: `tests/integration/conftest.py` renames
+    `DEFAULT_DATA_PATH` → `DEFAULT_BUGDB_PATH`, the `--data-path`
+    pytest CLI option → `--bugdb-path`, and the `data_path` /
+    `data_json` session fixtures → `bugdb_path` / `bugdb_json`. All
+    integration test consumers updated.
+
 ### Security
 - **Dropped Tailwind Play CDN; added Content Security Policy.** The
   previous `index.html` loaded `https://cdn.tailwindcss.com` without

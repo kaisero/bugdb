@@ -151,7 +151,7 @@ class FetchReport(BaseModel):
         default_factory=lambda: datetime.now(UTC),
         description="Report generation timestamp",
     )
-    data_file: str = Field(..., description="Path to the associated data output file")
+    bugdb_file: str = Field(..., description="Path to the associated bug database file")
     total_products: int = Field(..., description="Total number of products fetched")
     total_versions: int = Field(..., description="Total number of versions fetched")
     total_known_issues: int = Field(..., description="Total known issues fetched")

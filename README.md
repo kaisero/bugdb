@@ -112,12 +112,12 @@ bugdb fetch panos -o assets/bugdb.json --force
 
 ### Build Static Site
 
-If you already have a data file and just want to rebuild the HTML:
+If you already have a bug database file and just want to rebuild the HTML:
 
 ```bash
-bugdb build-site-cmd                     # Uses assets/bugdb.json, outputs to dist/
-bugdb build-site-cmd -d assets/bugdb.json   # Custom data file
-bugdb build-site-cmd -o output/          # Custom output directory
+bugdb build-site-cmd                        # Uses assets/bugdb.json, outputs to dist/
+bugdb build-site-cmd -b assets/bugdb.json   # Custom bug database
+bugdb build-site-cmd -o output/             # Custom output directory
 ```
 
 ### View the Site
@@ -135,7 +135,7 @@ open dist/index.html
 | `bugdb build` | Unified workflow: fetch → release notes → build site |
 | `bugdb fetch <product>` | Fetch release notes for a single product |
 | `bugdb fetch` | Fetch all supported products |
-| `bugdb build-site-cmd` | Build the static HTML site from an existing data file |
+| `bugdb build-site-cmd` | Build the static HTML site from an existing bug database file |
 | `bugdb generate-release-notes` | Regenerate the release notes JSON for the site |
 | `bugdb validate` | Validate a bug database JSON file against the schema |
 | `bugdb --version` | Show version |

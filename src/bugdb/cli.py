@@ -48,12 +48,12 @@ def main(
 
 @app.command()
 def build_site_cmd(
-    data: Annotated[
+    bugdb: Annotated[
         Path,
         typer.Option(
-            "--data",
-            "-d",
-            help="Input JSON data file (bug database).",
+            "--bugdb",
+            "-b",
+            help="Path to the bug database JSON file.",
         ),
     ] = Path("assets/bugdb.json"),
     release_notes: Annotated[
@@ -64,7 +64,7 @@ def build_site_cmd(
             help=(
                 "Optional path to a release-notes.json file produced by "
                 "`bugdb generate-release-notes`. Defaults to "
-                "`<data_file_dir>/release-notes.json` if that file exists."
+                "`<bugdb_file_dir>/release-notes.json` if that file exists."
             ),
         ),
     ] = None,
@@ -78,11 +78,11 @@ def build_site_cmd(
     ] = Path("dist"),
 ) -> None:
     """Build static HTML site from bug database."""
-    # Check if data file exists
-    if not data.exists():
-        console.print(f"[red]Error:[/red] Data file {data} not found.")
+    if not bugdb.exists():
+        console.print(f"[red]Error:[/red] Bug database file {bugdb} not found.")
         console.print(
-            "[dim]Hint: Run 'bugdb fetch' or 'bugdb build' to populate the data file first.[/dim]"
+            "[dim]Hint: Run 'bugdb fetch' or 'bugdb build' to populate "
+            "the bug database first.[/dim]"
         )
         raise typer.Exit(1)
 
@@ -94,10 +94,10 @@ def build_site_cmd(
         progress.add_task("Building static site...", total=None)
 
         try:
-            build_site(data, output, release_notes_file=release_notes)
+            build_site(bugdb, output, release_notes_file=release_notes)
         except ValidationError as e:
             progress.stop()
-            console.print(f"[red]Error:[/red] Invalid data file: {e}")
+            console.print(f"[red]Error:[/red] Invalid bug database file: {e}")
             raise typer.Exit(1) from e
         except Exception as e:
             progress.stop()
@@ -118,14 +118,14 @@ def build_site_cmd(
 
 @app.command()
 def validate(
-    data_file: Annotated[
+    bugdb_file: Annotated[
         Path,
-        typer.Argument(help="JSON data file to validate."),
+        typer.Argument(help="Bug database JSON file to validate."),
     ],
 ) -> None:
     """Validate a bug database JSON file against the schema."""
-    if not data_file.exists():
-        console.print(f"[red]Error:[/red] File {data_file} not found.")
+    if not bugdb_file.exists():
+        console.print(f"[red]Error:[/red] File {bugdb_file} not found.")
         raise typer.Exit(1)
 
     with Progress(
@@ -136,7 +136,7 @@ def validate(
         progress.add_task("Validating schema...", total=None)
 
         try:
-            with open(data_file, encoding="utf-8") as f:
+            with open(bugdb_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             database = BugDatabase.model_validate(data)
@@ -359,14 +359,14 @@ def fetch(
             console.print("[yellow]Warning:[/yellow] No retryable products found in the report.")
             raise typer.Exit(1)
 
-        # Use data_file from report unless --output was explicitly set.
+        # Use bugdb_file from report unless --output was explicitly set.
         # The sentinel check `output == default` detects whether the user
         # passed --output or accepted the default; if they accepted the
         # default AND the report points somewhere else, follow the report.
-        data_path = Path(prev_report.data_file)
+        bugdb_path = Path(prev_report.bugdb_file)
         default_output = Path("assets/bugdb.json")
-        if output == default_output and data_path != default_output:
-            output = data_path
+        if output == default_output and bugdb_path != default_output:
+            output = bugdb_path
 
         if output.exists():
             try:
@@ -530,7 +530,7 @@ def fetch(
 
         fetch_report = FetchReport(
             generated_at=datetime.now(UTC),
-            data_file=str(output),
+            bugdb_file=str(output),
             total_products=len(database.products),
             total_versions=total_versions,
             total_known_issues=total_known,
@@ -686,12 +686,12 @@ def build(
             help="Output directory for the static site.",
         ),
     ] = Path("dist"),
-    data: Annotated[
+    bugdb: Annotated[
         Path,
         typer.Option(
-            "--data",
-            "-d",
-            help="Bug database JSON file path (fetch writes here, build-site reads from here).",
+            "--bugdb",
+            "-b",
+            help=("Bug database JSON file path (fetch writes here, build-site reads from here)."),
         ),
     ] = Path("assets/bugdb.json"),
     release_notes: Annotated[
@@ -702,7 +702,7 @@ def build(
             help=(
                 "Release notes JSON file path (generate-release-notes writes here, "
                 "build-site copies into the output site). Defaults to a sibling of "
-                "the --data file in the same directory."
+                "the --bugdb file in the same directory."
             ),
         ),
     ] = Path("assets/release-notes.json"),
@@ -711,8 +711,9 @@ def build(
         typer.Option(
             "--skip-fetch",
             help=(
-                "Skip the fetch stage and use the existing data file. Useful for "
-                "iterative frontend work where the data is already populated."
+                "Skip the fetch stage and use the existing bug database. "
+                "Useful for iterative frontend work where the data is "
+                "already populated."
             ),
         ),
     ] = False,
@@ -721,7 +722,7 @@ def build(
         typer.Option(
             "--incremental",
             "-i",
-            help="Incremental fetch — only fetch versions not already in the data file.",
+            help="Incremental fetch — only fetch versions not already in the bug database.",
         ),
     ] = False,
     headless: Annotated[
@@ -753,14 +754,14 @@ def build(
     real data. Runs three stages in sequence:
 
     \b
-    1. `bugdb fetch`               — crawls release notes into DATA
+    1. `bugdb fetch`               — crawls release notes into BUGDB
                                      (default: assets/bugdb.json)
     2. `bugdb generate-release-notes` — writes release notes JSON to
                                      RELEASE_NOTES (default:
                                      assets/release-notes.json, same
-                                     folder as DATA)
+                                     folder as BUGDB)
     3. `bugdb build-site-cmd`      — builds the site into OUTPUT,
-                                     baking DATA as bugdb.json and
+                                     baking BUGDB as bugdb.json and
                                      copying RELEASE_NOTES as
                                      release-notes.json under the
                                      output assets directory.
@@ -773,13 +774,13 @@ def build(
     # Stage 1: fetch (unless --skip-fetch). Force overwrites existing
     # bugdb.json unless incremental mode is active.
     if skip_fetch:
-        if not data.exists():
+        if not bugdb.exists():
             console.print(
-                f"[red]Error:[/red] --skip-fetch was passed but {data} does not exist. "
+                f"[red]Error:[/red] --skip-fetch was passed but {bugdb} does not exist. "
                 f"Run without --skip-fetch first to populate it."
             )
             raise typer.Exit(1)
-        console.print(f"[dim]Skipping fetch — reusing existing {data}[/dim]")
+        console.print(f"[dim]Skipping fetch — reusing existing {bugdb}[/dim]")
     else:
         console.print(
             Panel(
@@ -790,7 +791,7 @@ def build(
         fetch(
             product=None,
             version="all",
-            output=data,
+            output=bugdb,
             force=not incremental,
             incremental=incremental,
             headless=headless,
@@ -820,12 +821,12 @@ def build(
             border_style="cyan",
         )
     )
-    build_site_cmd(data=data, release_notes=release_notes, output=output)
+    build_site_cmd(bugdb=bugdb, release_notes=release_notes, output=output)
 
     console.print(
         Panel(
             f"[green]✓[/green] Unified build complete!\n"
-            f"  • Data:  {data}\n"
+            f"  • Bugdb: {bugdb}\n"
             f"  • Site:  {output}/index.html\n\n"
             f"[dim]Open in browser:[/dim]\n"
             f"  open {output}/index.html",

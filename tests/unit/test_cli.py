@@ -33,7 +33,7 @@ def _flat(text: str) -> str:
     return " ".join(text.split())
 
 
-def _write_minimal_data_file(path) -> None:
+def _write_minimal_bugdb_file(path) -> None:
     """Write a minimal valid BugDatabase JSON to ``path``.
 
     Replaces the pre-v1.0.3 pattern of invoking the now-removed
@@ -71,23 +71,25 @@ class TestBuildSite:
     def test_build_site_creates_output(self, tmp_path):
         """Test that build-site creates output files."""
         # First populate a minimal data file (replaces old generate-sample call)
-        data_file = tmp_path / "bugs.json"
-        _write_minimal_data_file(data_file)
+        bugdb_file = tmp_path / "bugs.json"
+        _write_minimal_bugdb_file(bugdb_file)
 
         # Then build site
         output_dir = tmp_path / "dist"
-        result = runner.invoke(app, ["build-site-cmd", "-d", str(data_file), "-o", str(output_dir)])
+        result = runner.invoke(
+            app, ["build-site-cmd", "-b", str(bugdb_file), "-o", str(output_dir)]
+        )
 
         assert result.exit_code == 0
         assert (output_dir / "index.html").exists()
         assert (output_dir / "assets" / "bugdb.json").exists()
         assert (output_dir / "assets" / "app.js").exists()
 
-    def test_build_site_missing_data_file(self, tmp_path):
+    def test_build_site_missing_bugdb_file(self, tmp_path):
         """Test that build-site fails with missing data file."""
         output_dir = tmp_path / "dist"
         result = runner.invoke(
-            app, ["build-site-cmd", "-d", "/nonexistent/file.json", "-o", str(output_dir)]
+            app, ["build-site-cmd", "-b", "/nonexistent/file.json", "-o", str(output_dir)]
         )
 
         assert result.exit_code == 1
@@ -95,11 +97,13 @@ class TestBuildSite:
 
     def test_build_site_invalid_json(self, tmp_path):
         """Test that build-site fails with invalid JSON."""
-        data_file = tmp_path / "bugs.json"
-        data_file.write_text("not valid json")
+        bugdb_file = tmp_path / "bugs.json"
+        bugdb_file.write_text("not valid json")
 
         output_dir = tmp_path / "dist"
-        result = runner.invoke(app, ["build-site-cmd", "-d", str(data_file), "-o", str(output_dir)])
+        result = runner.invoke(
+            app, ["build-site-cmd", "-b", str(bugdb_file), "-o", str(output_dir)]
+        )
 
         assert result.exit_code == 1
 
@@ -109,10 +113,10 @@ class TestValidate:
 
     def test_validate_valid_file(self, tmp_path):
         """Test that validate passes for valid file."""
-        data_file = tmp_path / "bugs.json"
-        _write_minimal_data_file(data_file)
+        bugdb_file = tmp_path / "bugs.json"
+        _write_minimal_bugdb_file(bugdb_file)
 
-        result = runner.invoke(app, ["validate", str(data_file)])
+        result = runner.invoke(app, ["validate", str(bugdb_file)])
 
         assert result.exit_code == 0
         assert "Valid bug database" in result.stdout
@@ -126,31 +130,31 @@ class TestValidate:
 
     def test_validate_invalid_json(self, tmp_path):
         """Test that validate fails for invalid JSON."""
-        data_file = tmp_path / "bugs.json"
-        data_file.write_text("not valid json")
+        bugdb_file = tmp_path / "bugs.json"
+        bugdb_file.write_text("not valid json")
 
-        result = runner.invoke(app, ["validate", str(data_file)])
+        result = runner.invoke(app, ["validate", str(bugdb_file)])
 
         assert result.exit_code == 1
         assert "Invalid JSON" in result.stdout
 
     def test_validate_invalid_schema(self, tmp_path):
         """Test that validate fails for invalid schema."""
-        data_file = tmp_path / "bugs.json"
+        bugdb_file = tmp_path / "bugs.json"
         # Missing required fields
-        data_file.write_text('{"products": [{"id": "test"}]}')
+        bugdb_file.write_text('{"products": [{"id": "test"}]}')
 
-        result = runner.invoke(app, ["validate", str(data_file)])
+        result = runner.invoke(app, ["validate", str(bugdb_file)])
 
         assert result.exit_code == 1
         assert "validation failed" in result.stdout
 
     def test_validate_shows_statistics(self, tmp_path):
         """Test that validate shows database statistics."""
-        data_file = tmp_path / "bugs.json"
-        _write_minimal_data_file(data_file)
+        bugdb_file = tmp_path / "bugs.json"
+        _write_minimal_bugdb_file(bugdb_file)
 
-        result = runner.invoke(app, ["validate", str(data_file)])
+        result = runner.invoke(app, ["validate", str(bugdb_file)])
 
         assert "Products:" in result.stdout
         assert "Versions:" in result.stdout
@@ -222,7 +226,7 @@ class TestFetchWithReport:
         assert report["total_products"] == 1
         assert report["total_known_issues"] == 1
         assert report["total_addressed_issues"] == 1
-        assert report["data_file"] == str(output_file)
+        assert report["bugdb_file"] == str(output_file)
 
     def test_report_contains_product_stats(self, tmp_path):
         """Test that report contains per-product statistics."""
@@ -321,7 +325,7 @@ class TestFetchWithReport:
 class TestFetchWithRetry:
     """Tests for fetch --retry flag."""
 
-    def _write_data_file(self, path):
+    def _write_bugdb_file(self, path):
         """Helper to write a minimal bugdb.json."""
         db = BugDatabase(
             metadata=Metadata(),
@@ -340,10 +344,10 @@ class TestFetchWithRetry:
         )
         path.write_text(json.dumps(db.model_dump(mode="json"), indent=2, default=str))
 
-    def _write_report(self, path, data_file, failed_fetches=None):
+    def _write_report(self, path, bugdb_file, failed_fetches=None):
         """Helper to write a report JSON."""
         report = FetchReport(
-            data_file=str(data_file),
+            bugdb_file=str(bugdb_file),
             total_products=1,
             total_versions=1,
             total_known_issues=1,
@@ -364,13 +368,13 @@ class TestFetchWithRetry:
 
     def test_retry_refetches_failed_products(self, tmp_path):
         """Test that retry calls only crawlers for failed products."""
-        data_file = tmp_path / "bugdb.json"
+        bugdb_file = tmp_path / "bugdb.json"
         report_file = tmp_path / "bugdb.report.json"
 
-        self._write_data_file(data_file)
+        self._write_bugdb_file(bugdb_file)
         self._write_report(
             report_file,
-            data_file,
+            bugdb_file,
             failed_fetches=[
                 FailedFetchEntry(
                     url="https://example.com/page",
@@ -390,7 +394,7 @@ class TestFetchWithRetry:
             {"panos": mock_crawl},
         ):
             result = runner.invoke(
-                app, ["fetch", "--retry", str(report_file), "-o", str(data_file)]
+                app, ["fetch", "--retry", str(report_file), "-o", str(bugdb_file)]
             )
 
         assert result.exit_code == 0
@@ -399,13 +403,13 @@ class TestFetchWithRetry:
 
     def test_retry_merges_into_existing_data(self, tmp_path):
         """Test that retry merges results into existing data file."""
-        data_file = tmp_path / "bugdb.json"
+        bugdb_file = tmp_path / "bugdb.json"
         report_file = tmp_path / "bugdb.report.json"
 
-        self._write_data_file(data_file)
+        self._write_bugdb_file(bugdb_file)
         self._write_report(
             report_file,
-            data_file,
+            bugdb_file,
             failed_fetches=[
                 FailedFetchEntry(
                     url="https://example.com/page",
@@ -429,11 +433,11 @@ class TestFetchWithRetry:
             {"panos": MagicMock(return_value=retry_result)},
         ):
             result = runner.invoke(
-                app, ["fetch", "--retry", str(report_file), "-o", str(data_file)]
+                app, ["fetch", "--retry", str(report_file), "-o", str(bugdb_file)]
             )
 
         assert result.exit_code == 0
-        merged = json.loads(data_file.read_text())
+        merged = json.loads(bugdb_file.read_text())
         # Should have the merged product with versions from both original and retry
         panos = next(p for p in merged["products"] if p["id"] == "panos")
         version_strs = [v["version"] for v in panos["versions"]]
@@ -442,11 +446,11 @@ class TestFetchWithRetry:
 
     def test_retry_no_failures_exits_cleanly(self, tmp_path):
         """Test that retry with no failures in report exits with message."""
-        data_file = tmp_path / "bugdb.json"
+        bugdb_file = tmp_path / "bugdb.json"
         report_file = tmp_path / "bugdb.report.json"
 
-        self._write_data_file(data_file)
-        self._write_report(report_file, data_file, failed_fetches=[])
+        self._write_bugdb_file(bugdb_file)
+        self._write_report(report_file, bugdb_file, failed_fetches=[])
 
         result = runner.invoke(app, ["fetch", "--retry", str(report_file)])
 
@@ -490,7 +494,7 @@ class TestFetchWithRetry:
         assert result.exit_code == 1
         assert "not found" in _flat(result.stdout)
 
-    def test_retry_missing_data_file(self, tmp_path):
+    def test_retry_missing_bugdb_file(self, tmp_path):
         """Test that --retry fails when data file from report is missing."""
         report_file = tmp_path / "bugdb.report.json"
         missing_data = tmp_path / "missing.json"
@@ -514,13 +518,13 @@ class TestFetchWithRetry:
 
     def test_retry_with_report_generates_new_report(self, tmp_path):
         """Test that --retry combined with --report generates a new report."""
-        data_file = tmp_path / "bugdb.json"
+        bugdb_file = tmp_path / "bugdb.json"
         report_file = tmp_path / "bugdb.report.json"
 
-        self._write_data_file(data_file)
+        self._write_bugdb_file(bugdb_file)
         self._write_report(
             report_file,
-            data_file,
+            bugdb_file,
             failed_fetches=[
                 FailedFetchEntry(
                     url="https://example.com/page",
@@ -538,7 +542,7 @@ class TestFetchWithRetry:
         ):
             result = runner.invoke(
                 app,
-                ["fetch", "--retry", str(report_file), "--report", "-o", str(data_file)],
+                ["fetch", "--retry", str(report_file), "--report", "-o", str(bugdb_file)],
             )
 
         assert result.exit_code == 0
@@ -563,7 +567,7 @@ class TestBuildCommand:
 
         result = runner.invoke(
             app,
-            ["build", "--skip-fetch", "-d", str(missing), "-o", str(site_out)],
+            ["build", "--skip-fetch", "-b", str(missing), "-o", str(site_out)],
         )
 
         assert result.exit_code == 1
@@ -572,13 +576,13 @@ class TestBuildCommand:
     def test_build_skip_fetch_reuses_existing_data(self, tmp_path):
         """--skip-fetch with a valid data file must skip fetch, regenerate
         release notes, and build the site — without touching the network."""
-        data_file = tmp_path / "bugs.json"
-        _write_minimal_data_file(data_file)
+        bugdb_file = tmp_path / "bugs.json"
+        _write_minimal_bugdb_file(bugdb_file)
         site_out = tmp_path / "dist"
 
         result = runner.invoke(
             app,
-            ["build", "--skip-fetch", "-d", str(data_file), "-o", str(site_out)],
+            ["build", "--skip-fetch", "-b", str(bugdb_file), "-o", str(site_out)],
         )
 
         assert result.exit_code == 0, result.stdout

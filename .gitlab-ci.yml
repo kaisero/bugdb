@@ -171,7 +171,7 @@ pages:
     # Generate release-notes.json next to bugdb.json so build-site-cmd
     # auto-discovers it (see SiteBuilder.build_site in site_builder.py).
     - uv run bugdb generate-release-notes -o assets/release-notes.json --force
-    - uv run bugdb build-site-cmd -d assets/bugdb.json -o public
+    - uv run bugdb build-site-cmd -b assets/bugdb.json -o public
     # Replace local bugdb.json path with external URL so the deployed
     # site loads real data from the CDN at runtime. If the CDN file is
     # renamed, update BOTH sides together (site deploy + CDN host).

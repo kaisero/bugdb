@@ -42,12 +42,12 @@ KNOWN_ONE_SIDED_PRODUCTS: set[str] = {
 }
 
 
-def _iter_products(data_json: dict[str, Any]):
-    return data_json.get("products", [])
+def _iter_products(bugdb_json: dict[str, Any]):
+    return bugdb_json.get("products", [])
 
 
-def _iter_product_versions(data_json: dict[str, Any]):
-    for product in _iter_products(data_json):
+def _iter_product_versions(bugdb_json: dict[str, Any]):
+    for product in _iter_products(bugdb_json):
         for v in product.get("versions", []):
             yield product["id"], v
 
@@ -60,28 +60,28 @@ def _iter_product_versions(data_json: dict[str, Any]):
 class TestTopLevelStructure:
     """Sanity checks on the root JSON shape."""
 
-    def test_has_metadata(self, data_json: dict[str, Any]):
-        assert "metadata" in data_json, "bugdb.json missing top-level 'metadata'"
+    def test_has_metadata(self, bugdb_json: dict[str, Any]):
+        assert "metadata" in bugdb_json, "bugdb.json missing top-level 'metadata'"
 
-    def test_has_products_list(self, data_json: dict[str, Any]):
-        assert "products" in data_json
-        assert isinstance(data_json["products"], list)
-        assert len(data_json["products"]) > 0, "bugdb.json has zero products"
+    def test_has_products_list(self, bugdb_json: dict[str, Any]):
+        assert "products" in bugdb_json
+        assert isinstance(bugdb_json["products"], list)
+        assert len(bugdb_json["products"]) > 0, "bugdb.json has zero products"
 
-    def test_metadata_generated_at_is_iso_parseable(self, data_json: dict[str, Any]):
-        ts = data_json.get("metadata", {}).get("generated_at")
+    def test_metadata_generated_at_is_iso_parseable(self, bugdb_json: dict[str, Any]):
+        ts = bugdb_json.get("metadata", {}).get("generated_at")
         assert ts, "metadata.generated_at is missing"
         # Accept both 'Z' and offset forms.
         datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
-    def test_metadata_generated_at_is_not_wildly_in_future(self, data_json: dict[str, Any]):
+    def test_metadata_generated_at_is_not_wildly_in_future(self, bugdb_json: dict[str, Any]):
         """Guards against clock-skew or malformed timestamps.
 
         Freshness (within N days) is checked in the nightly pipeline only
         via the `--check-freshness` flag; we don't want old PRs to fail
         just because their bugdb.json is stale.
         """
-        ts = data_json["metadata"]["generated_at"].replace("Z", "+00:00")
+        ts = bugdb_json["metadata"]["generated_at"].replace("Z", "+00:00")
         parsed = datetime.fromisoformat(ts)
         now = datetime.now(timezone.utc)
         assert parsed <= now + timedelta(hours=1), (
@@ -95,23 +95,23 @@ class TestTopLevelStructure:
 
 
 class TestProducts:
-    def test_every_product_has_id(self, data_json: dict[str, Any]):
-        offenders = [p for p in _iter_products(data_json) if not p.get("id")]
+    def test_every_product_has_id(self, bugdb_json: dict[str, Any]):
+        offenders = [p for p in _iter_products(bugdb_json) if not p.get("id")]
         assert not offenders, f"{len(offenders)} products without an id"
 
-    def test_every_product_has_name(self, data_json: dict[str, Any]):
-        offenders = [p["id"] for p in _iter_products(data_json) if not p.get("name")]
+    def test_every_product_has_name(self, bugdb_json: dict[str, Any]):
+        offenders = [p["id"] for p in _iter_products(bugdb_json) if not p.get("name")]
         assert not offenders, f"Products missing 'name': {offenders}"
 
-    def test_every_product_has_at_least_one_version(self, data_json: dict[str, Any]):
-        offenders = [p["id"] for p in _iter_products(data_json) if not p.get("versions")]
+    def test_every_product_has_at_least_one_version(self, bugdb_json: dict[str, Any]):
+        offenders = [p["id"] for p in _iter_products(bugdb_json) if not p.get("versions")]
         assert not offenders, (
             f"Products with zero versions: {offenders}. A product with no "
             f"versions is almost always a crawler silently giving up."
         )
 
-    def test_product_ids_are_unique(self, data_json: dict[str, Any]):
-        ids = [p["id"] for p in _iter_products(data_json)]
+    def test_product_ids_are_unique(self, bugdb_json: dict[str, Any]):
+        ids = [p["id"] for p in _iter_products(bugdb_json)]
         duplicates = {pid for pid in ids if ids.count(pid) > 1}
         assert not duplicates, f"Duplicate product ids: {sorted(duplicates)}"
 
@@ -121,28 +121,28 @@ class TestProducts:
 # ---------------------------------------------------------------------------
 
 
-def _product_version_params(data_json: dict[str, Any]):
+def _product_version_params(bugdb_json: dict[str, Any]):
     return [
         pytest.param(pid, v, id=f"{pid}-{v.get('version', 'NO_VERSION')}")
-        for pid, v in _iter_product_versions(data_json)
+        for pid, v in _iter_product_versions(bugdb_json)
     ]
 
 
 @pytest.fixture
-def product_version_params(data_json):
-    return _product_version_params(data_json)
+def product_version_params(bugdb_json):
+    return _product_version_params(bugdb_json)
 
 
 class TestVersions:
     """Parametrization can't reference fixtures directly, so each test
-    iterates `data_json` itself and asserts in a loop. Failures still
+    iterates `bugdb_json` itself and asserts in a loop. Failures still
     localise: assertion messages name the offending (product, version).
     """
 
-    def test_every_version_has_a_version_string(self, data_json):
+    def test_every_version_has_a_version_string(self, bugdb_json):
         offenders = [
             p["id"]
-            for p in _iter_products(data_json)
+            for p in _iter_products(bugdb_json)
             for v in p.get("versions", [])
             if not v.get("version")
         ]
@@ -150,7 +150,7 @@ class TestVersions:
             f"{len(offenders)} versions without a 'version' string (products: {set(offenders)})"
         )
 
-    def test_every_version_string_matches_expected_format(self, data_json):
+    def test_every_version_string_matches_expected_format(self, bugdb_json):
         """PAN-OS-style versions must match MAJOR.MINOR[.PATCH[-hN]].
 
         A handful of upstream sources use calendar versions, single-number
@@ -159,7 +159,7 @@ class TestVersions:
         *new* product that suddenly starts producing bad version strings.
         """
         offenders: list[tuple[str, str]] = []
-        for pid, v in _iter_product_versions(data_json):
+        for pid, v in _iter_product_versions(bugdb_json):
             ver = v.get("version", "")
             if not VERSION_RE.match(ver):
                 offenders.append((pid, ver))
@@ -184,13 +184,13 @@ class TestVersions:
             f"Version strings failing regex {VERSION_RE.pattern}: {unexpected[:10]}"
         )
 
-    def test_no_version_has_both_sides_empty(self, data_json):
+    def test_no_version_has_both_sides_empty(self, bugdb_json):
         """A version with zero known AND zero addressed issues is almost
         always a parser bug. Products listed in KNOWN_ONE_SIDED_PRODUCTS
         may have one side legitimately empty, but never both.
         """
         offenders: list[tuple[str, str]] = []
-        for pid, v in _iter_product_versions(data_json):
+        for pid, v in _iter_product_versions(bugdb_json):
             known = v.get("known_issues") or []
             addressed = v.get("addressed_issues") or []
             if not known and not addressed:
@@ -208,9 +208,9 @@ class TestVersions:
 
 
 class TestIssues:
-    def test_every_issue_has_a_bug_id(self, data_json):
+    def test_every_issue_has_a_bug_id(self, bugdb_json):
         offenders: list[tuple[str, str, str]] = []
-        for pid, v in _iter_product_versions(data_json):
+        for pid, v in _iter_product_versions(bugdb_json):
             ver = v.get("version", "")
             for issue in (v.get("known_issues") or []) + (v.get("addressed_issues") or []):
                 bug_id = (issue.get("bug_id") or "").strip()
@@ -231,9 +231,9 @@ class TestIssues:
         "Tracked as data-quality debt.",
         strict=False,
     )
-    def test_every_issue_has_a_description(self, data_json):
+    def test_every_issue_has_a_description(self, bugdb_json):
         offenders: list[tuple[str, str, str]] = []
-        for pid, v in _iter_product_versions(data_json):
+        for pid, v in _iter_product_versions(bugdb_json):
             ver = v.get("version", "")
             for issue in (v.get("known_issues") or []) + (v.get("addressed_issues") or []):
                 if not (issue.get("description") or "").strip():
@@ -251,12 +251,12 @@ class TestIssues:
         "(CPATR-NNNNLinux). Other products are strict.",
         strict=False,
     )
-    def test_bug_ids_match_expected_prefix_pattern(self, data_json):
+    def test_bug_ids_match_expected_prefix_pattern(self, bugdb_json):
         """Bug ids should look like ``PREFIX-1234``. Flags any issues with
         badly parsed identifiers (embedded whitespace, HTML remnants, etc).
         """
         offenders: list[tuple[str, str, str]] = []
-        for pid, v in _iter_product_versions(data_json):
+        for pid, v in _iter_product_versions(bugdb_json):
             ver = v.get("version", "")
             for issue in (v.get("known_issues") or []) + (v.get("addressed_issues") or []):
                 bug_id = (issue.get("bug_id") or "").strip()

@@ -53,7 +53,7 @@ diff and commit it.
 ### Reviewable refresh (CLI, recommended for large changes)
 
 ```bash
-uv run python -m bugdb.baseline refresh --data assets/bugdb.json --baseline tests/baselines/data_baseline.json
+uv run python -m bugdb.baseline refresh --bugdb assets/bugdb.json --baseline tests/baselines/data_baseline.json
 ```
 
 Prints a human-readable diff (products/versions added or removed, count

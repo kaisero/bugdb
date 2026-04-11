@@ -208,7 +208,7 @@ class TestFetchReport:
     def test_fetch_report_creation(self):
         """Test creating a fetch report with all fields."""
         report = FetchReport(
-            data_file="assets/bugdb.json",
+            bugdb_file="assets/bugdb.json",
             total_products=2,
             total_versions=10,
             total_known_issues=100,
@@ -241,7 +241,7 @@ class TestFetchReport:
     def test_fetch_report_serialization_roundtrip(self):
         """Test that a report can be serialized and deserialized."""
         report = FetchReport(
-            data_file="assets/bugdb.json",
+            bugdb_file="assets/bugdb.json",
             total_products=1,
             total_versions=3,
             total_known_issues=10,
@@ -251,14 +251,14 @@ class TestFetchReport:
         )
         data = report.model_dump(mode="json")
         restored = FetchReport.model_validate(data)
-        assert restored.data_file == "assets/bugdb.json"
+        assert restored.bugdb_file == "assets/bugdb.json"
         assert restored.total_products == 1
         assert restored.failed_fetches == []
 
     def test_fetch_report_empty_failures(self):
         """Test report with no failures."""
         report = FetchReport(
-            data_file="bugdb.json",
+            bugdb_file="bugdb.json",
             total_products=5,
             total_versions=20,
             total_known_issues=500,
