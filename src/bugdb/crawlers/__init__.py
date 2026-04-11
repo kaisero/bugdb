@@ -32,6 +32,8 @@ Structure:
 """
 
 # Data models
+# Base crawler class
+from .base import BaseCrawler
 from .models import (
     CrawlResult,
     FailedFetch,
@@ -40,25 +42,6 @@ from .models import (
     VersionCrawlResult,
     VersionInfo,
 )
-
-# Utility functions
-from .utils import (
-    BASE_URL,
-    CORTEX_BASE_URL,
-    extract_affected_components,
-    extract_bug_id_and_fix_info,
-    extract_cell_text_with_tables,
-    extract_fix_info_from_description,
-    extract_workaround,
-    get_existing_versions,
-    merge_databases,
-    normalize_text,
-    table_to_text,
-    version_sort_key,
-)
-
-# Base crawler class
-from .base import BaseCrawler
 
 # Product crawler classes
 from .products import (
@@ -85,6 +68,7 @@ from .products.plugins import PLUGIN_CONFIGS
 
 # Sync wrapper functions
 from .registry import (
+    PRODUCT_CRAWLERS,
     # Main products
     crawl_adem,
     crawl_ai_runtime_security,
@@ -94,13 +78,6 @@ from .registry import (
     crawl_device_security,
     crawl_globalprotect,
     crawl_panos,
-    crawl_prisma_access,
-    crawl_prisma_access_agent,
-    crawl_prisma_sdwan,
-    crawl_remote_browser_isolation,
-    crawl_scm,
-    crawl_sdwan_plugin,
-    crawl_strata_logging_service,
     # Plugin products
     crawl_plugin_aws,
     crawl_plugin_azure,
@@ -112,10 +89,32 @@ from .registry import (
     crawl_plugin_vmware_nsx,
     crawl_plugin_vmware_vcenter,
     crawl_plugin_ztp,
+    crawl_prisma_access,
+    crawl_prisma_access_agent,
+    crawl_prisma_sdwan,
+    crawl_remote_browser_isolation,
+    crawl_scm,
+    crawl_sdwan_plugin,
+    crawl_strata_logging_service,
     crawl_vm_series_plugin,
     # Registry
     get_crawler_class,
-    PRODUCT_CRAWLERS,
+)
+
+# Utility functions
+from .utils import (
+    BASE_URL,
+    CORTEX_BASE_URL,
+    extract_affected_components,
+    extract_bug_id_and_fix_info,
+    extract_cell_text_with_tables,
+    extract_fix_info_from_description,
+    extract_workaround,
+    get_existing_versions,
+    merge_databases,
+    normalize_text,
+    table_to_text,
+    version_sort_key,
 )
 
 __all__ = [

@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import re
-from typing import Optional
 
 from bugdb.models import Issue, Product, ProductVersion
 
@@ -37,7 +36,8 @@ class DeviceSecurityCrawler(BaseCrawler):
 
             for link in soup.find_all("a", href=True):
                 href = link["href"]
-                # Look for year patterns in URLs (e.g., known-issues-in-2025, addressed-issues-in-2026)
+                # Look for year patterns in URLs
+                # (e.g., known-issues-in-2025, addressed-issues-in-2026)
                 match = re.search(r"(?:known-issues|addressed-issues)(?:/|-in-)(\d{4})", href)
                 if match:
                     year = match.group(1)
@@ -52,9 +52,7 @@ class DeviceSecurityCrawler(BaseCrawler):
         years.sort(reverse=True)
         return years
 
-    def _parse_device_security_issues_page(
-        self, soup, issue_type: str
-    ) -> dict[str, list[Issue]]:
+    def _parse_device_security_issues_page(self, soup, issue_type: str) -> dict[str, list[Issue]]:
         """Parse Device Security issues page organized by feature.
 
         The page has sections with feature headers followed by issue tables.
@@ -68,14 +66,16 @@ class DeviceSecurityCrawler(BaseCrawler):
             Dict mapping feature names to lists of Issue objects.
         """
         results: dict[str, list[Issue]] = {}
-        current_feature: Optional[str] = None
+        current_feature: str | None = None
 
         for element in soup.find_all(["h2", "h3", "h4", "table"]):
             if element.name in ["h2", "h3", "h4"]:
                 header_text = element.get_text(strip=True)
                 # Skip headers that are just section titles
-                if header_text and not any(skip in header_text.lower() for skip in
-                    ["release notes", "issues", "table of contents"]):
+                if header_text and not any(
+                    skip in header_text.lower()
+                    for skip in ["release notes", "issues", "table of contents"]
+                ):
                     current_feature = header_text
                     logger.debug("Found Device Security feature: %s", current_feature)
                 continue
@@ -96,8 +96,8 @@ class DeviceSecurityCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Device Security release notes.
 
@@ -138,7 +138,7 @@ class DeviceSecurityCrawler(BaseCrawler):
             # Parse known issues
             if not isinstance(results[0], Exception):
                 issues_by_feature = self._parse_device_security_issues_page(results[0], "known")
-                for feature, issues in issues_by_feature.items():
+                for _feature, issues in issues_by_feature.items():
                     key = f"{year}"
                     if key not in all_known:
                         all_known[key] = []
@@ -147,18 +147,20 @@ class DeviceSecurityCrawler(BaseCrawler):
                 self._log(f"  {year}: {total} known issues")
             else:
                 self._log(f"  Error fetching {year} known issues: {results[0]}")
-                failed_fetches.append(FailedFetch(
-                    url=known_url,
-                    error=str(results[0]),
-                    product=self.product_id,
-                    version=year,
-                    issue_type="known",
-                ))
+                failed_fetches.append(
+                    FailedFetch(
+                        url=known_url,
+                        error=str(results[0]),
+                        product=self.product_id,
+                        version=year,
+                        issue_type="known",
+                    )
+                )
 
             # Parse addressed issues
             if not isinstance(results[1], Exception):
                 issues_by_feature = self._parse_device_security_issues_page(results[1], "addressed")
-                for feature, issues in issues_by_feature.items():
+                for _feature, issues in issues_by_feature.items():
                     key = f"{year}"
                     if key not in all_addressed:
                         all_addressed[key] = []
@@ -167,19 +169,19 @@ class DeviceSecurityCrawler(BaseCrawler):
                 self._log(f"  {year}: {total} addressed issues")
             else:
                 self._log(f"  Error fetching {year} addressed issues: {results[1]}")
-                failed_fetches.append(FailedFetch(
-                    url=addressed_url,
-                    error=str(results[1]),
-                    product=self.product_id,
-                    version=year,
-                    issue_type="addressed",
-                ))
+                failed_fetches.append(
+                    FailedFetch(
+                        url=addressed_url,
+                        error=str(results[1]),
+                        product=self.product_id,
+                        version=year,
+                        issue_type="addressed",
+                    )
+                )
 
         # Retry failed fetches
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         # Combine into ProductVersion objects
@@ -191,11 +193,13 @@ class DeviceSecurityCrawler(BaseCrawler):
             addressed = self._deduplicate_issues(all_addressed.get(ver, []))
 
             if known or addressed:
-                product_versions.append(ProductVersion(
-                    version=ver,
-                    known_issues=known,
-                    addressed_issues=addressed,
-                ))
+                product_versions.append(
+                    ProductVersion(
+                        version=ver,
+                        known_issues=known,
+                        addressed_issues=addressed,
+                    )
+                )
 
         # Sort by year (newest first)
         product_versions.sort(key=lambda v: v.version, reverse=True)

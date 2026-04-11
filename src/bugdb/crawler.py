@@ -22,6 +22,8 @@ For more information, see bugdb/crawlers/__init__.py.
 # Re-export everything from the new crawlers package for backward compatibility
 
 # Data models
+# Base crawler class (aliased as PaloAltoCrawler for compatibility)
+from bugdb.crawlers.base import BaseCrawler
 from bugdb.crawlers.models import (
     CrawlResult,
     FailedFetch,
@@ -46,8 +48,6 @@ from bugdb.crawlers.utils import (
     table_to_text,
 )
 
-# Base crawler class (aliased as PaloAltoCrawler for compatibility)
-from bugdb.crawlers.base import BaseCrawler
 PaloAltoCrawler = BaseCrawler  # Backward compatibility alias
 
 # Plugin configurations
@@ -64,13 +64,6 @@ from bugdb.crawlers.registry import (
     crawl_device_security,
     crawl_globalprotect,
     crawl_panos,
-    crawl_prisma_access,
-    crawl_prisma_access_agent,
-    crawl_prisma_sdwan,
-    crawl_remote_browser_isolation,
-    crawl_scm,
-    crawl_sdwan_plugin,
-    crawl_strata_logging_service,
     # Plugin products
     crawl_plugin_aws,
     crawl_plugin_azure,
@@ -82,6 +75,13 @@ from bugdb.crawlers.registry import (
     crawl_plugin_vmware_nsx,
     crawl_plugin_vmware_vcenter,
     crawl_plugin_ztp,
+    crawl_prisma_access,
+    crawl_prisma_access_agent,
+    crawl_prisma_sdwan,
+    crawl_remote_browser_isolation,
+    crawl_scm,
+    crawl_sdwan_plugin,
+    crawl_strata_logging_service,
     crawl_vm_series_plugin,
 )
 

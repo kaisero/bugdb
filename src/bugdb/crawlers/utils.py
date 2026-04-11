@@ -4,7 +4,6 @@ import logging
 import re
 from copy import copy
 from datetime import datetime, timezone
-from typing import Optional
 
 from bugdb.models import BugDatabase, Metadata, Product
 
@@ -136,7 +135,7 @@ def merge_databases(existing: BugDatabase, new: BugDatabase) -> BugDatabase:
     )
 
 
-def extract_workaround(description: str) -> tuple[str, Optional[str]]:
+def extract_workaround(description: str) -> tuple[str, str | None]:
     """Extract workaround text from an issue description.
 
     Looks for patterns like "Workaround: <text>" or "Workaround:<text>" in the
@@ -167,16 +166,18 @@ def extract_workaround(description: str) -> tuple[str, Optional[str]]:
         workaround = match.group(1).strip()
 
         # Remove the workaround section from description
-        cleaned_description = description[:match.start()].strip()
+        cleaned_description = description[: match.start()].strip()
 
         # Also remove any text after the workaround that was captured
-        remaining = description[match.end():].strip()
+        remaining = description[match.end() :].strip()
         if remaining:
-            cleaned_description = f"{cleaned_description} {remaining}".strip() if cleaned_description else remaining
+            cleaned_description = (
+                f"{cleaned_description} {remaining}".strip() if cleaned_description else remaining
+            )
 
         # Replace newlines with spaces and clean up multiple spaces
-        cleaned_description = re.sub(r'\s+', ' ', cleaned_description).strip()
-        workaround = re.sub(r'\s+', ' ', workaround).strip()
+        cleaned_description = re.sub(r"\s+", " ", cleaned_description).strip()
+        workaround = re.sub(r"\s+", " ", workaround).strip()
 
         # Don't return empty workarounds
         if workaround:
@@ -186,8 +187,8 @@ def extract_workaround(description: str) -> tuple[str, Optional[str]]:
 
 
 def extract_fix_info_from_description(
-    description: str, existing_fix_info: Optional[str] = None
-) -> tuple[str, Optional[str]]:
+    description: str, existing_fix_info: str | None = None
+) -> tuple[str, str | None]:
     """Extract fix information from an issue description.
 
     Looks for patterns like "This issue is resolved in <version>" in the
@@ -206,8 +207,7 @@ def extract_fix_info_from_description(
     # Reformat existing_fix_info if it matches the "This issue is resolved in..." pattern
     if existing_fix_info:
         existing_match = re.match(
-            r"(?i)^This\s+issue\s+is\s+resolved\s+in\s+(.+?)\.?$",
-            existing_fix_info.strip()
+            r"(?i)^This\s+issue\s+is\s+resolved\s+in\s+(.+?)\.?$", existing_fix_info.strip()
         )
         if existing_match:
             existing_fix_info = f"Resolved in {existing_match.group(1).strip()}"
@@ -232,15 +232,17 @@ def extract_fix_info_from_description(
         fix_info = match.group(1).strip()
 
         # Remove the fix info sentence from description
-        cleaned_description = description[:match.start()].strip()
+        cleaned_description = description[: match.start()].strip()
 
         # Add any remaining text after the match
-        remaining = description[match.end():].strip()
+        remaining = description[match.end() :].strip()
         if remaining:
-            cleaned_description = f"{cleaned_description} {remaining}".strip() if cleaned_description else remaining
+            cleaned_description = (
+                f"{cleaned_description} {remaining}".strip() if cleaned_description else remaining
+            )
 
         # Clean up multiple spaces
-        cleaned_description = re.sub(r'\s+', ' ', cleaned_description).strip()
+        cleaned_description = re.sub(r"\s+", " ", cleaned_description).strip()
 
         # Format the fix_info consistently
         fix_info = f"Resolved in {fix_info}"
@@ -251,7 +253,7 @@ def extract_fix_info_from_description(
     return description, existing_fix_info
 
 
-def extract_bug_id_and_fix_info(raw_bug_id: str) -> tuple[str, Optional[str]]:
+def extract_bug_id_and_fix_info(raw_bug_id: str) -> tuple[str, str | None]:
     """Extract bug ID and additional fix information from a raw bug ID string.
 
     Some bug IDs include text like "EPM-4616Resolved in Prisma Access Agent 25.3".
@@ -283,7 +285,7 @@ def extract_bug_id_and_fix_info(raw_bug_id: str) -> tuple[str, Optional[str]]:
     return raw_bug_id, None
 
 
-def extract_affected_components(description: str) -> tuple[str, Optional[list[str]]]:
+def extract_affected_components(description: str) -> tuple[str, list[str] | None]:
     """Extract affected components from the start of a description.
 
     Descriptions may start with parenthesized text like "(NGFW Clusters)" or
@@ -301,7 +303,8 @@ def extract_affected_components(description: str) -> tuple[str, Optional[list[st
         return description, None
 
     # Pattern to match one or more parenthesized groups at the start
-    # Examples: "(NGFW Clusters)", "(PA-5500 Series firewalls only)", "(Different ABC) (Another XYZ)"
+    # Examples: "(NGFW Clusters)", "(PA-5500 Series firewalls only)",
+    # "(Different ABC) (Another XYZ)"
     components = []
     cleaned = description.strip()
 
@@ -312,7 +315,7 @@ def extract_affected_components(description: str) -> tuple[str, Optional[list[st
             component = match.group(1).strip()
             if component:
                 components.append(component)
-            cleaned = cleaned[match.end():].strip()
+            cleaned = cleaned[match.end() :].strip()
         else:
             break
 

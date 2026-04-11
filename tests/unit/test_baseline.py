@@ -17,8 +17,6 @@ from bugdb.baseline import (
     SCHEMA_VERSION,
     Baseline,
     BaselineSnapshot,
-    ProductFingerprint,
-    VersionFingerprint,
     build_baseline,
     diff_snapshots,
     format_diff,
@@ -248,9 +246,7 @@ class TestDiff:
                         (
                             {
                                 **v,
-                                "known_issues": [
-                                    {"bug_id": "PAN-999", "description": "swap"}
-                                ],
+                                "known_issues": [{"bug_id": "PAN-999", "description": "swap"}],
                             }
                             if v["version"] == "11.2.11"
                             else v
@@ -266,10 +262,7 @@ class TestDiff:
         current = build_baseline(current_data)
         diff = diff_snapshots(baseline, current)
         # Counts regressed (2 known -> 1), AND bug_ids are missing.
-        assert any(
-            pid == "panos" and ver == "11.2.11"
-            for pid, ver, _ in diff.missing_bug_ids
-        )
+        assert any(pid == "panos" and ver == "11.2.11" for pid, ver, _ in diff.missing_bug_ids)
 
     def test_diff_is_clean_when_counts_grow(self, sample_data):
         baseline = self._mk_baseline(build_baseline(sample_data))
@@ -313,11 +306,7 @@ class TestDiff:
                 {
                     **p,
                     "versions": [
-                        (
-                            {**v, "known_issues": []}
-                            if v["version"] == "11.2.11"
-                            else v
-                        )
+                        ({**v, "known_issues": []} if v["version"] == "11.2.11" else v)
                         for v in p["versions"]
                     ],
                 }

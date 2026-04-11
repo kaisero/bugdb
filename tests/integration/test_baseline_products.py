@@ -27,8 +27,8 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     pytest memoizes collection.
     """
     if "baseline_product_id" in metafunc.fixturenames:
-        from tests.integration.conftest import DEFAULT_BASELINE_PATH
         from bugdb.baseline import load_baseline
+        from tests.integration.conftest import DEFAULT_BASELINE_PATH
 
         if not DEFAULT_BASELINE_PATH.exists():
             metafunc.parametrize("baseline_product_id", [])

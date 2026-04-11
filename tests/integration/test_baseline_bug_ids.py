@@ -52,9 +52,7 @@ def test_baseline_bug_ids_remain_present(
 
     product = current_snapshot.products.get(product_id)
     if product is None or version not in product.versions:
-        pytest.skip(
-            f"{product_id} {version} already missing (see other tests)"
-        )
+        pytest.skip(f"{product_id} {version} already missing (see other tests)")
 
     baseline_fp = _baseline_fingerprint_for(baseline_pv)
     current_fp = product.versions[version]

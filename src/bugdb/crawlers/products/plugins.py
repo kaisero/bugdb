@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import re
-from typing import Optional
 
 from bugdb.models import Product, ProductVersion
 
@@ -43,7 +42,11 @@ PLUGIN_CONFIGS: dict[str, PluginConfig] = {
         product_id="plugin-vmware-nsx",
         product_name="Panorama Plugin for VMware NSX",
         base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-vmware-nsx",
-        version_link_patterns=["nsx-plugin-", "vmware-nsx-plugin-", "panorama-plugin-for-vmware-nsx-"],
+        version_link_patterns=[
+            "nsx-plugin-",
+            "vmware-nsx-plugin-",
+            "panorama-plugin-for-vmware-nsx-",
+        ],
     ),
     "plugin-vmware-vcenter": PluginConfig(
         product_id="plugin-vmware-vcenter",
@@ -130,8 +133,9 @@ class PluginCrawler(BaseCrawler):
         Returns:
             List of VersionInfo with version strings and issue page URLs.
         """
-        logger.debug("Discovering %s versions from %s",
-                    self.config.product_name, self.config.base_url)
+        logger.debug(
+            "Discovering %s versions from %s", self.config.product_name, self.config.base_url
+        )
 
         version_infos: dict[str, VersionInfo] = {}
 
@@ -141,7 +145,7 @@ class PluginCrawler(BaseCrawler):
             href = re.sub(r"\.html$", "", href)
             return href
 
-        def extract_version_from_url(href: str) -> Optional[str]:
+        def extract_version_from_url(href: str) -> str | None:
             """Extract version number from a URL."""
             for pattern in self.config.version_link_patterns:
                 if pattern in href.lower():
@@ -174,8 +178,11 @@ class PluginCrawler(BaseCrawler):
                 href = link["href"]
                 href_lower = href.lower()
 
-                if not any(kw in href_lower for kw in
-                          self.config.known_issues_keywords + self.config.addressed_issues_keywords):
+                if not any(
+                    kw in href_lower
+                    for kw in self.config.known_issues_keywords
+                    + self.config.addressed_issues_keywords
+                ):
                     continue
 
                 if not any(p in href_lower for p in self.config.version_link_patterns):
@@ -197,10 +204,15 @@ class PluginCrawler(BaseCrawler):
                 # Classify by last path segment to avoid false matches
                 # (e.g., parent path "known-and-addressed/addressed-issues")
                 last_segment = normalized_url.rstrip("/").rsplit("/", 1)[-1].lower()
-                is_addressed = any(kw in last_segment for kw in self.config.addressed_issues_keywords)
+                is_addressed = any(
+                    kw in last_segment for kw in self.config.addressed_issues_keywords
+                )
                 is_known = any(kw in last_segment for kw in self.config.known_issues_keywords)
 
-                if is_addressed and normalized_url not in version_infos[version].addressed_issues_urls:
+                if (
+                    is_addressed
+                    and normalized_url not in version_infos[version].addressed_issues_urls
+                ):
                     version_infos[version].addressed_issues_urls.append(normalized_url)
                     logger.debug("Found addressed issues URL for %s: %s", version, normalized_url)
                 elif is_known and normalized_url not in version_infos[version].known_issues_urls:
@@ -222,8 +234,8 @@ class PluginCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl plugin release notes.
 
@@ -243,7 +255,8 @@ class PluginCrawler(BaseCrawler):
         if major_versions is not None:
             major_version_prefixes = [mv.replace("-", ".") for mv in major_versions]
             discovered_versions = [
-                v for v in discovered_versions
+                v
+                for v in discovered_versions
                 if any(v.version.startswith(prefix) for prefix in major_version_prefixes)
             ]
 
@@ -255,10 +268,7 @@ class PluginCrawler(BaseCrawler):
 
         all_product_versions: list[ProductVersion] = []
 
-        versions_to_fetch = [
-            v for v in discovered_versions
-            if v.version not in skip_versions
-        ]
+        versions_to_fetch = [v for v in discovered_versions if v.version not in skip_versions]
         skipped_count = len(discovered_versions) - len(versions_to_fetch)
         if skipped_count > 0:
             self._log(f"  Skipping {skipped_count} already-fetched versions")
@@ -286,13 +296,15 @@ class PluginCrawler(BaseCrawler):
                 issue_type, url = url_types[i]
                 if isinstance(result, Exception):
                     if issue_type == "known":
-                        failed_fetches.append(FailedFetch(
-                            url=url,
-                            error=str(result),
-                            product=self.config.product_id,
-                            version=version_info.version,
-                            issue_type="known",
-                        ))
+                        failed_fetches.append(
+                            FailedFetch(
+                                url=url,
+                                error=str(result),
+                                product=self.config.product_id,
+                                version=version_info.version,
+                                issue_type="known",
+                            )
+                        )
                     logger.debug("Error fetching %s issues %s: %s", issue_type, url, result)
                 else:
                     if issue_type == "known":
@@ -304,18 +316,20 @@ class PluginCrawler(BaseCrawler):
             addressed_issues = self._deduplicate_issues(addressed_issues)
 
             if known_issues or addressed_issues:
-                all_product_versions.append(ProductVersion(
-                    version=version_info.version,
-                    known_issues=known_issues,
-                    addressed_issues=addressed_issues,
-                ))
-                self._log(f"    {version_info.version}: {len(known_issues)} known, "
-                         f"{len(addressed_issues)} addressed")
+                all_product_versions.append(
+                    ProductVersion(
+                        version=version_info.version,
+                        known_issues=known_issues,
+                        addressed_issues=addressed_issues,
+                    )
+                )
+                self._log(
+                    f"    {version_info.version}: {len(known_issues)} known, "
+                    f"{len(addressed_issues)} addressed"
+                )
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         all_product_versions.sort(

@@ -101,7 +101,7 @@ def build_site(
         output_dir: Directory where the static site will be generated.
     """
     # Load and validate data
-    with open(data_file, "r", encoding="utf-8") as f:
+    with open(data_file, encoding="utf-8") as f:
         data = json.load(f)
 
     database = BugDatabase.model_validate(data)

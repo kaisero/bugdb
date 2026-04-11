@@ -19,9 +19,10 @@ refresh` CLI command import from here.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 SCHEMA_VERSION = 1
 
@@ -42,7 +43,7 @@ class VersionFingerprint:
         }
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "VersionFingerprint":
+    def from_json(cls, data: dict[str, Any]) -> VersionFingerprint:
         return cls(
             known=int(data["known"]),
             addressed=int(data["addressed"]),
@@ -60,11 +61,8 @@ class ProductFingerprint:
         return {"versions": {v: f.to_json() for v, f in self.versions.items()}}
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "ProductFingerprint":
-        versions = {
-            v: VersionFingerprint.from_json(f)
-            for v, f in data.get("versions", {}).items()
-        }
+    def from_json(cls, data: dict[str, Any]) -> ProductFingerprint:
+        versions = {v: VersionFingerprint.from_json(f) for v, f in data.get("versions", {}).items()}
         return cls(versions=versions)
 
 
@@ -78,7 +76,7 @@ class BaselineSnapshot:
         return {pid: p.to_json() for pid, p in self.products.items()}
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "BaselineSnapshot":
+    def from_json(cls, data: dict[str, Any]) -> BaselineSnapshot:
         products = {pid: ProductFingerprint.from_json(p) for pid, p in data.items()}
         return cls(products=products)
 
@@ -122,9 +120,7 @@ def build_baseline(data_json: dict[str, Any]) -> BaselineSnapshot:
             known = version_entry.get("known_issues", []) or []
             addressed = version_entry.get("addressed_issues", []) or []
 
-            bug_ids = sorted(
-                _collect_bug_ids(known) | _collect_bug_ids(addressed)
-            )
+            bug_ids = sorted(_collect_bug_ids(known) | _collect_bug_ids(addressed))
 
             versions[version] = VersionFingerprint(
                 known=len(known),
@@ -142,11 +138,7 @@ def build_baseline(data_json: dict[str, Any]) -> BaselineSnapshot:
 
 def _collect_bug_ids(issues: Iterable[dict[str, Any]]) -> set[str]:
     """Extract non-empty bug ids from a list of issue dicts."""
-    return {
-        issue["bug_id"]
-        for issue in issues
-        if isinstance(issue, dict) and issue.get("bug_id")
-    }
+    return {issue["bug_id"] for issue in issues if isinstance(issue, dict) and issue.get("bug_id")}
 
 
 def save_baseline(
@@ -161,8 +153,7 @@ def save_baseline(
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema_version": SCHEMA_VERSION,
-        "captured_at": captured_at
-        or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "captured_at": captured_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "products": snapshot.to_json(),
     }
     with path.open("w", encoding="utf-8") as fh:
@@ -251,9 +242,7 @@ def diff_snapshots(baseline: Baseline, current: BaselineSnapshot) -> BaselineDif
             if c.known < b.known:
                 diff.count_regressions.append((pid, ver, "known", b.known, c.known))
             if c.addressed < b.addressed:
-                diff.count_regressions.append(
-                    (pid, ver, "addressed", b.addressed, c.addressed)
-                )
+                diff.count_regressions.append((pid, ver, "addressed", b.addressed, c.addressed))
 
             missing = sorted(set(b.bug_ids) - set(c.bug_ids))
             if missing:
@@ -291,14 +280,10 @@ def format_diff(diff: BaselineDiff) -> str:
     if diff.count_regressions:
         lines.append(f"Count regressions ({len(diff.count_regressions)}) ⚠:")
         for pid, ver, issue_type, b, c in diff.count_regressions:
-            lines.append(
-                f"  ! {pid} {ver} {issue_type}: {b} -> {c} (lost {b - c})"
-            )
+            lines.append(f"  ! {pid} {ver} {issue_type}: {b} -> {c} (lost {b - c})")
 
     if diff.missing_bug_ids:
-        lines.append(
-            f"Versions with missing bug ids ({len(diff.missing_bug_ids)}) ⚠:"
-        )
+        lines.append(f"Versions with missing bug ids ({len(diff.missing_bug_ids)}) ⚠:")
         for pid, ver, sample in diff.missing_bug_ids[:20]:
             sample_str = ", ".join(sample[:5])
             more = f" (+{len(sample) - 5} more)" if len(sample) > 5 else ""
@@ -315,7 +300,6 @@ def format_diff(diff: BaselineDiff) -> str:
 def _cli() -> int:
     """Minimal CLI for baseline refresh and diff operations."""
     import argparse
-    import sys
 
     parser = argparse.ArgumentParser(
         prog="bugdb.baseline",
@@ -327,22 +311,16 @@ def _cli() -> int:
         "refresh",
         help="Print a diff of current vs. baseline and optionally rewrite it.",
     )
-    refresh.add_argument(
-        "--data", required=True, type=Path, help="Path to assets/data.json"
-    )
+    refresh.add_argument("--data", required=True, type=Path, help="Path to assets/data.json")
     refresh.add_argument(
         "--baseline",
         required=True,
         type=Path,
         help="Path to the baseline JSON to write/compare against.",
     )
-    refresh.add_argument(
-        "--yes", action="store_true", help="Actually write the new baseline."
-    )
+    refresh.add_argument("--yes", action="store_true", help="Actually write the new baseline.")
 
-    diff_cmd = sub.add_parser(
-        "diff", help="Show diff between current data.json and baseline."
-    )
+    diff_cmd = sub.add_parser("diff", help="Show diff between current data.json and baseline.")
     diff_cmd.add_argument("--data", required=True, type=Path)
     diff_cmd.add_argument("--baseline", required=True, type=Path)
 

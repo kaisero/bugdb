@@ -2,8 +2,6 @@
 
 import asyncio
 import logging
-import re
-from typing import Optional
 
 from bugdb.models import Product
 
@@ -32,14 +30,20 @@ class GlobalProtectCrawler(BaseCrawler):
 
         # Known version patterns to check (newest first)
         candidate_versions = [
-            "6-3", "6-2", "6-1", "6-0",
-            "5-3", "5-2", "5-1", "5-0",
+            "6-3",
+            "6-2",
+            "6-1",
+            "6-0",
+            "5-3",
+            "5-2",
+            "5-1",
+            "5-0",
             "4-1",
         ]
 
         valid_versions = []
 
-        async def check_version(version: str) -> Optional[str]:
+        async def check_version(version: str) -> str | None:
             """Check if a version URL exists."""
             url = f"/globalprotect/{version}/globalprotect-app-release-notes"
             try:
@@ -70,8 +74,9 @@ class GlobalProtectCrawler(BaseCrawler):
         sorted_versions = sorted(
             valid_versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
         )
-        logger.debug("Discovered %d GlobalProtect versions: %s",
-                     len(sorted_versions), sorted_versions)
+        logger.debug(
+            "Discovered %d GlobalProtect versions: %s", len(sorted_versions), sorted_versions
+        )
         return sorted_versions
 
     async def discover_version_pages(self, major_version: str) -> list[VersionInfo]:
@@ -104,30 +109,28 @@ class GlobalProtectCrawler(BaseCrawler):
                         continue
 
                     # Find or create VersionInfo for this version
-                    vi = next(
-                        (v for v in version_infos if v.version == version), None
-                    )
+                    vi = next((v for v in version_infos if v.version == version), None)
                     if not vi:
-                        vi = VersionInfo(version=version, known_issues_urls=[], addressed_issues_urls=[])
+                        vi = VersionInfo(
+                            version=version, known_issues_urls=[], addressed_issues_urls=[]
+                        )
                         version_infos.append(vi)
 
                     # Normalize URL
                     if not href.startswith("/"):
                         href = f"/{href}"
                     if href.startswith("/content/techdocs/en_US"):
-                        href = href[len("/content/techdocs/en_US"):]
+                        href = href[len("/content/techdocs/en_US") :]
                     if href.endswith(".html"):
                         href = href[:-5]
 
                     # Classify by last path segment to avoid false matches
                     # (e.g., "known-issues-related-to-gp-app/addressed-issues")
                     last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
-                    if "addressed" in last_segment:
-                        if href not in vi.addressed_issues_urls:
-                            vi.addressed_issues_urls.append(href)
-                    elif "known" in last_segment:
-                        if href not in vi.known_issues_urls:
-                            vi.known_issues_urls.append(href)
+                    if "addressed" in last_segment and href not in vi.addressed_issues_urls:
+                        vi.addressed_issues_urls.append(href)
+                    elif "known" in last_segment and href not in vi.known_issues_urls:
+                        vi.known_issues_urls.append(href)
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
@@ -143,8 +146,8 @@ class GlobalProtectCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl GlobalProtect release notes.
 
@@ -175,9 +178,7 @@ class GlobalProtectCrawler(BaseCrawler):
             version_infos = await self.discover_version_pages(major_version)
 
             # Filter out skipped versions
-            version_infos = [
-                vi for vi in version_infos if vi.version not in skip_versions
-            ]
+            version_infos = [vi for vi in version_infos if vi.version not in skip_versions]
 
             if not version_infos:
                 self._log("  No versions to crawl (all skipped or none found)")
@@ -193,7 +194,7 @@ class GlobalProtectCrawler(BaseCrawler):
 
         # Retry failed fetches
         if all_failed_fetches:
-            recovered, still_failed = await self._retry_failed_fetches_sequentially(
+            _recovered, still_failed = await self._retry_failed_fetches_sequentially(
                 all_failed_fetches
             )
             all_failed_fetches = still_failed

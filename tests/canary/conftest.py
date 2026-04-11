@@ -15,8 +15,8 @@ from __future__ import annotations
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import pytest
 
@@ -51,9 +51,7 @@ def _probe_url(path: str) -> ProbeResult:
     last_error: str | None = None
     for attempt in range(MAX_ATTEMPTS):
         try:
-            req = urllib.request.Request(
-                url, headers={"User-Agent": "bugdb-canary/1.0"}
-            )
+            req = urllib.request.Request(url, headers={"User-Agent": "bugdb-canary/1.0"})
             with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
                 return ProbeResult(url=url, status=resp.status, error=None)
         except urllib.error.HTTPError as e:

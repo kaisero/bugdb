@@ -1,18 +1,16 @@
 """Tests for BugDB CLI commands."""
 
 import json
-from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 from typer.testing import CliRunner
 
 from bugdb.cli import app
 from bugdb.crawlers.models import FailedFetch, FetchResult
 from bugdb.models import (
     BugDatabase,
-    FetchReport,
     FailedFetchEntry,
+    FetchReport,
     Issue,
     Metadata,
     Product,
@@ -87,9 +85,7 @@ class TestBuildSite:
 
         # Then build site
         output_dir = tmp_path / "dist"
-        result = runner.invoke(
-            app, ["build-site-cmd", "-d", str(data_file), "-o", str(output_dir)]
-        )
+        result = runner.invoke(app, ["build-site-cmd", "-d", str(data_file), "-o", str(output_dir)])
 
         assert result.exit_code == 0
         assert (output_dir / "index.html").exists()
@@ -112,9 +108,7 @@ class TestBuildSite:
         data_file.write_text("not valid json")
 
         output_dir = tmp_path / "dist"
-        result = runner.invoke(
-            app, ["build-site-cmd", "-d", str(data_file), "-o", str(output_dir)]
-        )
+        result = runner.invoke(app, ["build-site-cmd", "-d", str(data_file), "-o", str(output_dir)])
 
         assert result.exit_code == 1
 
@@ -224,9 +218,7 @@ class TestFetchWithReport:
         mock_result = _make_fetch_result()
 
         with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
-            result = runner.invoke(
-                app, ["fetch", "panos", "-o", str(output_file), "--report"]
-            )
+            result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
         report_file = tmp_path / "data.report.json"
@@ -244,9 +236,7 @@ class TestFetchWithReport:
         mock_result = _make_fetch_result()
 
         with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
-            result = runner.invoke(
-                app, ["fetch", "panos", "-o", str(output_file), "--report"]
-            )
+            result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
         report = json.loads((tmp_path / "data.report.json").read_text())
@@ -275,9 +265,7 @@ class TestFetchWithReport:
         )
 
         with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
-            result = runner.invoke(
-                app, ["fetch", "panos", "-o", str(output_file), "--report"]
-            )
+            result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
         report = json.loads((tmp_path / "data.report.json").read_text())
@@ -292,9 +280,7 @@ class TestFetchWithReport:
         mock_result = _make_fetch_result()
 
         with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
-            result = runner.invoke(
-                app, ["fetch", "panos", "-o", str(output_file), "--report"]
-            )
+            result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
         report = json.loads((tmp_path / "data.report.json").read_text())
@@ -306,9 +292,7 @@ class TestFetchWithReport:
         mock_result = _make_fetch_result()
 
         with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
-            result = runner.invoke(
-                app, ["fetch", "panos", "-o", str(output_file)]
-            )
+            result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file)])
 
         assert result.exit_code == 0
         assert not (tmp_path / "data.report.json").exists()
@@ -319,9 +303,7 @@ class TestFetchWithReport:
         mock_result = _make_fetch_result()
 
         with patch("bugdb.crawler.crawl_panos", return_value=mock_result):
-            result = runner.invoke(
-                app, ["fetch", "panos", "-o", str(output_file), "--report"]
-            )
+            result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file), "--report"])
 
         assert result.exit_code == 0
         assert "Report:" in result.stdout
@@ -341,9 +323,7 @@ class TestFetchWithRetry:
                     versions=[
                         ProductVersion(
                             version="12.1.5",
-                            known_issues=[
-                                Issue(bug_id="PAN-1", description="Existing known")
-                            ],
+                            known_issues=[Issue(bug_id="PAN-1", description="Existing known")],
                         ),
                     ],
                 ),
@@ -371,9 +351,7 @@ class TestFetchWithRetry:
             ],
             failed_fetches=failed_fetches or [],
         )
-        path.write_text(
-            json.dumps(report.model_dump(mode="json"), indent=2, default=str)
-        )
+        path.write_text(json.dumps(report.model_dump(mode="json"), indent=2, default=str))
 
     def test_retry_refetches_failed_products(self, tmp_path):
         """Test that retry calls only crawlers for failed products."""
@@ -454,9 +432,7 @@ class TestFetchWithRetry:
         self._write_data_file(data_file)
         self._write_report(report_file, data_file, failed_fetches=[])
 
-        result = runner.invoke(
-            app, ["fetch", "--retry", str(report_file)]
-        )
+        result = runner.invoke(app, ["fetch", "--retry", str(report_file)])
 
         assert result.exit_code == 0
         assert "No failed fetches" in result.stdout
@@ -466,9 +442,7 @@ class TestFetchWithRetry:
         report_file = tmp_path / "report.json"
         report_file.write_text("{}")
 
-        result = runner.invoke(
-            app, ["fetch", "panos", "--retry", str(report_file)]
-        )
+        result = runner.invoke(app, ["fetch", "panos", "--retry", str(report_file)])
 
         assert result.exit_code == 1
         assert "cannot be combined with a product" in result.stdout
@@ -478,9 +452,7 @@ class TestFetchWithRetry:
         report_file = tmp_path / "report.json"
         report_file.write_text("{}")
 
-        result = runner.invoke(
-            app, ["fetch", "--retry", str(report_file), "--incremental"]
-        )
+        result = runner.invoke(app, ["fetch", "--retry", str(report_file), "--incremental"])
 
         assert result.exit_code == 1
         assert "cannot be combined with --incremental" in result.stdout
@@ -490,18 +462,14 @@ class TestFetchWithRetry:
         report_file = tmp_path / "report.json"
         report_file.write_text("{}")
 
-        result = runner.invoke(
-            app, ["fetch", "--retry", str(report_file), "--version", "12-1"]
-        )
+        result = runner.invoke(app, ["fetch", "--retry", str(report_file), "--version", "12-1"])
 
         assert result.exit_code == 1
         assert "cannot be combined with --version" in result.stdout
 
     def test_retry_missing_report_file(self, tmp_path):
         """Test that --retry fails with missing report file."""
-        result = runner.invoke(
-            app, ["fetch", "--retry", str(tmp_path / "nonexistent.json")]
-        )
+        result = runner.invoke(app, ["fetch", "--retry", str(tmp_path / "nonexistent.json")])
 
         assert result.exit_code == 1
         assert "not found" in result.stdout
@@ -523,9 +491,7 @@ class TestFetchWithRetry:
             ],
         )
 
-        result = runner.invoke(
-            app, ["fetch", "--retry", str(report_file), "-o", str(missing_data)]
-        )
+        result = runner.invoke(app, ["fetch", "--retry", str(report_file), "-o", str(missing_data)])
 
         assert result.exit_code == 1
         assert "not found" in result.stdout

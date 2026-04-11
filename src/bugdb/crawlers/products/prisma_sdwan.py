@@ -2,20 +2,11 @@
 
 import asyncio
 import logging
-import re
-from typing import Optional
 
-from bugdb.models import Issue, Product, ProductVersion
+from bugdb.models import Product
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, VersionInfo
-from ..utils import (
-    extract_affected_components,
-    extract_bug_id_and_fix_info,
-    extract_cell_text_with_tables,
-    extract_fix_info_from_description,
-    extract_workaround,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -35,13 +26,24 @@ class PrismaSDWANCrawler(BaseCrawler):
         logger.debug("Discovering Prisma SD-WAN versions by probing URLs")
 
         candidate_versions = [
-            "6-6", "6-5", "6-4", "6-3", "6-2", "6-1", "6-0",
-            "5-6", "5-5", "5-4", "5-3", "5-2", "5-1",
+            "6-6",
+            "6-5",
+            "6-4",
+            "6-3",
+            "6-2",
+            "6-1",
+            "6-0",
+            "5-6",
+            "5-5",
+            "5-4",
+            "5-3",
+            "5-2",
+            "5-1",
         ]
 
         valid_versions = []
 
-        async def check_version(version: str) -> Optional[str]:
+        async def check_version(version: str) -> str | None:
             """Check if a version URL exists."""
             url = f"/prisma-sd-wan/release-notes/{version}"
             try:
@@ -68,8 +70,9 @@ class PrismaSDWANCrawler(BaseCrawler):
         sorted_versions = sorted(
             valid_versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
         )
-        logger.debug("Discovered %d Prisma SD-WAN versions: %s",
-                     len(sorted_versions), sorted_versions)
+        logger.debug(
+            "Discovered %d Prisma SD-WAN versions: %s", len(sorted_versions), sorted_versions
+        )
         return sorted_versions
 
     async def discover_version_pages(self, major_version: str) -> list[VersionInfo]:
@@ -99,28 +102,28 @@ class PrismaSDWANCrawler(BaseCrawler):
                     if not version:
                         continue
 
-                    vi = next(
-                        (v for v in version_infos if v.version == version), None
-                    )
+                    vi = next((v for v in version_infos if v.version == version), None)
                     if not vi:
-                        vi = VersionInfo(version=version, known_issues_urls=[], addressed_issues_urls=[])
+                        vi = VersionInfo(
+                            version=version, known_issues_urls=[], addressed_issues_urls=[]
+                        )
                         version_infos.append(vi)
 
                     if not href.startswith("/"):
                         href = f"/{href}"
                     if href.startswith("/content/techdocs/en_US"):
-                        href = href[len("/content/techdocs/en_US"):]
+                        href = href[len("/content/techdocs/en_US") :]
                     if href.endswith(".html"):
                         href = href[:-5]
 
                     # Classify by last path segment to avoid false matches
                     last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
-                    if "addressed" in last_segment or "fixed" in last_segment:
-                        if href not in vi.addressed_issues_urls:
-                            vi.addressed_issues_urls.append(href)
-                    elif "known" in last_segment:
-                        if href not in vi.known_issues_urls:
-                            vi.known_issues_urls.append(href)
+                    if (
+                        "addressed" in last_segment or "fixed" in last_segment
+                    ) and href not in vi.addressed_issues_urls:
+                        vi.addressed_issues_urls.append(href)
+                    elif "known" in last_segment and href not in vi.known_issues_urls:
+                        vi.known_issues_urls.append(href)
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
@@ -135,8 +138,8 @@ class PrismaSDWANCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Prisma SD-WAN release notes.
 
@@ -162,9 +165,7 @@ class PrismaSDWANCrawler(BaseCrawler):
             self._log(f"Crawling Prisma SD-WAN {version_str}...")
 
             version_infos = await self.discover_version_pages(major_version)
-            version_infos = [
-                vi for vi in version_infos if vi.version not in skip_versions
-            ]
+            version_infos = [vi for vi in version_infos if vi.version not in skip_versions]
 
             if not version_infos:
                 self._log("  No versions to crawl (all skipped or none found)")
@@ -178,7 +179,7 @@ class PrismaSDWANCrawler(BaseCrawler):
             all_failed_fetches.extend(failed_fetches)
 
         if all_failed_fetches:
-            recovered, still_failed = await self._retry_failed_fetches_sequentially(
+            _recovered, still_failed = await self._retry_failed_fetches_sequentially(
                 all_failed_fetches
             )
             all_failed_fetches = still_failed

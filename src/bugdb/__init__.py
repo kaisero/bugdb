@@ -11,6 +11,7 @@ def _read_version() -> str:
     # Fallback for installed package
     try:
         from importlib.metadata import version
+
         return version("bugdb")
     except Exception:
         return "0.0.0"

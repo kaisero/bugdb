@@ -1,7 +1,6 @@
 """Data classes for the crawler module."""
 
 from dataclasses import dataclass
-from typing import Optional
 
 from bugdb.models import Product, ProductVersion
 
@@ -22,8 +21,8 @@ class FailedFetch:
     url: str
     error: str
     product: str
-    version: Optional[str] = None
-    issue_type: Optional[str] = None  # "known" or "addressed"
+    version: str | None = None
+    issue_type: str | None = None  # "known" or "addressed"
 
 
 @dataclass
@@ -47,6 +46,7 @@ class FetchResult:
     """Result of a complete fetch operation (module-level)."""
 
     from bugdb.models import BugDatabase
+
     database: BugDatabase
     failed_fetches: list[FailedFetch]
 
@@ -64,7 +64,9 @@ class PluginConfig:
     product_name: str  # e.g., "VM-Series Plugin", "Panorama Plugin for AWS"
 
     # URL path to the main plugin page (relative to docs.paloaltonetworks.com)
-    base_url: str  # e.g., "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-aws"
+    base_url: (
+        str  # e.g., "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-aws"
+    )
 
     # Keywords to identify version links (used for version extraction from URLs)
     version_link_patterns: list[str]  # e.g., ["aws-plugin-", "panorama-plugin-for-aws-"]

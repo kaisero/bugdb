@@ -74,9 +74,7 @@ class TestTopLevelStructure:
         # Accept both 'Z' and offset forms.
         datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
-    def test_metadata_generated_at_is_not_wildly_in_future(
-        self, data_json: dict[str, Any]
-    ):
+    def test_metadata_generated_at_is_not_wildly_in_future(self, data_json: dict[str, Any]):
         """Guards against clock-skew or malformed timestamps.
 
         Freshness (within N days) is checked in the nightly pipeline only
@@ -102,19 +100,11 @@ class TestProducts:
         assert not offenders, f"{len(offenders)} products without an id"
 
     def test_every_product_has_name(self, data_json: dict[str, Any]):
-        offenders = [
-            p["id"] for p in _iter_products(data_json) if not p.get("name")
-        ]
+        offenders = [p["id"] for p in _iter_products(data_json) if not p.get("name")]
         assert not offenders, f"Products missing 'name': {offenders}"
 
-    def test_every_product_has_at_least_one_version(
-        self, data_json: dict[str, Any]
-    ):
-        offenders = [
-            p["id"]
-            for p in _iter_products(data_json)
-            if not p.get("versions")
-        ]
+    def test_every_product_has_at_least_one_version(self, data_json: dict[str, Any]):
+        offenders = [p["id"] for p in _iter_products(data_json) if not p.get("versions")]
         assert not offenders, (
             f"Products with zero versions: {offenders}. A product with no "
             f"versions is almost always a crawler silently giving up."
@@ -157,8 +147,7 @@ class TestVersions:
             if not v.get("version")
         ]
         assert not offenders, (
-            f"{len(offenders)} versions without a 'version' string "
-            f"(products: {set(offenders)})"
+            f"{len(offenders)} versions without a 'version' string (products: {set(offenders)})"
         )
 
     def test_every_version_string_matches_expected_format(self, data_json):
@@ -190,12 +179,9 @@ class TestVersions:
             "cloud-ngfw-azure",
             "adem",
         }
-        unexpected = [
-            (pid, ver) for pid, ver in offenders if pid not in tolerated_products
-        ]
+        unexpected = [(pid, ver) for pid, ver in offenders if pid not in tolerated_products]
         assert not unexpected, (
-            f"Version strings failing regex {VERSION_RE.pattern}: "
-            f"{unexpected[:10]}"
+            f"Version strings failing regex {VERSION_RE.pattern}: {unexpected[:10]}"
         )
 
     def test_no_version_has_both_sides_empty(self, data_json):
@@ -226,17 +212,14 @@ class TestIssues:
         offenders: list[tuple[str, str, str]] = []
         for pid, v in _iter_product_versions(data_json):
             ver = v.get("version", "")
-            for issue in (v.get("known_issues") or []) + (
-                v.get("addressed_issues") or []
-            ):
+            for issue in (v.get("known_issues") or []) + (v.get("addressed_issues") or []):
                 bug_id = (issue.get("bug_id") or "").strip()
                 if not bug_id:
                     desc = (issue.get("description") or "")[:40]
                     offenders.append((pid, ver, desc))
 
         assert not offenders, (
-            f"{len(offenders)} issues without a bug_id. First 10: "
-            f"{offenders[:10]}"
+            f"{len(offenders)} issues without a bug_id. First 10: {offenders[:10]}"
         )
 
     # A tiny number of issues have empty descriptions because the
@@ -245,24 +228,19 @@ class TestIssues:
     # automatically once the crawler or upstream fixes them.
     @pytest.mark.xfail(
         reason="Known parser edge cases with empty description cells. "
-               "Tracked as data-quality debt.",
+        "Tracked as data-quality debt.",
         strict=False,
     )
     def test_every_issue_has_a_description(self, data_json):
         offenders: list[tuple[str, str, str]] = []
         for pid, v in _iter_product_versions(data_json):
             ver = v.get("version", "")
-            for issue in (v.get("known_issues") or []) + (
-                v.get("addressed_issues") or []
-            ):
+            for issue in (v.get("known_issues") or []) + (v.get("addressed_issues") or []):
                 if not (issue.get("description") or "").strip():
-                    offenders.append(
-                        (pid, ver, issue.get("bug_id", "NO_ID"))
-                    )
+                    offenders.append((pid, ver, issue.get("bug_id", "NO_ID")))
 
         assert not offenders, (
-            f"{len(offenders)} issues without a description. First 10: "
-            f"{offenders[:10]}"
+            f"{len(offenders)} issues without a description. First 10: {offenders[:10]}"
         )
 
     # cortex-xdr historically emits bug ids with trailing platform
@@ -270,7 +248,7 @@ class TestIssues:
     # xfail strict=False so a parser cleanup auto-flips this to passing.
     @pytest.mark.xfail(
         reason="cortex-xdr bug ids carry trailing platform tags "
-               "(CPATR-NNNNLinux). Other products are strict.",
+        "(CPATR-NNNNLinux). Other products are strict.",
         strict=False,
     )
     def test_bug_ids_match_expected_prefix_pattern(self, data_json):
@@ -280,9 +258,7 @@ class TestIssues:
         offenders: list[tuple[str, str, str]] = []
         for pid, v in _iter_product_versions(data_json):
             ver = v.get("version", "")
-            for issue in (v.get("known_issues") or []) + (
-                v.get("addressed_issues") or []
-            ):
+            for issue in (v.get("known_issues") or []) + (v.get("addressed_issues") or []):
                 bug_id = (issue.get("bug_id") or "").strip()
                 if bug_id and not BUG_ID_RE.match(bug_id):
                     offenders.append((pid, ver, bug_id))

@@ -10,7 +10,6 @@ from bs4 import BeautifulSoup
 
 from bugdb.models import BugDatabase, Issue, Metadata, Product, ProductVersion
 
-
 # Path to fixtures directory
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -27,8 +26,8 @@ class MockPage:
         """
         self.fixtures_dir = fixtures_dir
         self.url_to_file_mapping = url_to_file_mapping
-        self._current_content: Optional[str] = None
-        self._current_url: Optional[str] = None
+        self._current_content: str | None = None
+        self._current_url: str | None = None
 
     async def goto(self, url: str, wait_until: str = "networkidle") -> None:
         """Simulate navigation to a URL."""
@@ -41,7 +40,10 @@ class MockPage:
 
     async def content(self) -> str:
         """Return the current page content."""
-        return self._current_content or "<html><head><title>Not Found</title></head><body>404</body></html>"
+        return (
+            self._current_content
+            or "<html><head><title>Not Found</title></head><body>404</body></html>"
+        )
 
     async def close(self) -> None:
         """Simulate closing the page."""

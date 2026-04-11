@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated
 
 import typer
 from pydantic import ValidationError
@@ -13,7 +13,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from bugdb import __version__
 from bugdb.models import BugDatabase
 from bugdb.sample_data import generate_sample_data
-from bugdb.site_builder import build_site, build_site_from_database
+from bugdb.site_builder import build_site
 
 app = typer.Typer(
     name="bugdb",
@@ -33,7 +33,7 @@ def version_callback(value: bool) -> None:
 @app.callback()
 def main(
     version: Annotated[
-        Optional[bool],
+        bool | None,
         typer.Option(
             "--version",
             "-v",
@@ -69,9 +69,7 @@ def generate_sample(
     """Generate sample bug database JSON file."""
     # Check if file exists
     if output.exists() and not force:
-        console.print(
-            f"[red]Error:[/red] File {output} already exists. Use --force to overwrite."
-        )
+        console.print(f"[red]Error:[/red] File {output} already exists. Use --force to overwrite.")
         raise typer.Exit(1)
 
     with Progress(
@@ -97,16 +95,8 @@ def generate_sample(
             )
 
     # Count issues
-    total_known = sum(
-        len(v.known_issues)
-        for p in database.products
-        for v in p.versions
-    )
-    total_addressed = sum(
-        len(v.addressed_issues)
-        for p in database.products
-        for v in p.versions
-    )
+    total_known = sum(len(v.known_issues) for p in database.products for v in p.versions)
+    total_addressed = sum(len(v.addressed_issues) for p in database.products for v in p.versions)
 
     console.print(
         Panel(
@@ -144,9 +134,7 @@ def build_site_cmd(
     # Check if data file exists
     if not data.exists():
         console.print(f"[red]Error:[/red] Data file {data} not found.")
-        console.print(
-            "[dim]Hint: Run 'bugdb generate-sample' to create sample data.[/dim]"
-        )
+        console.print("[dim]Hint: Run 'bugdb generate-sample' to create sample data.[/dim]")
         raise typer.Exit(1)
 
     with Progress(
@@ -154,18 +142,18 @@ def build_site_cmd(
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
-        task = progress.add_task("Building static site...", total=None)
+        progress.add_task("Building static site...", total=None)
 
         try:
             build_site(data, output)
         except ValidationError as e:
             progress.stop()
             console.print(f"[red]Error:[/red] Invalid data file: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         except Exception as e:
             progress.stop()
             console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     console.print(
         Panel(
@@ -199,7 +187,7 @@ def validate(
         progress.add_task("Validating schema...", total=None)
 
         try:
-            with open(data_file, "r", encoding="utf-8") as f:
+            with open(data_file, encoding="utf-8") as f:
                 data = json.load(f)
 
             database = BugDatabase.model_validate(data)
@@ -207,28 +195,20 @@ def validate(
         except json.JSONDecodeError as e:
             progress.stop()
             console.print(f"[red]Error:[/red] Invalid JSON: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         except ValidationError as e:
             progress.stop()
-            console.print(f"[red]Error:[/red] Schema validation failed:")
+            console.print("[red]Error:[/red] Schema validation failed:")
             for error in e.errors():
                 loc = " -> ".join(str(x) for x in error["loc"])
                 console.print(f"  • {loc}: {error['msg']}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     # Count statistics
     total_products = len(database.products)
     total_versions = sum(len(p.versions) for p in database.products)
-    total_known = sum(
-        len(v.known_issues)
-        for p in database.products
-        for v in p.versions
-    )
-    total_addressed = sum(
-        len(v.addressed_issues)
-        for p in database.products
-        for v in p.versions
-    )
+    total_known = sum(len(v.known_issues) for p in database.products for v in p.versions)
+    total_addressed = sum(len(v.addressed_issues) for p in database.products for v in p.versions)
 
     console.print(
         Panel(
@@ -246,15 +226,20 @@ def validate(
 @app.command()
 def fetch(
     product: Annotated[
-        Optional[str],
-        typer.Argument(help="Product to fetch (e.g., 'globalprotect'). If not specified, fetches all products."),
+        str | None,
+        typer.Argument(
+            help="Product to fetch (e.g., 'globalprotect'). If not specified, fetches all products."
+        ),
     ] = None,
     version: Annotated[
         str,
         typer.Option(
             "--version",
             "-v",
-            help="Major version(s) to fetch. Use 'all' for all versions, or comma-separated list (e.g., '6-2,6-1').",
+            help=(
+                "Major version(s) to fetch. Use 'all' for all versions, "
+                "or comma-separated list (e.g., '6-2,6-1')."
+            ),
         ),
     ] = "all",
     output: Annotated[
@@ -305,7 +290,7 @@ def fetch(
         ),
     ] = False,
     retry: Annotated[
-        Optional[Path],
+        Path | None,
         typer.Option(
             "--retry",
             help="Path to a previously generated report JSON. Re-fetches only failed products.",
@@ -347,11 +332,15 @@ def fetch(
         merge_databases,
     )
     from bugdb.models import (
-        BugDatabase, FetchReport, FailedFetchEntry, Metadata, ProductStats,
+        BugDatabase,
+        FailedFetchEntry,
+        FetchReport,
+        Metadata,
+        ProductStats,
     )
 
     # Handle incremental mode
-    existing_database: Optional[BugDatabase] = None
+    existing_database: BugDatabase | None = None
     existing_versions: dict[str, set[str]] = {}
     retry_mode = retry is not None
 
@@ -363,17 +352,18 @@ def fetch(
             )
         else:
             try:
-                with open(output, "r", encoding="utf-8") as f:
+                with open(output, encoding="utf-8") as f:
                     data = json.load(f)
                 existing_database = BugDatabase.model_validate(data)
                 existing_versions = get_existing_versions(existing_database)
                 total_existing = sum(len(v) for v in existing_versions.values())
                 console.print(
-                    f"[dim]Incremental mode: Found {total_existing} existing versions in {output}[/dim]"
+                    f"[dim]Incremental mode: Found {total_existing} existing versions "
+                    f"in {output}[/dim]"
                 )
             except (json.JSONDecodeError, ValidationError) as e:
                 console.print(f"[red]Error:[/red] Failed to load existing data: {e}")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from e
     elif not retry_mode and output.exists() and not force:
         console.print(
             f"[red]Error:[/red] File {output} already exists. "
@@ -414,19 +404,13 @@ def fetch(
     # Handle retry mode
     if retry_mode:
         if product is not None:
-            console.print(
-                "[red]Error:[/red] --retry cannot be combined with a product argument."
-            )
+            console.print("[red]Error:[/red] --retry cannot be combined with a product argument.")
             raise typer.Exit(1)
         if incremental:
-            console.print(
-                "[red]Error:[/red] --retry cannot be combined with --incremental."
-            )
+            console.print("[red]Error:[/red] --retry cannot be combined with --incremental.")
             raise typer.Exit(1)
         if version != "all":
-            console.print(
-                "[red]Error:[/red] --retry cannot be combined with --version."
-            )
+            console.print("[red]Error:[/red] --retry cannot be combined with --version.")
             raise typer.Exit(1)
 
         if not retry.exists():
@@ -434,28 +418,22 @@ def fetch(
             raise typer.Exit(1)
 
         try:
-            with open(retry, "r", encoding="utf-8") as f:
+            with open(retry, encoding="utf-8") as f:
                 report_data = json.load(f)
             prev_report = FetchReport.model_validate(report_data)
         except (json.JSONDecodeError, ValidationError) as e:
             console.print(f"[red]Error:[/red] Failed to load report: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
         if not prev_report.failed_fetches:
-            console.print(
-                "[green]No failed fetches in the report. Nothing to retry.[/green]"
-            )
+            console.print("[green]No failed fetches in the report. Nothing to retry.[/green]")
             raise typer.Exit(0)
 
         retry_products = {f.product for f in prev_report.failed_fetches}
-        products_to_fetch = [
-            p for p in retry_products if p in supported_products
-        ]
+        products_to_fetch = [p for p in retry_products if p in supported_products]
 
         if not products_to_fetch:
-            console.print(
-                "[yellow]Warning:[/yellow] No retryable products found in the report."
-            )
+            console.print("[yellow]Warning:[/yellow] No retryable products found in the report.")
             raise typer.Exit(1)
 
         # Use data_file from report unless --output was explicitly set
@@ -465,18 +443,14 @@ def fetch(
 
         if output.exists():
             try:
-                with open(output, "r", encoding="utf-8") as f:
+                with open(output, encoding="utf-8") as f:
                     data = json.load(f)
                 existing_database = BugDatabase.model_validate(data)
             except (json.JSONDecodeError, ValidationError) as e:
-                console.print(
-                    f"[red]Error:[/red] Failed to load existing data for retry: {e}"
-                )
-                raise typer.Exit(1)
+                console.print(f"[red]Error:[/red] Failed to load existing data for retry: {e}")
+                raise typer.Exit(1) from e
         else:
-            console.print(
-                f"[red]Error:[/red] Data file {output} not found for retry merge."
-            )
+            console.print(f"[red]Error:[/red] Data file {output} not found for retry merge.")
             raise typer.Exit(1)
 
         major_versions = None
@@ -530,7 +504,10 @@ def fetch(
                 if skip_versions:
                     progress.update(
                         task,
-                        description=f"Fetching {prod_name} (skipping {len(skip_versions)} existing versions)..."
+                        description=(
+                            f"Fetching {prod_name} "
+                            f"(skipping {len(skip_versions)} existing versions)..."
+                        ),
                     )
 
                 result = crawler_func(
@@ -574,20 +551,12 @@ def fetch(
         except Exception as e:
             progress.stop()
             console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     # Count issues
     total_versions = sum(len(p.versions) for p in database.products)
-    total_known = sum(
-        len(v.known_issues)
-        for p in database.products
-        for v in p.versions
-    )
-    total_addressed = sum(
-        len(v.addressed_issues)
-        for p in database.products
-        for v in p.versions
-    )
+    total_known = sum(len(v.known_issues) for p in database.products for v in p.versions)
+    total_addressed = sum(len(v.addressed_issues) for p in database.products for v in p.versions)
 
     # Write report if requested
     report_path = None
@@ -595,16 +564,16 @@ def fetch(
         product_stats = []
         for p in database.products:
             failed_for_product = [f for f in all_failed_fetches if f.product == p.id]
-            product_stats.append(ProductStats(
-                product_id=p.id,
-                product_name=p.name,
-                versions_fetched=len(p.versions),
-                known_issues_count=sum(len(v.known_issues) for v in p.versions),
-                addressed_issues_count=sum(
-                    len(v.addressed_issues) for v in p.versions
-                ),
-                failed_fetch_count=len(failed_for_product),
-            ))
+            product_stats.append(
+                ProductStats(
+                    product_id=p.id,
+                    product_name=p.name,
+                    versions_fetched=len(p.versions),
+                    known_issues_count=sum(len(v.known_issues) for v in p.versions),
+                    addressed_issues_count=sum(len(v.addressed_issues) for v in p.versions),
+                    failed_fetch_count=len(failed_for_product),
+                )
+            )
 
         fetch_report = FetchReport(
             generated_at=datetime.now(timezone.utc),
@@ -714,9 +683,7 @@ def generate_release_notes(
 
     # Check if file exists
     if output.exists() and not force:
-        console.print(
-            f"[red]Error:[/red] File {output} already exists. Use --force to overwrite."
-        )
+        console.print(f"[red]Error:[/red] File {output} already exists. Use --force to overwrite.")
         raise typer.Exit(1)
 
     with Progress(

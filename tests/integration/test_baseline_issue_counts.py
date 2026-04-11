@@ -53,9 +53,7 @@ def test_baseline_issue_count_non_decreasing(
     # Skip if prior tests already caught the missing product/version.
     product = current_snapshot.products.get(product_id)
     if product is None or version not in product.versions:
-        pytest.skip(
-            f"{product_id} {version} already missing (see other tests)"
-        )
+        pytest.skip(f"{product_id} {version} already missing (see other tests)")
 
     baseline_fp = _baseline_fingerprint_for(baseline_pvt)
     current_fp = product.versions[version]

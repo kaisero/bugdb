@@ -75,8 +75,7 @@ def data_json(data_path: Path) -> dict[str, Any]:
     """Load assets/data.json exactly once per session."""
     if not data_path.exists():
         pytest.fail(
-            f"Data file not found: {data_path}. "
-            f"Run `uv run bugdb fetch` first or pass --data-path."
+            f"Data file not found: {data_path}. Run `uv run bugdb fetch` first or pass --data-path."
         )
     with data_path.open("r", encoding="utf-8") as fh:
         return json.load(fh)
@@ -128,9 +127,7 @@ def baseline_product_version_pairs(baseline: Baseline) -> list[tuple[str, str]]:
     )
 
 
-def pytest_terminal_summary(
-    terminalreporter: Any, exitstatus: int, config: pytest.Config
-) -> None:
+def pytest_terminal_summary(terminalreporter: Any, exitstatus: int, config: pytest.Config) -> None:
     """Print a friendly banner if the baseline was just refreshed."""
     if getattr(config, "_bugdb_baseline_refreshed", False):
         terminalreporter.write_sep("=", "BASELINE REFRESHED")

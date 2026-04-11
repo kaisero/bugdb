@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import pytest
 
-from bugdb.crawlers.products.panos import PANOSCrawler
-
 pytestmark = pytest.mark.canary
 
 
@@ -86,9 +84,7 @@ def test_known_panos_major_version_is_reachable(major_version: str, probe):
     sorted(SPECULATIVE_UPSTREAM_PANOS_MAJORS),
     ids=sorted(SPECULATIVE_UPSTREAM_PANOS_MAJORS),
 )
-def test_speculative_panos_major_version_is_not_yet_released(
-    major_version: str, probe
-):
+def test_speculative_panos_major_version_is_not_yet_released(major_version: str, probe):
     """Speculative majors must NOT yet exist. This is the canary signal.
 
     If ``13-0`` suddenly 200s, it means Palo Alto shipped PAN-OS 13.0 and
@@ -99,9 +95,7 @@ def test_speculative_panos_major_version_is_not_yet_released(
     legacy = probe(f"/pan-os/{major_version}/pan-os-release-notes")
 
     if ngfw.was_network_error and legacy.was_network_error:
-        pytest.skip(
-            f"Both probes failed with network errors. Re-run later."
-        )
+        pytest.skip("Both probes failed with network errors. Re-run later.")
 
     # If both are 404 → the major doesn't exist yet → canary passes.
     if not ngfw.exists and not legacy.exists:

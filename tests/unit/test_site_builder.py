@@ -1,7 +1,6 @@
 """Tests for BugDB site builder."""
 
 import json
-from pathlib import Path
 
 import pytest
 

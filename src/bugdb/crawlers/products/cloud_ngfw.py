@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from typing import Optional
 
 from bugdb.models import Product, ProductVersion
 
@@ -24,8 +23,8 @@ class CloudNGFWAzureCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Cloud NGFW for Azure release notes.
 
@@ -39,7 +38,9 @@ class CloudNGFWAzureCrawler(BaseCrawler):
         failed_fetches: list[FailedFetch] = []
 
         known_issues_url = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
-        addressed_issues_url = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
+        addressed_issues_url = (
+            "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
+        )
 
         # Fetch both pages in parallel
         fetch_tasks = [
@@ -60,12 +61,14 @@ class CloudNGFWAzureCrawler(BaseCrawler):
             self._log(f"  Found {len(known_issues)} known issues")
         else:
             self._log(f"  Error fetching known issues: {results[0]}")
-            failed_fetches.append(FailedFetch(
-                url=known_issues_url,
-                error=str(results[0]),
-                product=self.product_id,
-                issue_type="known",
-            ))
+            failed_fetches.append(
+                FailedFetch(
+                    url=known_issues_url,
+                    error=str(results[0]),
+                    product=self.product_id,
+                    issue_type="known",
+                )
+            )
 
         # Parse addressed issues
         if not isinstance(results[1], Exception):
@@ -76,18 +79,18 @@ class CloudNGFWAzureCrawler(BaseCrawler):
             self._log(f"  Found {len(addressed_issues)} addressed issues")
         else:
             self._log(f"  Error fetching addressed issues: {results[1]}")
-            failed_fetches.append(FailedFetch(
-                url=addressed_issues_url,
-                error=str(results[1]),
-                product=self.product_id,
-                issue_type="addressed",
-            ))
+            failed_fetches.append(
+                FailedFetch(
+                    url=addressed_issues_url,
+                    error=str(results[1]),
+                    product=self.product_id,
+                    issue_type="addressed",
+                )
+            )
 
         # Retry failed fetches
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         # Deduplicate
@@ -97,11 +100,13 @@ class CloudNGFWAzureCrawler(BaseCrawler):
         # Create single "SaaS" version
         versions = []
         if known_issues or addressed_issues:
-            versions.append(ProductVersion(
-                version="SaaS",
-                known_issues=known_issues,
-                addressed_issues=addressed_issues,
-            ))
+            versions.append(
+                ProductVersion(
+                    version="SaaS",
+                    known_issues=known_issues,
+                    addressed_issues=addressed_issues,
+                )
+            )
 
         return CrawlResult(
             product=Product(
@@ -125,8 +130,8 @@ class CloudNGFWAWSCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Cloud NGFW for AWS release notes.
 
@@ -152,18 +157,18 @@ class CloudNGFWAWSCrawler(BaseCrawler):
             self._log(f"  Found {len(known_issues)} known issues")
         except Exception as e:
             self._log(f"  Error fetching known issues: {e}")
-            failed_fetches.append(FailedFetch(
-                url=known_issues_url,
-                error=str(e),
-                product=self.product_id,
-                issue_type="known",
-            ))
+            failed_fetches.append(
+                FailedFetch(
+                    url=known_issues_url,
+                    error=str(e),
+                    product=self.product_id,
+                    issue_type="known",
+                )
+            )
 
         # Retry failed fetches
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         # Deduplicate
@@ -172,11 +177,13 @@ class CloudNGFWAWSCrawler(BaseCrawler):
         # Create single "SaaS" version
         versions = []
         if known_issues:
-            versions.append(ProductVersion(
-                version="SaaS",
-                known_issues=known_issues,
-                addressed_issues=[],
-            ))
+            versions.append(
+                ProductVersion(
+                    version="SaaS",
+                    known_issues=known_issues,
+                    addressed_issues=[],
+                )
+            )
 
         return CrawlResult(
             product=Product(

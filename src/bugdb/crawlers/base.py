@@ -3,18 +3,16 @@
 import asyncio
 import logging
 import re
-from typing import Optional
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Page, Browser
+from playwright.async_api import Browser, Page, async_playwright
 
 from bugdb.models import Issue, ProductVersion
 
-from .models import FailedFetch, VersionCrawlResult, VersionInfo, CrawlResult
+from .models import FailedFetch, VersionCrawlResult, VersionInfo
 from .utils import (
     BASE_URL,
-    CORTEX_BASE_URL,
     configure_logging,
     extract_affected_components,
     extract_bug_id_and_fix_info,
@@ -67,12 +65,12 @@ class BaseCrawler:
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self._playwright = None
-        self._browser: Optional[Browser] = None
-        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._browser: Browser | None = None
+        self._semaphore: asyncio.Semaphore | None = None
 
         # Global backoff state - shared across all concurrent fetches
         self._global_backoff_until: float = 0.0
-        self._backoff_lock: Optional[asyncio.Lock] = None
+        self._backoff_lock: asyncio.Lock | None = None
 
         # Configure logging if debug is enabled
         if debug:
@@ -128,12 +126,8 @@ class BaseCrawler:
             now = time.monotonic()
             if self._global_backoff_until > now:
                 wait_time = self._global_backoff_until - now
-                self._log(
-                    f"  [Backoff] Waiting {wait_time:.1f}s for network recovery..."
-                )
-                logger.info(
-                    "Global backoff active, waiting %.1f seconds", wait_time
-                )
+                self._log(f"  [Backoff] Waiting {wait_time:.1f}s for network recovery...")
+                logger.info("Global backoff active, waiting %.1f seconds", wait_time)
 
         # Wait outside the lock so other tasks can also check and wait
         now = time.monotonic()
@@ -167,9 +161,7 @@ class BaseCrawler:
         """Create a new browser page."""
         return await self._browser.new_page()
 
-    async def _fetch_page(
-        self, page: Page, url: str, wait_time: int = 3000
-    ) -> BeautifulSoup:
+    async def _fetch_page(self, page: Page, url: str, wait_time: int = 3000) -> BeautifulSoup:
         """Fetch a page and return parsed HTML.
 
         Args:
@@ -188,9 +180,7 @@ class BaseCrawler:
         logger.debug("Page fetched successfully: %s (%d bytes)", full_url, len(content))
         return BeautifulSoup(content, "lxml")
 
-    async def _fetch_page_with_semaphore(
-        self, url: str, wait_time: int = 3000
-    ) -> BeautifulSoup:
+    async def _fetch_page_with_semaphore(self, url: str, wait_time: int = 3000) -> BeautifulSoup:
         """Fetch a page with concurrency control and retry logic.
 
         Creates a new page, fetches the URL, and closes the page.
@@ -231,17 +221,18 @@ class BaseCrawler:
 
                     logger.warning(
                         "Fetch failed for %s (attempt %d/%d): %s",
-                        url, attempt + 1, self.max_retries, e
+                        url,
+                        attempt + 1,
+                        self.max_retries,
+                        e,
                     )
-                    self._log(
-                        f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}"
-                    )
+                    self._log(f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}")
                 finally:
                     await page.close()
 
             # Exponential backoff before retry (in addition to global backoff)
             if attempt < self.max_retries - 1:
-                delay = self.retry_delay * (2 ** attempt)
+                delay = self.retry_delay * (2**attempt)
                 logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
                 await asyncio.sleep(delay)
 
@@ -288,16 +279,17 @@ class BaseCrawler:
 
                     logger.warning(
                         "Fetch failed for %s (attempt %d/%d): %s",
-                        url, attempt + 1, self.max_retries, e
+                        url,
+                        attempt + 1,
+                        self.max_retries,
+                        e,
                     )
-                    self._log(
-                        f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}"
-                    )
+                    self._log(f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}")
                 finally:
                     await page.close()
 
             if attempt < self.max_retries - 1:
-                delay = self.retry_delay * (2 ** attempt)
+                delay = self.retry_delay * (2**attempt)
                 logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
                 await asyncio.sleep(delay)
 
@@ -350,10 +342,10 @@ class BaseCrawler:
         <html>
         <body>
         <div class="content">
-        {''.join(elements_html)}
+        {"".join(elements_html)}
         </div>
         <div class="links">
-        {''.join(links_html)}
+        {"".join(links_html)}
         </div>
         </body>
         </html>
@@ -373,7 +365,7 @@ class BaseCrawler:
         """
         return version_sort_key(version)
 
-    def _extract_version_from_text(self, text: str) -> Optional[str]:
+    def _extract_version_from_text(self, text: str) -> str | None:
         """Extract version number from text.
 
         Args:
@@ -393,7 +385,7 @@ class BaseCrawler:
             return version
         return None
 
-    def _extract_version_from_url(self, url: str) -> Optional[str]:
+    def _extract_version_from_url(self, url: str) -> str | None:
         """Extract version number from URL.
 
         Args:
@@ -464,8 +456,7 @@ class BaseCrawler:
             logger.debug("No issue column found in table, skipping")
             return issues
 
-        logger.debug("Found issue column at index %d, description at index %s",
-                     issue_col, desc_col)
+        logger.debug("Found issue column at index %d, description at index %s", issue_col, desc_col)
 
         # Parse rows (only direct children, not nested table rows)
         # If there's a tbody, use rows from there (header is in thead)
@@ -486,7 +477,10 @@ class BaseCrawler:
 
         for row in rows:
             # Skip rows that belong to nested tables
-            if row.find_parent("table") != table and row.find_parent("tbody", recursive=False) is None:
+            if (
+                row.find_parent("table") != table
+                and row.find_parent("tbody", recursive=False) is None
+            ):
                 continue
 
             cells = row.find_all(["td", "th"], recursive=False)
@@ -499,7 +493,8 @@ class BaseCrawler:
                 extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
 
-            # Extract bug ID and fix info (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
+            # Extract bug ID and fix info
+            # (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
             bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
 
             # Validate bug_id format (e.g., GPC-12345, PAN-12345)
@@ -516,9 +511,13 @@ class BaseCrawler:
             # Extract affected components from description start (e.g., "(NGFW Clusters)")
             description, affected_components = extract_affected_components(description)
 
-            logger.debug("Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
-                        bug_id, fix_info is not None, workaround is not None,
-                        affected_components is not None)
+            logger.debug(
+                "Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
+                bug_id,
+                fix_info is not None,
+                workaround is not None,
+                affected_components is not None,
+            )
             issues.append(
                 Issue(
                     bug_id=bug_id,
@@ -532,9 +531,7 @@ class BaseCrawler:
         logger.debug("Parsed %d issues from table", len(issues))
         return issues
 
-    def _parse_issues_table_with_feature(
-        self, table, feature: Optional[str] = None
-    ) -> list[Issue]:
+    def _parse_issues_table_with_feature(self, table, feature: str | None = None) -> list[Issue]:
         """Parse issues from a table, adding feature as affected_component.
 
         Args:
@@ -590,9 +587,7 @@ class BaseCrawler:
 
             raw_bug_id = cells[issue_col].get_text(strip=True)
             raw_description = (
-                extract_cell_text_with_tables(cells[desc_col])
-                if desc_col is not None
-                else ""
+                extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
 
             # Extract bug ID and fix info
@@ -615,7 +610,7 @@ class BaseCrawler:
             if feature:
                 if affected_components:
                     # Prepend feature to existing components
-                    affected_components = [feature] + affected_components
+                    affected_components = [feature, *affected_components]
                 else:
                     affected_components = [feature]
 
@@ -685,7 +680,7 @@ class BaseCrawler:
                     # Extract workaround text after the bold element
                     workaround_parts = []
                     for sibling in b_elem.next_siblings:
-                        if hasattr(sibling, 'get_text'):
+                        if hasattr(sibling, "get_text"):
                             workaround_parts.append(sibling.get_text(strip=True))
                         elif isinstance(sibling, str):
                             workaround_parts.append(sibling.strip())
@@ -699,12 +694,18 @@ class BaseCrawler:
                 tt_elem = p_elem.find("tt")
                 if tt_elem:
                     tt_text = normalize_text(tt_elem)
-                    if "this issue is addressed" in tt_text.lower() or "this issue is fixed" in tt_text.lower():
+                    if (
+                        "this issue is addressed" in tt_text.lower()
+                        or "this issue is fixed" in tt_text.lower()
+                    ):
                         fix_info_text = tt_text
                         continue
 
                 # Check plain text for fix info
-                if "this issue is addressed" in p_text.lower() or "this issue is fixed" in p_text.lower():
+                if (
+                    "this issue is addressed" in p_text.lower()
+                    or "this issue is fixed" in p_text.lower()
+                ):
                     fix_info_text = p_text
                     continue
 
@@ -714,7 +715,7 @@ class BaseCrawler:
                     component_match = re.match(r"^\(\s*([^)]+?)\s*\)\s*", p_text)
                     if component_match:
                         affected_components = [component_match.group(1).strip()]
-                        remaining = p_text[component_match.end():].strip()
+                        remaining = p_text[component_match.end() :].strip()
                         if remaining:
                             description_parts.append(remaining)
                         continue
@@ -730,10 +731,10 @@ class BaseCrawler:
             desc_prefix_match = re.match(
                 r"^Description\s+of\s+" + re.escape(bug_id) + r"[\s:.\-]*",
                 desc_cleaned,
-                re.IGNORECASE
+                re.IGNORECASE,
             )
             if desc_prefix_match:
-                desc_cleaned = desc_cleaned[desc_prefix_match.end():].strip()
+                desc_cleaned = desc_cleaned[desc_prefix_match.end() :].strip()
 
             # Skip empty descriptions
             if not desc_cleaned:
@@ -859,13 +860,15 @@ class BaseCrawler:
         # Process results
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                failed_fetches.append(FailedFetch(
-                    url=all_urls[i],
-                    error=str(result),
-                    product=product_name,
-                    version=version_info.version,
-                    issue_type=url_types[i],
-                ))
+                failed_fetches.append(
+                    FailedFetch(
+                        url=all_urls[i],
+                        error=str(result),
+                        product=product_name,
+                        version=version_info.version,
+                        issue_type=url_types[i],
+                    )
+                )
                 continue
             if url_types[i] == "known":
                 known_issues.extend(result)
@@ -909,21 +912,25 @@ class BaseCrawler:
                 vi = version_infos[i]
                 self._log(f"    Error crawling {vi.version}: {result}")
                 for url in vi.known_issues_urls:
-                    all_failed_fetches.append(FailedFetch(
-                        url=url,
-                        error=str(result),
-                        product=product_name,
-                        version=vi.version,
-                        issue_type="known",
-                    ))
+                    all_failed_fetches.append(
+                        FailedFetch(
+                            url=url,
+                            error=str(result),
+                            product=product_name,
+                            version=vi.version,
+                            issue_type="known",
+                        )
+                    )
                 for url in vi.addressed_issues_urls:
-                    all_failed_fetches.append(FailedFetch(
-                        url=url,
-                        error=str(result),
-                        product=product_name,
-                        version=vi.version,
-                        issue_type="addressed",
-                    ))
+                    all_failed_fetches.append(
+                        FailedFetch(
+                            url=url,
+                            error=str(result),
+                            product=product_name,
+                            version=vi.version,
+                            issue_type="addressed",
+                        )
+                    )
                 continue
 
             # Collect failed fetches from successful version crawl
@@ -967,34 +974,32 @@ class BaseCrawler:
 
             for attempt in range(max_retries):
                 try:
-                    self._log(
-                        f"    Retry {attempt + 1}/{max_retries} for {failed.url}"
-                    )
+                    self._log(f"    Retry {attempt + 1}/{max_retries} for {failed.url}")
                     issues = await self._parse_issues_page(failed.url)
                     recovered_issues.extend(issues)
-                    self._log(
-                        f"    Recovered {len(issues)} issues from {failed.url}"
-                    )
+                    self._log(f"    Recovered {len(issues)} issues from {failed.url}")
                     success = True
                     break
                 except Exception as e:
                     last_error = str(e)
                     if attempt < max_retries - 1:
-                        delay = self.retry_delay * (2 ** attempt)
+                        delay = self.retry_delay * (2**attempt)
                         await asyncio.sleep(delay)
 
             if not success:
-                still_failed.append(FailedFetch(
-                    url=failed.url,
-                    error=last_error,
-                    product=failed.product,
-                    version=failed.version,
-                    issue_type=failed.issue_type,
-                ))
+                still_failed.append(
+                    FailedFetch(
+                        url=failed.url,
+                        error=last_error,
+                        product=failed.product,
+                        version=failed.version,
+                        issue_type=failed.issue_type,
+                    )
+                )
 
         if still_failed:
             self._log(f"  {len(still_failed)} fetches still failed after retries")
         else:
-            self._log(f"  All failed fetches recovered successfully")
+            self._log("  All failed fetches recovered successfully")
 
         return recovered_issues, still_failed

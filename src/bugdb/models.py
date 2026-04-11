@@ -2,10 +2,8 @@
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
-
 
 
 class ChangeType(str, Enum):
@@ -29,7 +27,7 @@ class Release(BaseModel):
 
     version: str = Field(..., description="Version string (e.g., 1.0.0)")
     date: str = Field(..., description="Release date (YYYY-MM-DD)")
-    title: Optional[str] = Field(None, description="Optional release title")
+    title: str | None = Field(None, description="Optional release title")
     changes: list[ReleaseChange] = Field(
         default_factory=list, description="List of changes in this release"
     )
@@ -38,9 +36,7 @@ class Release(BaseModel):
 class ReleaseNotes(BaseModel):
     """Root model for release notes."""
 
-    releases: list[Release] = Field(
-        default_factory=list, description="List of releases"
-    )
+    releases: list[Release] = Field(default_factory=list, description="List of releases")
 
 
 class Issue(BaseModel):
@@ -48,15 +44,14 @@ class Issue(BaseModel):
 
     bug_id: str = Field(..., description="Unique bug identifier (e.g., PAN-300637)")
     description: str = Field(..., description="Issue description")
-    symptoms: Optional[str] = Field(None, description="Observable symptoms")
-    workaround: Optional[str] = Field(None, description="Known workaround")
-    fix_info: Optional[str] = Field(
-        None, description="Additional fix information (e.g., 'Resolved in Prisma Access Agent 25.3')"
+    symptoms: str | None = Field(None, description="Observable symptoms")
+    workaround: str | None = Field(None, description="Known workaround")
+    fix_info: str | None = Field(
+        None,
+        description="Additional fix information (e.g., 'Resolved in Prisma Access Agent 25.3')",
     )
-    affected_components: Optional[list[str]] = Field(
-        None, description="List of affected components"
-    )
-    release_date: Optional[str] = Field(
+    affected_components: list[str] | None = Field(None, description="List of affected components")
+    release_date: str | None = Field(
         None, description="Release date when the fix was deployed (YYYY-MM-DD format)"
     )
 
@@ -65,7 +60,7 @@ class ProductVersion(BaseModel):
     """A specific version of a product with its known and addressed issues."""
 
     version: str = Field(..., description="Version string (e.g., 11.1.13)")
-    release_date: Optional[str] = Field(None, description="Release date (YYYY-MM-DD)")
+    release_date: str | None = Field(None, description="Release date (YYYY-MM-DD)")
     known_issues: list[Issue] = Field(
         default_factory=list, description="Known issues in this version"
     )
@@ -79,9 +74,7 @@ class Product(BaseModel):
 
     id: str = Field(..., description="Product identifier (e.g., pan-os)")
     name: str = Field(..., description="Display name (e.g., PAN-OS)")
-    versions: list[ProductVersion] = Field(
-        default_factory=list, description="Product versions"
-    )
+    versions: list[ProductVersion] = Field(default_factory=list, description="Product versions")
 
 
 class Metadata(BaseModel):
@@ -92,9 +85,7 @@ class Metadata(BaseModel):
         description="Generation timestamp",
     )
     version: str = Field(default="1.0.0", description="Schema version")
-    source: str = Field(
-        default="Palo Alto Networks Release Notes", description="Data source"
-    )
+    source: str = Field(default="Palo Alto Networks Release Notes", description="Data source")
 
 
 class BugDatabase(BaseModel):
@@ -110,8 +101,8 @@ class FailedFetchEntry(BaseModel):
     url: str = Field(..., description="URL that failed to fetch")
     error: str = Field(..., description="Error message")
     product: str = Field(..., description="Product ID")
-    version: Optional[str] = Field(None, description="Product version")
-    issue_type: Optional[str] = Field(None, description="'known' or 'addressed'")
+    version: str | None = Field(None, description="Product version")
+    issue_type: str | None = Field(None, description="'known' or 'addressed'")
 
 
 class ProductStats(BaseModel):
@@ -121,9 +112,7 @@ class ProductStats(BaseModel):
     product_name: str = Field(..., description="Product display name")
     versions_fetched: int = Field(..., description="Number of versions fetched")
     known_issues_count: int = Field(..., description="Number of known issues fetched")
-    addressed_issues_count: int = Field(
-        ..., description="Number of addressed issues fetched"
-    )
+    addressed_issues_count: int = Field(..., description="Number of addressed issues fetched")
     failed_fetch_count: int = Field(..., description="Number of failed URL fetches")
 
 
@@ -138,9 +127,7 @@ class FetchReport(BaseModel):
     total_products: int = Field(..., description="Total number of products fetched")
     total_versions: int = Field(..., description="Total number of versions fetched")
     total_known_issues: int = Field(..., description="Total known issues fetched")
-    total_addressed_issues: int = Field(
-        ..., description="Total addressed issues fetched"
-    )
+    total_addressed_issues: int = Field(..., description="Total addressed issues fetched")
     product_stats: list[ProductStats] = Field(
         default_factory=list, description="Per-product statistics"
     )

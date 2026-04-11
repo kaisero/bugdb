@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/design-decisions.md` lightweight ADR log for non-obvious design decisions.
 
 ### Changed
+- Codebase reformatted and linted by ruff as a one-time mechanical sweep
+  (no behaviour changes). Findings fixed: import ordering, `Optional`/`Union`
+  converted to `X | None`/`X | Y`, `raise ... from err` added inside
+  `except` blocks, nested `if` collapsed, unused unpacked variables renamed
+  to `_prefix`, `zip(..., strict=True)` added, and long lines wrapped.
+  Commit recorded in `.git-blame-ignore-revs` so `git blame` skips it.
 - Project now uses [uv](https://github.com/astral-sh/uv) for dependency and Python
   version management instead of pip/venv. `pyproject.toml` uses `[dependency-groups]`
   instead of `[project.optional-dependencies]`; Python version is pinned via
