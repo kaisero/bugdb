@@ -43,20 +43,26 @@ A Python CLI application that crawls Palo Alto Networks release notes and genera
 
 ## Installation
 
+This project uses [uv](https://docs.astral.sh/uv/) for dependency and Python
+version management. Install uv first
+([instructions](https://docs.astral.sh/uv/getting-started/installation/)),
+then:
+
 ```bash
 # Clone the repository
 cd bugdb
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate
+# Create the virtual environment and install the project (including the
+# pinned Python interpreter from .python-version)
+uv sync
 
-# Install in development mode
-pip install -e .
-
-# Install Playwright for web crawling
-playwright install chromium
+# Install Playwright browsers for web crawling
+uv run playwright install chromium
 ```
+
+All `bugdb` commands below should be prefixed with `uv run` (e.g.
+`uv run bugdb fetch panos`), or you can activate the environment with
+`source .venv/bin/activate` and drop the prefix.
 
 ## Usage
 
@@ -178,9 +184,12 @@ The bug database uses this structure:
 ### Running Tests
 
 ```bash
-pytest                           # Run all tests
-pytest tests/test_crawler.py -v  # Run crawler tests with verbose output
-pytest -k "plugin" -v            # Run tests matching "plugin"
+# Sync the test dependency group, then run tests
+uv sync --group test
+
+uv run pytest                           # Run all tests
+uv run pytest tests/test_crawler.py -v  # Run crawler tests with verbose output
+uv run pytest -k "plugin" -v            # Run tests matching "plugin"
 ```
 
 ### Project Structure
