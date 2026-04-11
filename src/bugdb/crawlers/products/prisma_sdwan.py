@@ -157,19 +157,23 @@ class PrismaSDWANCrawler(BaseCrawler):
         skip_versions = skip_versions or set()
         all_failed_fetches: list[FailedFetch] = []
 
+        # Cache-aware discovery — see BaseCrawler._resolve_version_infos.
         if major_versions is None:
             self._log("Discovering available Prisma SD-WAN versions...")
-            major_versions = await self.discover_versions()
-            self._log(f"Found versions: {', '.join(major_versions)}")
+        vi_by_major = await self._resolve_version_infos(
+            discover_majors_fn=self.discover_versions,
+            discover_pages_fn=self.discover_version_pages,
+            explicit_majors=major_versions,
+            skip_versions=skip_versions,
+        )
+        if major_versions is None:
+            self._log(f"Found versions: {', '.join(vi_by_major.keys())}")
 
         all_product_versions = []
 
-        for major_version in major_versions:
+        for major_version, version_infos in vi_by_major.items():
             version_str = major_version.replace("-", ".")
             self._log(f"Crawling Prisma SD-WAN {version_str}...")
-
-            version_infos = await self.discover_version_pages(major_version)
-            version_infos = [vi for vi in version_infos if vi.version not in skip_versions]
 
             if not version_infos:
                 self._log("  No versions to crawl (all skipped or none found)")

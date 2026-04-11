@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
@@ -115,6 +116,89 @@ class BaseCrawler:
         output attach a handler (e.g. ``RichHandler``) in the CLI.
         """
         logger.info("%s", message)
+
+    async def _resolve_version_infos(
+        self,
+        discover_majors_fn: Callable[[], Awaitable[list[str]]],
+        discover_pages_fn: Callable[[str], Awaitable[list[VersionInfo]]],
+        explicit_majors: list[str] | None,
+        skip_versions: set[str] | None = None,
+    ) -> dict[str, list[VersionInfo]]:
+        """Return ``{major: [VersionInfo, ...]}`` using the cache when fresh.
+
+        Centralises the "which versions do we need to crawl" decision so
+        every product crawler gets the same cache-aware behaviour without
+        each one rolling its own logic.
+
+        Three paths, in order of preference:
+
+        1. **Explicit majors.** If the caller passes ``explicit_majors``
+           (i.e. ``bugdb fetch panos --version 12-1``), we bypass the cache
+           entirely and call ``discover_pages_fn`` for each named major.
+           The user asked for something specific — give it to them fresh.
+
+        2. **Fresh cache.** If ``self._discovery_cache.is_fresh(product_id)``
+           returns True, load the cached ``version_infos`` map and return
+           it filtered by ``skip_versions``. Zero network requests.
+
+        3. **Cold / stale cache.** Call ``discover_majors_fn()`` to learn
+           which majors exist, then ``discover_pages_fn(major)`` for each,
+           write the result to the cache, and return it filtered by
+           ``skip_versions``.
+
+        Args:
+            discover_majors_fn: Typically ``self.discover_versions``. Called
+                only in path 3.
+            discover_pages_fn: Typically ``self.discover_version_pages``.
+                Called in paths 1 and 3.
+            explicit_majors: Caller-supplied major list. Triggers path 1
+                when non-empty; otherwise paths 2/3 apply.
+            skip_versions: Full version strings (e.g. ``{"12.1.5"}``) to
+                drop from the result. Applied after loading/discovering so
+                we never crawl versions we already have.
+
+        Returns:
+            ``{major: [VersionInfo, ...]}`` ready to feed into
+            ``_crawl_versions_parallel``. Empty lists are filtered out by
+            callers so the caller can still log "no versions to crawl".
+        """
+        skip_versions = skip_versions or set()
+
+        # Path 1: caller asked for specific majors. Always go to network.
+        if explicit_majors:
+            result: dict[str, list[VersionInfo]] = {}
+            for major in explicit_majors:
+                version_infos = await discover_pages_fn(major)
+                result[major] = [vi for vi in version_infos if vi.version not in skip_versions]
+            return result
+
+        # Path 2: fresh cache hit — skip discovery entirely.
+        if self._discovery_cache is not None and self._discovery_cache.is_fresh(
+            self.product_id
+        ):
+            cached = self._discovery_cache.get_version_infos(self.product_id)
+            if cached is not None:
+                logger.debug(
+                    "%s discovery cache hit (%d majors)",
+                    self.product_id,
+                    len(cached),
+                )
+                return {
+                    major: [vi for vi in version_infos if vi.version not in skip_versions]
+                    for major, version_infos in cached.items()
+                }
+
+        # Path 3: cold or stale — discover fresh, write to cache.
+        majors = await discover_majors_fn()
+        fresh: dict[str, list[VersionInfo]] = {}
+        for major in majors:
+            fresh[major] = await discover_pages_fn(major)
+        if self._discovery_cache is not None:
+            self._discovery_cache.put_version_infos(self.product_id, fresh)
+        return {
+            major: [vi for vi in version_infos if vi.version not in skip_versions]
+            for major, version_infos in fresh.items()
+        }
 
     def _is_connection_refused_error(self, error: Exception) -> bool:
         """Check if an error is a connection refused error.

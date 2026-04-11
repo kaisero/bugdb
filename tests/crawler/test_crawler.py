@@ -578,6 +578,200 @@ class TestPaloAltoCrawlerAsync:
                 )
 
     @pytest.mark.asyncio
+    async def test_panos_warm_cache_skips_discovery(
+        self, mock_playwright_panos, tmp_path
+    ):
+        """S3 warm-cache path: a fresh version_infos cache short-circuits
+        both discover_versions and discover_version_pages entirely.
+        """
+        from bugdb.crawlers.models import VersionInfo
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+
+        # Pre-populate the cache with a VersionInfo for 12-1 / 12.1.5.
+        # The URL doesn't matter for this test — we're only verifying
+        # that discovery is skipped, not that the URLs resolve.
+        cache.put_version_infos(
+            "panos",
+            {
+                "12-1": [
+                    VersionInfo(
+                        version="12.1.5",
+                        known_issues_urls=["/ngfw/release-notes/12-1/pan-os-12-1-5-known-issues"],
+                        addressed_issues_urls=[
+                            "/ngfw/release-notes/12-1/pan-os-12-1-5-addressed-issues"
+                        ],
+                    )
+                ]
+            },
+        )
+        cache.save()
+
+        reloaded = DiscoveryCache(path=cache_path)
+        assert reloaded.is_fresh("panos")
+
+        # Patch both discovery methods to raise — if either fires the
+        # cache-skip path is broken.
+        async def _raise_discover_versions():
+            raise AssertionError(
+                "discover_versions should not be called on a warm cache hit"
+            )
+
+        async def _raise_discover_version_pages(major_version: str):
+            raise AssertionError(
+                f"discover_version_pages should not be called on a warm cache hit, "
+                f"got {major_version!r}"
+            )
+
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded) as crawler:
+                crawler.discover_versions = _raise_discover_versions  # type: ignore[assignment]
+                crawler.discover_version_pages = _raise_discover_version_pages  # type: ignore[assignment]
+
+                vi_by_major = await crawler._resolve_version_infos(
+                    discover_majors_fn=crawler.discover_versions,
+                    discover_pages_fn=crawler.discover_version_pages,
+                    explicit_majors=None,
+                    skip_versions=set(),
+                )
+
+        assert "12-1" in vi_by_major
+        assert len(vi_by_major["12-1"]) == 1
+        assert vi_by_major["12-1"][0].version == "12.1.5"
+
+    @pytest.mark.asyncio
+    async def test_panos_warm_cache_filters_skip_versions(
+        self, mock_playwright_panos, tmp_path
+    ):
+        """S3 warm-cache path + skip_versions: cached entries are filtered
+        by the passed-in skip_versions set so already-fetched versions
+        don't get re-crawled.
+        """
+        from bugdb.crawlers.models import VersionInfo
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+        cache.put_version_infos(
+            "panos",
+            {
+                "12-1": [
+                    VersionInfo(version="12.1.5", known_issues_urls=[], addressed_issues_urls=[]),
+                    VersionInfo(version="12.1.4", known_issues_urls=[], addressed_issues_urls=[]),
+                ]
+            },
+        )
+        cache.save()
+
+        reloaded = DiscoveryCache(path=cache_path)
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded) as crawler:
+                vi_by_major = await crawler._resolve_version_infos(
+                    discover_majors_fn=crawler.discover_versions,
+                    discover_pages_fn=crawler.discover_version_pages,
+                    explicit_majors=None,
+                    skip_versions={"12.1.4"},  # 12.1.5 is new
+                )
+
+        assert len(vi_by_major["12-1"]) == 1
+        assert vi_by_major["12-1"][0].version == "12.1.5"
+
+    @pytest.mark.asyncio
+    async def test_panos_explicit_majors_bypasses_cache(
+        self, mock_playwright_panos, tmp_path
+    ):
+        """S3 explicit-majors path: when the caller passes explicit_majors
+        (i.e. `bugdb fetch panos --version 12-1`), the cache must be
+        ignored and discover_pages_fn must be called for each named major.
+        The user asked for something specific.
+        """
+        from bugdb.crawlers.models import VersionInfo
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+        # Pre-populate with stale/incorrect data to prove we don't use it.
+        cache.put_version_infos(
+            "panos",
+            {
+                "12-1": [
+                    VersionInfo(
+                        version="FAKE-FROM-CACHE",
+                        known_issues_urls=[],
+                        addressed_issues_urls=[],
+                    )
+                ]
+            },
+        )
+        cache.save()
+
+        reloaded = DiscoveryCache(path=cache_path)
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded) as crawler:
+                vi_by_major = await crawler._resolve_version_infos(
+                    discover_majors_fn=crawler.discover_versions,
+                    discover_pages_fn=crawler.discover_version_pages,
+                    explicit_majors=["12-1"],
+                    skip_versions=set(),
+                )
+
+        # The fake cache value must NOT appear in the result.
+        versions = [vi.version for vi in vi_by_major.get("12-1", [])]
+        assert "FAKE-FROM-CACHE" not in versions
+        assert "12.1.5" in versions  # real discovery found this from fixtures
+
+    @pytest.mark.asyncio
+    async def test_panos_stale_cache_re_discovers(
+        self, mock_playwright_panos, tmp_path
+    ):
+        """S3 stale-cache path: a cache older than 24h must trigger a
+        fresh discovery, and the fresh result must replace the stale
+        cache entry.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        from bugdb.crawlers.models import VersionInfo
+        from bugdb.discovery_cache import TTL_SECONDS, DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+        cache.put_version_infos(
+            "panos",
+            {
+                "12-1": [
+                    VersionInfo(
+                        version="STALE-VALUE",
+                        known_issues_urls=[],
+                        addressed_issues_urls=[],
+                    )
+                ]
+            },
+        )
+        # Backdate the cache by TTL + 1 minute.
+        old = datetime.now(UTC) - timedelta(seconds=TTL_SECONDS + 60)
+        cache._data["products"]["panos"]["updated_at"] = old.isoformat(timespec="seconds")
+        cache.save()
+
+        reloaded = DiscoveryCache(path=cache_path)
+        assert reloaded.is_fresh("panos") is False
+
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded) as crawler:
+                vi_by_major = await crawler._resolve_version_infos(
+                    discover_majors_fn=crawler.discover_versions,
+                    discover_pages_fn=crawler.discover_version_pages,
+                    explicit_majors=None,
+                    skip_versions=set(),
+                )
+
+        # Stale value must be gone, fresh discovery must have run.
+        versions = [vi.version for vi in vi_by_major.get("12-1", [])]
+        assert "STALE-VALUE" not in versions
+        assert "12.1.5" in versions
+
+    @pytest.mark.asyncio
     async def test_panos_url_pattern_cache_hit_skips_probe(
         self, mock_playwright_panos, tmp_path
     ):
