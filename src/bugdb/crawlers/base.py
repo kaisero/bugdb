@@ -198,7 +198,7 @@ class BaseCrawler:
         Raises:
             Exception: If all retry attempts fail.
         """
-        last_error = None
+        last_error: Exception | None = None
 
         for attempt in range(self.max_retries):
             # Wait for global backoff if another thread triggered it
@@ -207,8 +207,9 @@ class BaseCrawler:
             logger.debug("Acquiring semaphore for: %s (attempt %d)", url, attempt + 1)
             async with self._semaphore:
                 logger.debug("Semaphore acquired, creating new page for: %s", url)
-                page = await self._new_page()
+                page: Page | None = None
                 try:
+                    page = await self._new_page()
                     result = await self._fetch_page(page, url, wait_time)
                     logger.debug("Successfully fetched: %s", url)
                     return result
@@ -228,7 +229,8 @@ class BaseCrawler:
                     )
                     self._log(f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}")
                 finally:
-                    await page.close()
+                    if page is not None:
+                        await page.close()
 
             # Exponential backoff before retry (in addition to global backoff)
             if attempt < self.max_retries - 1:
@@ -236,7 +238,13 @@ class BaseCrawler:
                 logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
                 await asyncio.sleep(delay)
 
-        # All retries failed
+        # All retries failed. last_error can only be None if max_retries == 0
+        # (the loop body never ran); guard to surface a useful error rather
+        # than `TypeError: exceptions must derive from BaseException`.
+        if last_error is None:
+            raise RuntimeError(
+                f"No fetch attempts were made for {url} (max_retries={self.max_retries})"
+            )
         raise last_error
 
     async def _fetch_cortex_page_with_semaphore(
@@ -258,7 +266,7 @@ class BaseCrawler:
         Raises:
             Exception: If all retry attempts fail.
         """
-        last_error = None
+        last_error: Exception | None = None
 
         for attempt in range(self.max_retries):
             await self._wait_for_global_backoff()
@@ -266,8 +274,9 @@ class BaseCrawler:
             logger.debug("Acquiring semaphore for Cortex page: %s (attempt %d)", url, attempt + 1)
             async with self._semaphore:
                 logger.debug("Semaphore acquired, creating new page for: %s", url)
-                page = await self._new_page()
+                page: Page | None = None
                 try:
+                    page = await self._new_page()
                     result = await self._fetch_cortex_page(page, url, wait_time)
                     logger.debug("Successfully fetched Cortex page: %s", url)
                     return result
@@ -286,13 +295,19 @@ class BaseCrawler:
                     )
                     self._log(f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}")
                 finally:
-                    await page.close()
+                    if page is not None:
+                        await page.close()
 
             if attempt < self.max_retries - 1:
                 delay = self.retry_delay * (2**attempt)
                 logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
                 await asyncio.sleep(delay)
 
+        # All retries failed. See _fetch_page_with_semaphore for rationale.
+        if last_error is None:
+            raise RuntimeError(
+                f"No fetch attempts were made for {url} (max_retries={self.max_retries})"
+            )
         raise last_error
 
     async def _fetch_cortex_page(

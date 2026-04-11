@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heavy tiers by default via `addopts = "--strict-markers -m 'not data_baseline and not canary'"`.
 
 ### Fixed
+- `BaseCrawler._fetch_page_with_semaphore` and
+  `_fetch_cortex_page_with_semaphore` previously raised a confusing
+  `TypeError` (instead of the real failure) when `max_retries == 0`, and
+  would raise `UnboundLocalError` in the `finally` block if
+  `_new_page()` itself failed before the `try`. Both methods now guard
+  the `last_error is None` case and only call `page.close()` when a page
+  was actually created.
 - PAN-OS 12.1.x release notes were silently skipped because the crawler only knew
   the legacy `/pan-os/<v>/pan-os-release-notes` URL pattern, which 404s for 12.1+.
   Crawler now falls back to `/ngfw/release-notes/<v>`.
