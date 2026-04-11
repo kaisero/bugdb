@@ -42,3 +42,12 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# Default run excludes heavy integration tiers. Opt in explicitly, e.g.
+#   pytest -m data_baseline tests/integration/
+#   pytest -m canary tests/canary/
+addopts = "--strict-markers -m 'not data_baseline and not canary'"
+markers = [
+    "data_baseline: compares assets/data.json against the committed baseline snapshot. Heavy; runs in the separate GitLab 'integration' pipeline.",
+    "canary: probes real docs.paloaltonetworks.com URLs to catch upstream version releases. Nightly pipeline only.",
+    "slow: marks tests as slow (reserved for future use).",
+]
