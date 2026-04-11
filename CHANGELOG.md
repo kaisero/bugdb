@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- GitLab CI `pages` deploy job is now explicitly branch-gated to
+  `$CI_COMMIT_BRANCH == "main"` (previously used `$CI_DEFAULT_BRANCH`,
+  which could silently change behaviour if the repo's default branch
+  were switched) and additionally requires
+  `$CI_PIPELINE_SOURCE == "push"` so that schedule, web-manual, tag,
+  and merge-request-event pipelines cannot accidentally trigger a
+  deploy. In practice, the deploy now fires exactly when a merge
+  request is merged into `main`.
+
 ## [1.0.2] - 2026-04-11
 
 ### Added

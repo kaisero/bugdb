@@ -139,7 +139,16 @@ upstream-canary:
       when: manual
 
 # ---------------------------------------------------------------------------
-# Deploy: static site to GitLab Pages. Unchanged from before.
+# Deploy: static site to GitLab Pages.
+#
+# Fires only when a commit lands on `main` via a push pipeline, which
+# in practice means "after a merge request has been merged into main"
+# (GitLab runs a push-source pipeline on the resulting merge commit).
+# Explicitly branch-gated to "main" rather than $CI_DEFAULT_BRANCH so
+# the behaviour doesn't silently change if the repo's default branch
+# is ever switched. The CI_PIPELINE_SOURCE == "push" guard excludes
+# schedule, web-manual, tag, and merge-request-event pipelines so they
+# cannot accidentally trigger a deploy.
 # ---------------------------------------------------------------------------
 pages:
   stage: deploy
@@ -155,4 +164,4 @@ pages:
     paths:
       - public
   rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
