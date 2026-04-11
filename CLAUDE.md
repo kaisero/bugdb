@@ -4,6 +4,45 @@
 
 - Do NOT include "Co-Authored-By" lines in commit messages
 
+## Project Documentation
+
+Two living documents must be kept current alongside code changes:
+
+### CHANGELOG.md
+
+Every user-visible change — new features, enhancements, bug fixes, breaking
+changes, deprecations, security fixes — **must** be recorded in
+`CHANGELOG.md` as part of the same change (commit or PR). The changelog
+follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
+and [Semantic Versioning](https://semver.org/). Unreleased work goes under
+the `## [Unreleased]` heading; on release, that section is renamed to the
+new version with the release date and a fresh `## [Unreleased]` stub is
+added above it. Do not batch changelog updates — write the entry when you
+write the code.
+
+Categories (in order): `Added`, `Changed`, `Deprecated`, `Removed`,
+`Fixed`, `Security`.
+
+### docs/design-decisions.md
+
+Architectural and design decisions — anything a future contributor would
+benefit from knowing the *why* behind — must be captured in
+`docs/design-decisions.md`. This is a lightweight ADR log: each entry has a
+short title, date, context (what problem forced the decision), the
+decision itself, and the consequences/trade-offs accepted. Update or add an
+entry whenever you:
+
+- Choose between non-obvious alternatives (framework, library, data model,
+  CI layout, testing strategy)
+- Add or change a project-wide convention (e.g., linter config, marker
+  semantics, baseline snapshot format)
+- Accept a known trade-off that would surprise someone reading only the
+  code (e.g., "we tolerate N xfails here because…")
+- Introduce or retire a subsystem
+
+Keep entries short — a paragraph each is fine. The goal is future-proofing
+context, not exhaustive documentation.
+
 ## Development Guidelines
 
 ### Package Management
@@ -54,7 +93,7 @@ Follow this workflow:
 uv run pytest
 
 # Run specific test file
-uv run pytest tests/test_crawler.py -v
+uv run pytest tests/crawler/test_crawler.py -v
 
 # Run tests matching a pattern
 uv run pytest -k "cloud_ngfw" -v
