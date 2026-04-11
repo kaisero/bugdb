@@ -54,6 +54,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   volumes for other products). `discover_version_pages` now filters
   them out before classification. Regression pin:
   `TestPaloAltoCrawlerAsync::test_panos_discover_skips_known_and_addressed_hub_pages`.
+- `BaseCrawler._log` restored to its pre-v1.0.2 behaviour — prints to
+  stdout when `verbose=True` AND calls `logger.info` unconditionally.
+  v1.0.2 made it logger-only on the assumption that the "double-emit"
+  was a bug, but in default Python `logger.info` is a silent no-op
+  with no handler attached, so the original code only printed in
+  practice (no double-emit). Users running `bugdb fetch --verbose`
+  were getting no progress output after v1.0.2, which was the real
+  regression. Regression pin:
+  `TestCrawlerConfiguration::test_crawler_logging_when_verbose`.
 - GitLab CI `test` job now runs `uv run playwright install --with-deps
   chromium` before pytest. v1.0.2 removed this step on the (incorrect)
   assumption that all crawler tests use the MockPlaywright fixture;

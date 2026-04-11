@@ -107,14 +107,25 @@ class BaseCrawler:
             await self._playwright.stop()
 
     def _log(self, message: str) -> None:
-        """Emit a progress/status message via the module logger.
+        """Emit a progress/status message to the user and the module logger.
 
-        Previously this method both called ``print(message)`` (when
-        ``verbose=True``) AND ``logger.info(message)`` unconditionally,
-        which double-emitted to any terminal that had logging
-        configured. It's now logger-only; callers that want console
-        output attach a handler (e.g. ``RichHandler``) in the CLI.
+        Two distinct channels, either can be enabled independently:
+
+        - ``verbose=True`` prints to stdout for friendly user-facing
+          progress output during interactive runs.
+        - ``debug=True`` configures the module logger (via
+          ``configure_logging``) and this method emits to it as well,
+          which yields structured log output with timestamps.
+
+        When neither flag is set the ``logger.info`` call is a silent
+        no-op because no handler is attached to the module logger by
+        default, so there's no runtime cost and no "double-emit".
+        When both flags are set you get both channels simultaneously
+        — a deliberate choice so ``--debug --verbose`` runs surface
+        everything.
         """
+        if self.verbose:
+            print(message)
         logger.info("%s", message)
 
     async def _resolve_version_infos(

@@ -21,6 +21,18 @@ from bugdb.models import (
 runner = CliRunner()
 
 
+def _flat(text: str) -> str:
+    """Collapse whitespace in Rich-rendered output for substring matching.
+
+    Rich wraps long paths at the CliRunner's terminal width (default 80),
+    which can split asserted substrings like "not found" across a newline
+    ("not \\nfound"). This helper normalises all whitespace to single
+    spaces so assertions are robust to tmpdir path length and terminal
+    width changes.
+    """
+    return " ".join(text.split())
+
+
 class TestGenerateSample:
     """Tests for generate-sample command."""
 
@@ -53,7 +65,7 @@ class TestGenerateSample:
         result = runner.invoke(app, ["generate-sample", "-o", str(output_file)])
 
         assert result.exit_code == 1
-        assert "already exists" in result.stdout
+        assert "already exists" in _flat(result.stdout)
 
     def test_generate_sample_overwrites_with_force(self, tmp_path):
         """Test that generate-sample overwrites with --force."""
@@ -100,7 +112,7 @@ class TestBuildSite:
         )
 
         assert result.exit_code == 1
-        assert "not found" in result.stdout
+        assert "not found" in _flat(result.stdout)
 
     def test_build_site_invalid_json(self, tmp_path):
         """Test that build-site fails with invalid JSON."""
@@ -131,7 +143,7 @@ class TestValidate:
         result = runner.invoke(app, ["validate", "/nonexistent/file.json"])
 
         assert result.exit_code == 1
-        assert "not found" in result.stdout
+        assert "not found" in _flat(result.stdout)
 
     def test_validate_invalid_json(self, tmp_path):
         """Test that validate fails for invalid JSON."""
@@ -497,7 +509,7 @@ class TestFetchWithRetry:
         result = runner.invoke(app, ["fetch", "--retry", str(tmp_path / "nonexistent.json")])
 
         assert result.exit_code == 1
-        assert "not found" in result.stdout
+        assert "not found" in _flat(result.stdout)
 
     def test_retry_missing_data_file(self, tmp_path):
         """Test that --retry fails when data file from report is missing."""
@@ -519,7 +531,7 @@ class TestFetchWithRetry:
         result = runner.invoke(app, ["fetch", "--retry", str(report_file), "-o", str(missing_data)])
 
         assert result.exit_code == 1
-        assert "not found" in result.stdout
+        assert "not found" in _flat(result.stdout)
 
     def test_retry_with_report_generates_new_report(self, tmp_path):
         """Test that --retry combined with --report generates a new report."""
