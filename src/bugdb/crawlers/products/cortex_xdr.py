@@ -5,6 +5,8 @@ import logging
 import re
 from datetime import datetime
 
+from bs4 import BeautifulSoup
+
 from bugdb.models import Issue, Product, ProductVersion
 
 from ..base import BaseCrawler
@@ -295,7 +297,9 @@ class CortexXDRCrawler(BaseCrawler):
 
         version_dates: dict[str, str | None] = {v: d for v, _, d in releases_to_fetch}
 
-        async def fetch_release(version: str, url: str) -> tuple[str, any | None, str | None]:
+        async def fetch_release(
+            version: str, url: str
+        ) -> tuple[str, BeautifulSoup | None, str | None]:
             try:
                 soup = await self._fetch_cortex_page_with_semaphore(url, wait_time=5000)
                 return (version, soup, None)

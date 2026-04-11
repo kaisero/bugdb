@@ -10,10 +10,10 @@ def _read_version() -> str:
         return version_file.read_text().strip()
     # Fallback for installed package
     try:
-        from importlib.metadata import version
+        from importlib.metadata import PackageNotFoundError, version
 
         return version("bugdb")
-    except Exception:
+    except PackageNotFoundError:
         return "0.0.0"
 
 

@@ -1,6 +1,6 @@
 """Pydantic data models for BugDB."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -81,7 +81,7 @@ class Metadata(BaseModel):
     """Database metadata."""
 
     generated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Generation timestamp",
     )
     version: str = Field(default="1.0.0", description="Schema version")
@@ -120,7 +120,7 @@ class FetchReport(BaseModel):
     """Report generated after a fetch operation."""
 
     generated_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
+        default_factory=lambda: datetime.now(UTC),
         description="Report generation timestamp",
     )
     data_file: str = Field(..., description="Path to the associated data output file")

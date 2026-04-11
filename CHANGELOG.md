@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `docs/design-decisions.md` lightweight ADR log for non-obvious design decisions.
 
 ### Changed
+- `datetime.timezone.utc` replaced with `datetime.UTC` (Python 3.11+
+  idiom) in `src/bugdb/models.py` and `src/bugdb/cli.py`.
 - Codebase reformatted and linted by ruff as a one-time mechanical sweep
   (no behaviour changes). Findings fixed: import ordering, `Optional`/`Union`
   converted to `X | None`/`X | Y`, `raise ... from err` added inside
@@ -57,6 +59,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heavy tiers by default via `addopts = "--strict-markers -m 'not data_baseline and not canary'"`.
 
 ### Fixed
+- `cortex_xdr.fetch_release` return-type annotation now uses `BeautifulSoup`
+  instead of the builtin `any` (a typo for `typing.Any`) — readers were
+  misled and type checkers rejected the old form.
+- `bugdb/__init__.py::_read_version` now catches the specific
+  `PackageNotFoundError` instead of the bare `Exception` class, so
+  genuine import errors in `importlib.metadata` bubble up.
 - `PluginCrawler` now records `FailedFetch` entries for **addressed-issue**
   fetch errors. Previously the exception branch only logged addressed-issue
   failures at debug level and dropped them, so the retry pass and the

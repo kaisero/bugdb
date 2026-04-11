@@ -298,7 +298,7 @@ def fetch(
     ] = None,
 ) -> None:
     """Fetch bug data from Palo Alto Networks release notes website."""
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     from bugdb.crawler import (
         FailedFetch,
@@ -522,7 +522,7 @@ def fetch(
             # Create combined database
             database = BugDatabase(
                 metadata=Metadata(
-                    generated_at=datetime.now(timezone.utc),
+                    generated_at=datetime.now(UTC),
                     version="1.0.0",
                     source="Palo Alto Networks Release Notes",
                 ),
@@ -576,7 +576,7 @@ def fetch(
             )
 
         fetch_report = FetchReport(
-            generated_at=datetime.now(timezone.utc),
+            generated_at=datetime.now(UTC),
             data_file=str(output),
             total_products=len(database.products),
             total_versions=total_versions,
