@@ -104,13 +104,14 @@ data-baseline-integration:
     # Explicit manual runs from the GitLab UI.
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
-    # MRs that touch data, the baseline, or the integration tests.
+    # MRs that touch the committed data or baseline snapshot. Test
+    # code and baseline.py changes are validated by the nightly
+    # schedule — triggering on those in MRs would fail because
+    # assets/bugdb.json (13 MB) is not committed to the repo.
     - if: $CI_MERGE_REQUEST_IID
       changes:
         - assets/bugdb.json
         - tests/baselines/**/*
-        - tests/integration/**/*
-        - src/bugdb/baseline.py
 
 # ---------------------------------------------------------------------------
 # Canary: probes real docs.paloaltonetworks.com URLs to detect when Palo
