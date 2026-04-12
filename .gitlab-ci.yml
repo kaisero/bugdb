@@ -16,6 +16,7 @@ stages:
   - test
   - integration
   - canary
+  - fetch
   - deploy
 
 # ---------------------------------------------------------------------------
@@ -147,7 +148,68 @@ upstream-canary:
       when: manual
 
 # ---------------------------------------------------------------------------
+# Fetch: incremental crawl of all products, uploading the result to
+# GitLab's Generic Packages registry. Runs on a schedule (every 3 days,
+# configured in the GitLab UI) and can be triggered manually.
+#
+# The first run will do a full fetch (no existing bugdb.json in the
+# registry → curl 404 → starts from scratch). Subsequent runs download
+# the previous bugdb.json and pass --incremental so only new versions
+# are crawled.
+#
+# CI minutes budget: ~5-10 min incremental, ~15-20 min full.
+# At every-3-days that's ~70 min/month — fits in the free tier's 400.
+# ---------------------------------------------------------------------------
+update-bugdb:
+  stage: fetch
+  script:
+    - uv sync --locked
+    - uv run playwright install --with-deps chromium
+    # Download existing bugdb.json from Package Registry (if any).
+    # First run will 404 — that's fine, fetch starts from scratch.
+    - mkdir -p assets
+    - |
+      curl --silent --fail \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json" \
+        -o assets/bugdb.json \
+      || echo "No existing bugdb.json in registry — starting fresh"
+    # Incremental fetch: only crawl versions not already present.
+    # Falls back to full fetch when assets/bugdb.json doesn't exist.
+    - >-
+      uv run bugdb fetch
+      -o assets/bugdb.json
+      --incremental
+      --no-progress
+      -l assets/bugdb.log
+    # Upload the updated bugdb.json to the Generic Packages registry.
+    # "latest" as the version keeps a single mutable artifact — no
+    # version sprawl, and the Pages deploy always reads "latest".
+    - |
+      curl --silent --fail \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        --upload-file assets/bugdb.json \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json"
+  artifacts:
+    when: always
+    paths:
+      - assets/bugdb.log
+    expire_in: 7 days
+  timeout: 30 minutes
+  rules:
+    # Scheduled pipeline (every 3 days via GitLab schedule UI).
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    # Manual trigger from the GitLab UI on any branch.
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+
+# ---------------------------------------------------------------------------
 # Deploy: static site to GitLab Pages.
+#
+# Downloads bugdb.json from the Generic Packages registry (populated by
+# the update-bugdb scheduled job), builds the site with real data baked
+# in, and deploys to Pages. No external CDN dependency — the frontend
+# loads assets/bugdb.json from the same origin via a relative path.
 #
 # Fires only when a commit lands on `main` via a push pipeline, which
 # in practice means "after a merge request has been merged into main"
@@ -162,23 +224,20 @@ pages:
   stage: deploy
   script:
     - uv sync --locked
-    # The deployed site loads bugdb.json at runtime from an external
-    # CDN URL (see sed below), so we bake a minimal empty BugDatabase
-    # just to satisfy build-site-cmd's file requirement. The
-    # placeholder is deleted before artifacts are uploaded.
+    # Download bugdb.json from the Package Registry. If the scheduled
+    # fetch hasn't run yet the curl will fail and the deploy aborts
+    # with a clear message — run update-bugdb manually first.
     - mkdir -p assets
     - |
-      python -c "import json; json.dump({'metadata': {'generated_at': '1970-01-01T00:00:00Z', 'version': '1.0.0', 'source': 'GitLab Pages shell (placeholder; real data loaded from CDN at runtime)'}, 'products': []}, open('assets/bugdb.json', 'w'))"
+      curl --silent --fail \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json" \
+        -o assets/bugdb.json \
+      || { echo "ERROR: bugdb.json not found in Package Registry. Run the update-bugdb job first."; exit 1; }
     # Generate release-notes.json next to bugdb.json so build-site-cmd
     # auto-discovers it (see SiteBuilder.build_site in site_builder.py).
     - uv run bugdb generate-release-notes -o assets/release-notes.json --force
     - uv run bugdb build-site-cmd -b assets/bugdb.json -o public
-    # Replace local bugdb.json path with external URL so the deployed
-    # site loads real data from the CDN at runtime. If the CDN file is
-    # renamed, update BOTH sides together (site deploy + CDN host).
-    - sed -i "s|fetch('assets/bugdb.json')|fetch('https://repo.dependencyhell.net/bugdb/bugdb.json')|g" public/assets/app.js
-    # Remove local bugdb.json since we're using external
-    - rm -f public/assets/bugdb.json
   artifacts:
     paths:
       - public
