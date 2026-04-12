@@ -1,13 +1,20 @@
 """Generic Panorama/VM-Series plugin crawler implementation."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
+from typing import TYPE_CHECKING
 
 from bugdb.models import Product, ProductVersion
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, PluginConfig, VersionInfo
+
+if TYPE_CHECKING:
+    from bugdb.discovery_cache import DiscoveryCache
+    from bugdb.progress import ProgressReporter, TaskHandle
 
 logger = logging.getLogger(__name__)
 
@@ -98,30 +105,40 @@ class PluginCrawler(BaseCrawler):
         self,
         config: PluginConfig,
         headless: bool = True,
-        verbose: bool = False,
         debug: bool = False,
         max_concurrency: int = 3,
         max_retries: int = 3,
         retry_delay: float = 2.0,
+        discovery_cache: DiscoveryCache | None = None,
+        reporter: ProgressReporter | None = None,
+        task: TaskHandle | None = None,
     ):
         """Initialize the plugin crawler.
 
         Args:
             config: Plugin configuration.
             headless: Whether to run browser in headless mode.
-            verbose: Whether to print progress messages.
             debug: Whether to enable debug logging.
             max_concurrency: Maximum number of concurrent page fetches.
             max_retries: Maximum number of retry attempts.
             retry_delay: Base delay between retries.
+            discovery_cache: Optional persistent discovery cache shared
+                across crawlers by the CLI. Forwarded to
+                ``BaseCrawler.__init__`` unchanged.
+            reporter: Optional progress reporter. Forwarded to
+                ``BaseCrawler.__init__`` unchanged.
+            task: Optional progress task handle. Forwarded to
+                ``BaseCrawler.__init__`` unchanged.
         """
         super().__init__(
             headless=headless,
-            verbose=verbose,
             debug=debug,
             max_concurrency=max_concurrency,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            discovery_cache=discovery_cache,
+            reporter=reporter,
+            task=task,
         )
         self.config = config
         self.product_id = config.product_id
@@ -228,7 +245,7 @@ class PluginCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error discovering %s versions: %s", self.config.product_name, e)
-            self._log(f"  Error discovering versions: {e}")
+            logger.error(f"Error discovering versions: {e}")
 
         sorted_versions = sorted(
             version_infos.values(),
@@ -256,7 +273,7 @@ class PluginCrawler(BaseCrawler):
         skip_versions = skip_versions or set()
         failed_fetches: list[FailedFetch] = []
 
-        self._log(f"Discovering available {self.config.product_name} versions...")
+        logger.info(f"Discovering available {self.config.product_name} versions...")
         discovered_versions = await self.discover_versions()
 
         if major_versions is not None:
@@ -271,17 +288,24 @@ class PluginCrawler(BaseCrawler):
             versions_str = ", ".join(v.version for v in discovered_versions[:5])
             if len(discovered_versions) > 5:
                 versions_str += f" (+{len(discovered_versions) - 5} more)"
-            self._log(f"Found {len(discovered_versions)} versions: {versions_str}")
+            logger.info(f"Found {len(discovered_versions)} versions: {versions_str}")
 
         all_product_versions: list[ProductVersion] = []
 
         versions_to_fetch = [v for v in discovered_versions if v.version not in skip_versions]
         skipped_count = len(discovered_versions) - len(versions_to_fetch)
         if skipped_count > 0:
-            self._log(f"  Skipping {skipped_count} already-fetched versions")
+            logger.info(f"  Skipping {skipped_count} already-fetched versions")
+
+        self._set_task_total(
+            len(versions_to_fetch),
+            f"{self.config.product_name}: fetching {len(versions_to_fetch)} versions"
+            if versions_to_fetch
+            else f"{self.config.product_name}: nothing new to fetch",
+        )
 
         for version_info in versions_to_fetch:
-            self._log(f"  Crawling {self.config.product_name} {version_info.version}...")
+            logger.info(f"  Crawling {self.config.product_name} {version_info.version}...")
 
             fetch_tasks = []
             url_types = []
@@ -332,10 +356,12 @@ class PluginCrawler(BaseCrawler):
                         addressed_issues=addressed_issues,
                     )
                 )
-                self._log(
+                logger.info(
                     f"    {version_info.version}: {len(known_issues)} known, "
                     f"{len(addressed_issues)} addressed"
                 )
+
+            self._advance_task(f"{self.config.product_name}: {version_info.version} done")
 
         if failed_fetches:
             _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)

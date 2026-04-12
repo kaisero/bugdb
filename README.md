@@ -108,7 +108,33 @@ bugdb fetch panos -o assets/bugdb.json --incremental
 
 # Force overwrite existing file
 bugdb fetch panos -o assets/bugdb.json --force
+
+# Silence the live progress bar (useful for quiet CI runs)
+bugdb fetch -o assets/bugdb.json --no-progress
+
+# Write a streaming fetch log with per-version events + summary
+bugdb fetch -o assets/bugdb.json -l fetch.log
+bugdb fetch -o assets/bugdb.json -l auto   # writes assets/bugdb.log
 ```
+
+On a TTY, `bugdb fetch` renders a live Rich progress bar that shows
+an outer `Fetching N products` counter and a per-product inner task
+whose description updates as each version completes. When stdout is
+piped (CI logs, `| cat`, `| tee`), the reporter auto-degrades to
+one grep-friendly line per event (`[progress] update: GlobalProtect:
+6.2.8-h7 done (4/32)`) so you can still see exactly what's in flight
+without a redrawing spinner. Pass `--no-progress` to suppress all
+progress output entirely.
+
+For post-mortem review, pass `--log-file PATH` (short: `-l`) to
+write a timestamped fetch log containing every per-product
+discovery event, per-version success line, retry warning, and
+backoff notice, followed by a summary block with totals and the
+full list of failed fetches. `-l auto` writes to `<output>.log`
+next to the bug database; `-l fetch.log` writes to an explicit
+path. Grep `grep ERROR fetch.log` to surface every failure, or
+`grep 'Fetch Summary' -A 20 fetch.log` to read the summary block
+without scrolling.
 
 ### Build Static Site
 
@@ -151,6 +177,8 @@ open dist/index.html
 | `-f, --force` | Overwrite existing output file |
 | `--headless/--no-headless` | Run browser in headless mode |
 | `--debug` | Enable debug logging |
+| `--progress/--no-progress` | Show live progress bar (default: auto-detect TTY) |
+| `-l, --log-file` | Write streaming fetch log to PATH; `-l auto` defaults to `<output>.log` |
 
 ## JSON Schema
 

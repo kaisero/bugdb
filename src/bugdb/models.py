@@ -137,6 +137,10 @@ class ProductStats(BaseModel):
     product_id: str = Field(..., description="Product identifier")
     product_name: str = Field(..., description="Product display name")
     versions_fetched: int = Field(..., description="Number of versions fetched")
+    versions: list[str] = Field(
+        default_factory=list,
+        description="Version strings fetched for this product (e.g. ['12.1.5', '11.2.3'])",
+    )
     known_issues_count: int = Field(..., description="Number of known issues fetched")
     addressed_issues_count: int = Field(..., description="Number of addressed issues fetched")
     failed_fetch_count: int = Field(..., description="Number of failed URL fetches")

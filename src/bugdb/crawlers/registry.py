@@ -11,6 +11,7 @@ from bugdb.models import BugDatabase, Metadata
 
 if TYPE_CHECKING:
     from bugdb.discovery_cache import DiscoveryCache
+    from bugdb.progress import ProgressReporter, TaskHandle
 
 from .models import FetchResult
 from .products.adem import ADEMCrawler
@@ -78,19 +79,21 @@ def get_crawler_class(product_id: str):
 async def _crawl_globalprotect_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of GlobalProtect crawler."""
     async with GlobalProtectCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -116,19 +119,21 @@ async def _crawl_globalprotect_async(
 async def _crawl_panos_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of PAN-OS crawler."""
     async with PANOSCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -154,19 +159,21 @@ async def _crawl_panos_async(
 async def _crawl_prisma_access_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Prisma Access crawler."""
     async with PrismaAccessCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -192,19 +199,21 @@ async def _crawl_prisma_access_async(
 async def _crawl_prisma_access_agent_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Prisma Access Agent crawler."""
     async with PrismaAccessAgentCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -230,19 +239,21 @@ async def _crawl_prisma_access_agent_async(
 async def _crawl_prisma_sdwan_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Prisma SD-WAN crawler."""
     async with PrismaSDWANCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -268,19 +279,21 @@ async def _crawl_prisma_sdwan_async(
 async def _crawl_cloud_ngfw_azure_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Cloud NGFW for Azure crawler."""
     async with CloudNGFWAzureCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -300,19 +313,21 @@ async def _crawl_cloud_ngfw_azure_async(
 async def _crawl_cloud_ngfw_aws_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Cloud NGFW for AWS crawler."""
     async with CloudNGFWAWSCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -332,19 +347,21 @@ async def _crawl_cloud_ngfw_aws_async(
 async def _crawl_remote_browser_isolation_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Remote Browser Isolation crawler."""
     async with RemoteBrowserIsolationCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -364,19 +381,21 @@ async def _crawl_remote_browser_isolation_async(
 async def _crawl_ai_runtime_security_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of AI Runtime Security crawler."""
     async with AIRuntimeSecurityCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -396,19 +415,21 @@ async def _crawl_ai_runtime_security_async(
 async def _crawl_strata_logging_service_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Strata Logging Service crawler."""
     async with StrataLoggingServiceCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -428,19 +449,21 @@ async def _crawl_strata_logging_service_async(
 async def _crawl_device_security_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Device Security crawler."""
     async with DeviceSecurityCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(skip_versions=skip_versions)
 
@@ -460,19 +483,21 @@ async def _crawl_device_security_async(
 async def _crawl_adem_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Autonomous DEM crawler."""
     async with ADEMCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl()
 
@@ -492,19 +517,21 @@ async def _crawl_adem_async(
 async def _crawl_scm_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Strata Cloud Manager crawler."""
     async with SCMCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl()
 
@@ -524,19 +551,21 @@ async def _crawl_scm_async(
 async def _crawl_sdwan_plugin_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Panorama Plugin for SD-WAN crawler."""
     async with SDWANPluginCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -562,19 +591,21 @@ async def _crawl_sdwan_plugin_async(
 async def _crawl_cortex_xdr_async(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Async implementation of Cortex XDR Agent crawler."""
     async with CortexXDRCrawler(
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(skip_versions=skip_versions)
 
@@ -595,11 +626,12 @@ async def _crawl_plugin_async(
     plugin_id: str,
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Generic async implementation for Panorama/VM-Series plugin crawlers."""
     config = PLUGIN_CONFIGS[plugin_id]
@@ -607,10 +639,11 @@ async def _crawl_plugin_async(
     async with PluginCrawler(
         config=config,
         headless=headless,
-        verbose=verbose,
         debug=debug,
         max_concurrency=max_concurrency,
         discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
     ) as crawler:
         result = await crawler.crawl(major_versions, skip_versions)
 
@@ -641,22 +674,24 @@ async def _crawl_plugin_async(
 def crawl_globalprotect(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl GlobalProtect release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_globalprotect_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -664,22 +699,24 @@ def crawl_globalprotect(
 def crawl_panos(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl PAN-OS release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_panos_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -687,22 +724,24 @@ def crawl_panos(
 def crawl_prisma_access(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Prisma Access release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_prisma_access_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -710,22 +749,24 @@ def crawl_prisma_access(
 def crawl_prisma_access_agent(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Prisma Access Agent release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_prisma_access_agent_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -733,22 +774,24 @@ def crawl_prisma_access_agent(
 def crawl_prisma_sdwan(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Prisma SD-WAN release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_prisma_sdwan_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -756,22 +799,24 @@ def crawl_prisma_sdwan(
 def crawl_cloud_ngfw_azure(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Cloud NGFW for Azure release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_cloud_ngfw_azure_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -779,22 +824,24 @@ def crawl_cloud_ngfw_azure(
 def crawl_cloud_ngfw_aws(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Cloud NGFW for AWS release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_cloud_ngfw_aws_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -802,22 +849,24 @@ def crawl_cloud_ngfw_aws(
 def crawl_remote_browser_isolation(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Remote Browser Isolation release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_remote_browser_isolation_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -825,22 +874,24 @@ def crawl_remote_browser_isolation(
 def crawl_ai_runtime_security(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl AI Runtime Security release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_ai_runtime_security_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -848,22 +899,24 @@ def crawl_ai_runtime_security(
 def crawl_strata_logging_service(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Strata Logging Service release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_strata_logging_service_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -871,22 +924,24 @@ def crawl_strata_logging_service(
 def crawl_device_security(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Device Security release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_device_security_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -894,22 +949,24 @@ def crawl_device_security(
 def crawl_adem(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Autonomous DEM release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_adem_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -917,22 +974,24 @@ def crawl_adem(
 def crawl_scm(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Strata Cloud Manager release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_scm_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -940,22 +999,24 @@ def crawl_scm(
 def crawl_sdwan_plugin(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Panorama Plugin for SD-WAN release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_sdwan_plugin_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -963,22 +1024,24 @@ def crawl_sdwan_plugin(
 def crawl_cortex_xdr(
     major_versions: list[str] | None = None,
     headless: bool = True,
-    verbose: bool = False,
     debug: bool = False,
     max_concurrency: int = 3,
     skip_versions: set[str] | None = None,
     discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
 ) -> FetchResult:
     """Crawl Cortex XDR Agent release notes and return a FetchResult."""
     return asyncio.run(
         _crawl_cortex_xdr_async(
             major_versions,
             headless,
-            verbose,
             debug,
             max_concurrency,
             skip_versions,
             discovery_cache,
+            reporter,
+            task,
         )
     )
 
@@ -991,22 +1054,24 @@ def _make_plugin_crawler(plugin_id: str):
     def crawl_func(
         major_versions: list[str] | None = None,
         headless: bool = True,
-        verbose: bool = False,
         debug: bool = False,
         max_concurrency: int = 3,
         skip_versions: set[str] | None = None,
         discovery_cache: DiscoveryCache | None = None,
+        reporter: ProgressReporter | None = None,
+        task: TaskHandle | None = None,
     ) -> FetchResult:
         return asyncio.run(
             _crawl_plugin_async(
                 plugin_id,
                 major_versions,
                 headless,
-                verbose,
                 debug,
                 max_concurrency,
                 skip_versions,
                 discovery_cache,
+                reporter,
+                task,
             )
         )
 
@@ -1017,7 +1082,6 @@ def _make_plugin_crawler(plugin_id: str):
         major_versions: List of major versions to crawl (e.g., ["5-3", "5-2"]).
                        If None, discovers and crawls all available versions.
         headless: Whether to run browser in headless mode.
-        verbose: Whether to print progress messages.
         debug: Whether to enable debug logging.
         max_concurrency: Maximum number of concurrent page fetches.
         skip_versions: Set of version strings to skip for incremental fetching.

@@ -15,27 +15,6 @@ BASE_URL = "https://docs.paloaltonetworks.com"
 CORTEX_BASE_URL = "https://docs-cortex.paloaltonetworks.com"
 
 
-def configure_logging(debug: bool = False) -> None:
-    """Configure logging for the crawler module.
-
-    Args:
-        debug: If True, enables DEBUG level logging. Otherwise, INFO level.
-    """
-    level = logging.DEBUG if debug else logging.INFO
-    handler = logging.StreamHandler()
-    handler.setLevel(level)
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    handler.setFormatter(formatter)
-
-    # Clear existing handlers and add ours
-    logger.handlers.clear()
-    logger.addHandler(handler)
-    logger.setLevel(level)
-
-
 def version_sort_key(version: str) -> tuple:
     """Create a sort key for version strings.
 

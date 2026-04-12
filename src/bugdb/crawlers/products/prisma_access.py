@@ -122,7 +122,6 @@ class PrismaAccessCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
-            self._log(f"  Error discovering version pages: {e}")
 
         version_infos.sort(
             key=lambda v: self._version_sort_key(v.version),
@@ -150,7 +149,7 @@ class PrismaAccessCrawler(BaseCrawler):
 
         # Cache-aware discovery — see BaseCrawler._resolve_version_infos.
         if major_versions is None:
-            self._log("Discovering available Prisma Access versions...")
+            logger.info("Discovering available Prisma Access versions...")
         vi_by_major = await self._resolve_version_infos(
             discover_majors_fn=self.discover_versions,
             discover_pages_fn=self.discover_version_pages,
@@ -158,16 +157,24 @@ class PrismaAccessCrawler(BaseCrawler):
             skip_versions=skip_versions,
         )
         if major_versions is None:
-            self._log(f"Found versions: {', '.join(vi_by_major.keys())}")
+            logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
+
+        total_versions = sum(len(v) for v in vi_by_major.values())
+        self._set_task_total(
+            total_versions,
+            f"{self.product_name}: fetching {total_versions} versions"
+            if total_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions = []
 
         for major_version, version_infos in vi_by_major.items():
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling Prisma Access {version_str}...")
+            logger.info("Crawling Prisma Access %s...", version_str)
 
             if not version_infos:
-                self._log("  No versions to crawl (all skipped or none found)")
+                logger.info("No versions to crawl (all skipped or none found)")
                 continue
 
             product_versions, failed_fetches = await self._crawl_versions_parallel(

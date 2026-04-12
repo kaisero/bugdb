@@ -34,7 +34,8 @@ class CloudNGFWAzureCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Cloud NGFW for Azure...")
+        logger.info("Crawling Cloud NGFW for Azure...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
         failed_fetches: list[FailedFetch] = []
 
         known_issues_url = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
@@ -58,9 +59,9 @@ class CloudNGFWAzureCrawler(BaseCrawler):
                 if table.find_parent("table"):
                     continue
                 known_issues.extend(self._parse_issues_table(table))
-            self._log(f"  Found {len(known_issues)} known issues")
+            logger.info(f"  Found {len(known_issues)} known issues")
         else:
-            self._log(f"  Error fetching known issues: {results[0]}")
+            logger.error(f"Error fetching known issues: {results[0]}")
             failed_fetches.append(
                 FailedFetch(
                     url=known_issues_url,
@@ -76,9 +77,9 @@ class CloudNGFWAzureCrawler(BaseCrawler):
                 if table.find_parent("table"):
                     continue
                 addressed_issues.extend(self._parse_issues_table(table))
-            self._log(f"  Found {len(addressed_issues)} addressed issues")
+            logger.info(f"  Found {len(addressed_issues)} addressed issues")
         else:
-            self._log(f"  Error fetching addressed issues: {results[1]}")
+            logger.error(f"Error fetching addressed issues: {results[1]}")
             failed_fetches.append(
                 FailedFetch(
                     url=addressed_issues_url,
@@ -107,6 +108,8 @@ class CloudNGFWAzureCrawler(BaseCrawler):
                     addressed_issues=addressed_issues,
                 )
             )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(
@@ -141,7 +144,8 @@ class CloudNGFWAWSCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Cloud NGFW for AWS...")
+        logger.info("Crawling Cloud NGFW for AWS...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
         failed_fetches: list[FailedFetch] = []
 
         known_issues_url = "/cloud-ngfw-aws/release-notes/cloud-ngfw-for-aws-known-issues"
@@ -154,9 +158,9 @@ class CloudNGFWAWSCrawler(BaseCrawler):
                 if table.find_parent("table"):
                     continue
                 known_issues.extend(self._parse_issues_table(table))
-            self._log(f"  Found {len(known_issues)} known issues")
+            logger.info(f"  Found {len(known_issues)} known issues")
         except Exception as e:
-            self._log(f"  Error fetching known issues: {e}")
+            logger.error(f"Error fetching known issues: {e}")
             failed_fetches.append(
                 FailedFetch(
                     url=known_issues_url,
@@ -184,6 +188,8 @@ class CloudNGFWAWSCrawler(BaseCrawler):
                     addressed_issues=[],
                 )
             )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(

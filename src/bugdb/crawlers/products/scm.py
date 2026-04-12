@@ -304,7 +304,8 @@ class SCMCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Strata Cloud Manager...")
+        logger.info("Crawling Strata Cloud Manager...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
 
         known_issues_url = "/strata-cloud-manager/release-notes/known-issues"
         addressed_issues_url = "/strata-cloud-manager/release-notes/addressed-issues"
@@ -326,9 +327,9 @@ class SCMCrawler(BaseCrawler):
         if not isinstance(results[0], Exception):
             known_by_version = self._parse_scm_known_issues_page(results[0])
             total_known = sum(len(issues) for issues in known_by_version.values())
-            self._log(f"  Found {total_known} known issues")
+            logger.info(f"  Found {total_known} known issues")
         else:
-            self._log(f"  Error fetching known issues: {results[0]}")
+            logger.error(f"Error fetching known issues: {results[0]}")
             failed_fetches.append(
                 FailedFetch(
                     url=known_issues_url,
@@ -344,9 +345,9 @@ class SCMCrawler(BaseCrawler):
                 if "SaaS" not in known_by_version:
                     known_by_version["SaaS"] = []
                 known_by_version["SaaS"].extend(multitenant_issues)
-                self._log(f"  Found {len(multitenant_issues)} multitenant known issues")
+                logger.info(f"  Found {len(multitenant_issues)} multitenant known issues")
         else:
-            self._log(f"  Error fetching multitenant known issues: {results[2]}")
+            logger.error(f"Error fetching multitenant known issues: {results[2]}")
             failed_fetches.append(
                 FailedFetch(
                     url=multitenant_known_issues_url,
@@ -359,9 +360,9 @@ class SCMCrawler(BaseCrawler):
         if not isinstance(results[1], Exception):
             addressed_by_version = self._parse_scm_addressed_issues_page(results[1])
             total_addressed = sum(len(issues) for issues in addressed_by_version.values())
-            self._log(f"  Found {total_addressed} addressed issues")
+            logger.info(f"  Found {total_addressed} addressed issues")
         else:
-            self._log(f"  Error fetching addressed issues: {results[1]}")
+            logger.error(f"Error fetching addressed issues: {results[1]}")
             failed_fetches.append(
                 FailedFetch(
                     url=addressed_issues_url,
@@ -395,6 +396,8 @@ class SCMCrawler(BaseCrawler):
             key=lambda v: self._scm_version_sort_key(v.version),
             reverse=True,
         )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(

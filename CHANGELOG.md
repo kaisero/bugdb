@@ -9,7 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.3] - 2026-04-11
 
+### Added
+- **Live per-version progress reporting on `bugdb fetch` and `bugdb build`.**
+  A cold `bugdb fetch` takes 10-20 minutes and previously gave the
+  user only a single spinner whose label bumped once per product —
+  inside a product there was no signal at all, so any run over a
+  minute looked indistinguishable from a hang. New `--progress /
+  --no-progress` flag (default: auto-detect TTY) surfaces both which
+  product and which version is currently in flight, plus a running
+  `N/M` completion counter.
+  - On a TTY: Rich live bar with spinner, description, bar, N/M
+    counter, and elapsed time. Two levels: outer "Fetching N
+    products" bar + inner per-product task updating on each
+    version completion.
+  - Piped stdout (CI, `| cat`): auto-degrades to one
+    grep-friendly line per event.
+  - `--no-progress`: suppresses all progress output.
+  - Reusable `ProgressReporter` protocol in `src/bugdb/progress.py`
+    with Rich, Plain, and Null implementations.
+- **Streaming fetch log via `--log-file / -l`.** Writes a timestamped
+  log of every fetch operation with a human-readable summary block
+  at the end (totals, per-product breakdown with version lists,
+  failed fetches with URLs and error messages).
+  - `-l PATH`: explicit log path. `-l auto`: defaults to
+    `<output>.log`. Omit to disable.
+  - `bugdb build -l` forwards to the fetch stage; with
+    `--skip-fetch` a "fetch stage skipped" marker is written.
+
 ### Changed
+- **Retired `BaseCrawler._log()` and the `verbose` kwarg.** All
+  crawler status messages now go through stdlib `logger` directly.
+  The new `configure_fetch_logging()` context manager owns handler
+  attachment for `--log-file` (file) and `--debug` (stderr).
+  `--debug` now correctly emits from every `bugdb.*` logger to
+  stderr (previously scoped to a single module). Progress bars are
+  automatically disabled when `--debug` is active to avoid tearing.
 - **Unified `assets/` working directory and `bugdb.json` filename.**
   Previously the CLI spread its artifacts across three locations:
   `assets/data.json` (fetched bug database),

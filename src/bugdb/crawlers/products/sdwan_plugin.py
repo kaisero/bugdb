@@ -211,7 +211,7 @@ class SDWANPluginCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error parsing SD-WAN Plugin page %s: %s", url, e)
-            self._log(f"  Error parsing {url}: {e}")
+            logger.error(f"Error parsing {url}: {e}")
             raise
 
         return known_issues, addressed_by_version
@@ -234,15 +234,22 @@ class SDWANPluginCrawler(BaseCrawler):
         failed_fetches: list[FailedFetch] = []
 
         if major_versions is None:
-            self._log("Discovering available Panorama Plugin for SD-WAN versions...")
+            logger.info("Discovering available Panorama Plugin for SD-WAN versions...")
             major_versions = await self.discover_versions()
-            self._log(f"Found versions: {', '.join(major_versions)}")
+            logger.info(f"Found versions: {', '.join(major_versions)}")
+
+        self._set_task_total(
+            len(major_versions) if major_versions else 0,
+            f"{self.product_name}: fetching {len(major_versions)} versions"
+            if major_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions: list[ProductVersion] = []
 
         for major_version in major_versions:
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling Panorama Plugin for SD-WAN {version_str}...")
+            logger.info(f"Crawling Panorama Plugin for SD-WAN {version_str}...")
 
             version_num = major_version.replace("-", "") + "0"
             known_issues_url = (
@@ -266,7 +273,7 @@ class SDWANPluginCrawler(BaseCrawler):
                                 addressed_issues=[],
                             )
                         )
-                        self._log(f"    {version_str}: {len(known_filtered)} known issues")
+                        logger.info(f"    {version_str}: {len(known_filtered)} known issues")
 
                 for fix_version, issues in addressed_by_version.items():
                     if fix_version not in skip_versions:
@@ -286,7 +293,7 @@ class SDWANPluginCrawler(BaseCrawler):
                                         addressed_issues=addressed_filtered,
                                     )
                                 )
-                            self._log(
+                            logger.info(
                                 f"    {fix_version}: {len(addressed_filtered)} addressed issues"
                             )
 
@@ -300,7 +307,9 @@ class SDWANPluginCrawler(BaseCrawler):
                         issue_type="known",
                     )
                 )
-                self._log(f"  Error fetching {known_issues_url}: {e}")
+                logger.error(f"Error fetching {known_issues_url}: {e}")
+
+            self._advance_task(f"{self.product_name}: {version_str} done")
 
         if failed_fetches:
             _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)

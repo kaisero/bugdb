@@ -143,7 +143,6 @@ class PANOSCrawler(BaseCrawler):
                 "No landing URL found for PAN-OS %s (tried NGFW and legacy paths)",
                 major_version,
             )
-            self._log(f"  No landing URL found for PAN-OS {major_version}")
             return version_infos
 
         try:
@@ -189,7 +188,6 @@ class PANOSCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
-            self._log(f"  Error discovering version pages: {e}")
 
         version_infos.sort(
             key=lambda v: self._version_sort_key(v.version),
@@ -219,7 +217,7 @@ class PANOSCrawler(BaseCrawler):
         # Resolve the (major -> [VersionInfo]) map via the cache-aware
         # helper. On a warm incremental run this is a zero-network call.
         if major_versions is None:
-            self._log("Discovering available PAN-OS versions...")
+            logger.info("Discovering available PAN-OS versions...")
         vi_by_major = await self._resolve_version_infos(
             discover_majors_fn=self.discover_versions,
             discover_pages_fn=self.discover_version_pages,
@@ -227,16 +225,24 @@ class PANOSCrawler(BaseCrawler):
             skip_versions=skip_versions,
         )
         if major_versions is None:
-            self._log(f"Found versions: {', '.join(vi_by_major.keys())}")
+            logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
+
+        total_versions = sum(len(v) for v in vi_by_major.values())
+        self._set_task_total(
+            total_versions,
+            f"{self.product_name}: fetching {total_versions} versions"
+            if total_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions = []
 
         for major_version, version_infos in vi_by_major.items():
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling PAN-OS {version_str}...")
+            logger.info("Crawling PAN-OS %s...", version_str)
 
             if not version_infos:
-                self._log("  No versions to crawl (all skipped or none found)")
+                logger.info("No versions to crawl (all skipped or none found)")
                 continue
 
             product_versions, failed_fetches = await self._crawl_versions_parallel(

@@ -8,13 +8,13 @@ Usage:
     # Using sync wrapper functions (recommended)
     from bugdb.crawlers import crawl_globalprotect, crawl_panos
 
-    result = crawl_globalprotect(verbose=True)
+    result = crawl_globalprotect()
     print(f"Found {len(result.database.products[0].versions)} versions")
 
     # Using crawler classes directly (advanced)
     from bugdb.crawlers import GlobalProtectCrawler
 
-    async with GlobalProtectCrawler(verbose=True) as crawler:
+    async with GlobalProtectCrawler() as crawler:
         result = await crawler.crawl(major_versions=["6-3"])
 
 Structure:

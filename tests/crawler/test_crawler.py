@@ -38,7 +38,6 @@ from bugdb.crawlers import (
 from bugdb.crawlers import (
     BaseCrawler as PaloAltoCrawler,
 )
-from bugdb.crawlers.utils import configure_logging
 from bugdb.models import BugDatabase, Issue, Metadata, Product, ProductVersion
 
 
@@ -1059,7 +1058,6 @@ class TestCrawlerConfiguration:
         crawler = PaloAltoCrawler()
 
         assert crawler.headless is True
-        assert crawler.verbose is False
         assert crawler.debug is False
         assert crawler.max_concurrency == 3
         assert crawler.max_retries == 3
@@ -1069,7 +1067,6 @@ class TestCrawlerConfiguration:
         """Test custom crawler configuration."""
         crawler = PaloAltoCrawler(
             headless=False,
-            verbose=True,
             debug=True,
             max_concurrency=10,
             max_retries=5,
@@ -1077,54 +1074,15 @@ class TestCrawlerConfiguration:
         )
 
         assert crawler.headless is False
-        assert crawler.verbose is True
         assert crawler.debug is True
         assert crawler.max_concurrency == 10
         assert crawler.max_retries == 5
         assert crawler.retry_delay == 1.0
 
-    def test_crawler_logging_disabled_by_default(self, capsys):
-        """Test that logging is disabled by default."""
-        crawler = PaloAltoCrawler(verbose=False)
-        crawler._log("Test message")
-
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
-    def test_crawler_logging_when_verbose(self, capsys):
-        """Test that logging works when verbose is enabled."""
-        crawler = PaloAltoCrawler(verbose=True)
-        crawler._log("Test message")
-
-        captured = capsys.readouterr()
-        assert "Test message" in captured.out
-
     def test_crawler_debug_configuration(self):
         """Test that debug mode can be enabled."""
         crawler = PaloAltoCrawler(debug=True)
         assert crawler.debug is True
-
-
-class TestDebugLogging:
-    """Tests for debug logging functionality."""
-
-    def test_configure_logging_sets_debug_level(self):
-        """Test that configure_logging sets the correct log level."""
-        import logging
-
-        from bugdb.crawlers.utils import logger
-
-        configure_logging(debug=True)
-        assert logger.level == logging.DEBUG
-
-    def test_configure_logging_sets_info_level(self):
-        """Test that configure_logging sets INFO level when debug is False."""
-        import logging
-
-        from bugdb.crawlers.utils import logger
-
-        configure_logging(debug=False)
-        assert logger.level == logging.INFO
 
 
 class TestMultiVersionPageParsing:
@@ -4059,7 +4017,6 @@ class TestPluginCrawlerFunctions:
         expected_params = [
             "major_versions",
             "headless",
-            "verbose",
             "debug",
             "max_concurrency",
             "skip_versions",
@@ -4394,7 +4351,6 @@ class TestDeviceSecurityCrawlFunction:
 
         assert "major_versions" in param_names
         assert "headless" in param_names
-        assert "verbose" in param_names
         assert "debug" in param_names
         assert "max_concurrency" in param_names
         assert "skip_versions" in param_names
@@ -5104,7 +5060,6 @@ class TestCortexXDRCrawlFunction:
 
         assert "major_versions" in param_names
         assert "headless" in param_names
-        assert "verbose" in param_names
         assert "debug" in param_names
         assert "max_concurrency" in param_names
         assert "skip_versions" in param_names
@@ -5116,3 +5071,179 @@ class TestCortexXDRCrawlFunction:
 
         # The crawl function should exist and be callable
         assert callable(crawl_cortex_xdr)
+
+
+# ---------------------------------------------------------------------------
+# Progress reporter integration
+# ---------------------------------------------------------------------------
+
+
+class SpyProgressReporter:
+    """Records every reporter call for assertion in tests.
+
+    Follows the ``ProgressReporter`` protocol structurally — no
+    inheritance needed since the protocol is ``@runtime_checkable``.
+    Exposed as a spy, not a mock, so tests can inspect the ordered
+    event log and distinguish ``update(advance=1)`` ticks from
+    description-only updates.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[tuple] = []
+        self._next_id: int = 0
+
+    def add_task(self, description, total=None, parent=None):
+        self._next_id += 1
+        self.events.append(("add_task", self._next_id, description, total, parent))
+        return self._next_id
+
+    def update(self, task, *, advance=0, description=None, total=None):
+        self.events.append(("update", task, advance, description, total))
+
+    def complete(self, task):
+        self.events.append(("complete", task))
+
+    def log(self, message):
+        self.events.append(("log", message))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return None
+
+    def advance_events(self):
+        """Convenience: yield every ``update`` event whose advance>0."""
+        return [e for e in self.events if e[0] == "update" and e[2] > 0]
+
+
+class TestProgressReporterIntegration:
+    """BaseCrawler emits progress events when a reporter+task pair is wired."""
+
+    @pytest.mark.asyncio
+    async def test_crawl_versions_parallel_advances_once_per_version(
+        self, mock_playwright_globalprotect
+    ):
+        """Each completed version must produce exactly one advance=1
+        event, in ``finally``-block semantics so failures still tick
+        the bar and leave no stuck counters."""
+        spy = SpyProgressReporter()
+        task = spy.add_task("test", total=None)
+
+        with patch(
+            "bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect
+        ):
+            async with PaloAltoCrawler(reporter=spy, task=task) as crawler:
+                version_infos = [
+                    VersionInfo(
+                        version="6.2.1",
+                        known_issues_urls=["/globalprotect/release-notes/6-2/6-2-1-known-issues"],
+                        addressed_issues_urls=[
+                            "/globalprotect/release-notes/6-2/6-2-1-addressed-issues"
+                        ],
+                    ),
+                    VersionInfo(
+                        version="6.1.3",
+                        known_issues_urls=["/globalprotect/release-notes/6-1/6-1-3-known-issues"],
+                        addressed_issues_urls=[
+                            "/globalprotect/release-notes/6-1/6-1-3-addressed-issues"
+                        ],
+                    ),
+                ]
+
+                await crawler._crawl_versions_parallel(version_infos, product_name="GP")
+
+        advances = spy.advance_events()
+        assert len(advances) == 2, f"expected 2 advance=1 events, got {advances}"
+        # Every advance carries the finishing version in its description,
+        # so users see which one just completed.
+        descriptions = [e[3] for e in advances]
+        assert any("6.2.1" in d for d in descriptions)
+        assert any("6.1.3" in d for d in descriptions)
+
+    @pytest.mark.asyncio
+    async def test_crawl_versions_parallel_advances_on_exception(
+        self, mock_playwright_globalprotect
+    ):
+        """If ``_crawl_version`` raises, the ``finally`` block must
+        still advance the bar so the counter doesn't get stuck below
+        the total. We simulate failure by patching _crawl_version."""
+        spy = SpyProgressReporter()
+        task = spy.add_task("test", total=None)
+
+        with patch(
+            "bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect
+        ):
+            async with PaloAltoCrawler(reporter=spy, task=task) as crawler:
+                crawler._crawl_version = AsyncMock(side_effect=RuntimeError("boom"))
+                version_infos = [
+                    VersionInfo(
+                        version=f"6.2.{n}",
+                        known_issues_urls=[f"/gp/6-2-{n}-known"],
+                        addressed_issues_urls=[f"/gp/6-2-{n}-addressed"],
+                    )
+                    for n in range(3)
+                ]
+
+                await crawler._crawl_versions_parallel(version_infos, product_name="GP")
+
+        advances = spy.advance_events()
+        assert len(advances) == 3, f"expected 3 advance=1 events (one per failure), got {advances}"
+
+    @pytest.mark.asyncio
+    async def test_no_reporter_is_zero_overhead_noop(self, mock_playwright_globalprotect):
+        """Default ``reporter=None`` path must not raise or touch any
+        attribute — this is the backwards-compat guarantee for every
+        test and library caller that existed before the feature."""
+        with patch(
+            "bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect
+        ):
+            async with PaloAltoCrawler() as crawler:
+                assert crawler._reporter is None
+                assert crawler._task is None
+                version_infos = [
+                    VersionInfo(
+                        version="6.2.1",
+                        known_issues_urls=["/globalprotect/release-notes/6-2/6-2-1-known-issues"],
+                        addressed_issues_urls=[
+                            "/globalprotect/release-notes/6-2/6-2-1-addressed-issues"
+                        ],
+                    ),
+                ]
+                versions, _failed = await crawler._crawl_versions_parallel(version_infos)
+                assert isinstance(versions, list)
+
+    def test_set_task_total_updates_reporter(self):
+        """``_set_task_total`` forwards to reporter.update when both
+        reporter and task are set; no-op otherwise."""
+        spy = SpyProgressReporter()
+        task = spy.add_task("x", total=None)
+
+        crawler = PaloAltoCrawler(reporter=spy, task=task)
+        crawler._set_task_total(15, "PAN-OS: fetching 15 versions")
+
+        updates = [e for e in spy.events if e[0] == "update" and e[4] == 15]
+        assert len(updates) == 1
+        assert updates[0][3] == "PAN-OS: fetching 15 versions"
+
+    def test_set_task_total_without_reporter_is_noop(self):
+        """With no reporter/task pair, ``_set_task_total`` must be a
+        silent no-op — this is what keeps the default path free of
+        overhead."""
+        crawler = PaloAltoCrawler()
+        # Must not raise.
+        crawler._set_task_total(42, "ignored")
+
+    def test_advance_task_updates_reporter(self):
+        """``_advance_task`` forwards ``advance=1`` to the reporter."""
+        spy = SpyProgressReporter()
+        task = spy.add_task("x", total=3)
+
+        crawler = PaloAltoCrawler(reporter=spy, task=task)
+        crawler._advance_task("PAN-OS: 12.1.5 done")
+        crawler._advance_task("PAN-OS: 11.2.3 done")
+
+        advances = spy.advance_events()
+        assert len(advances) == 2
+        assert advances[0][3] == "PAN-OS: 12.1.5 done"
+        assert advances[1][3] == "PAN-OS: 11.2.3 done"

@@ -138,7 +138,6 @@ class GlobalProtectCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
-            self._log(f"  Error discovering version pages: {e}")
 
         # Sort by version (newest first)
         version_infos.sort(
@@ -169,7 +168,7 @@ class GlobalProtectCrawler(BaseCrawler):
         # Cache-aware discovery: warm runs skip the probe + per-major
         # index fetches entirely. See BaseCrawler._resolve_version_infos.
         if major_versions is None:
-            self._log("Discovering available GlobalProtect versions...")
+            logger.info("Discovering available GlobalProtect versions...")
         vi_by_major = await self._resolve_version_infos(
             discover_majors_fn=self.discover_versions,
             discover_pages_fn=self.discover_version_pages,
@@ -177,16 +176,24 @@ class GlobalProtectCrawler(BaseCrawler):
             skip_versions=skip_versions,
         )
         if major_versions is None:
-            self._log(f"Found versions: {', '.join(vi_by_major.keys())}")
+            logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
+
+        total_versions = sum(len(v) for v in vi_by_major.values())
+        self._set_task_total(
+            total_versions,
+            f"{self.product_name}: fetching {total_versions} versions"
+            if total_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions = []
 
         for major_version, version_infos in vi_by_major.items():
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling GlobalProtect {version_str}...")
+            logger.info("Crawling GlobalProtect %s...", version_str)
 
             if not version_infos:
-                self._log("  No versions to crawl (all skipped or none found)")
+                logger.info("No versions to crawl (all skipped or none found)")
                 continue
 
             # Crawl all versions in parallel

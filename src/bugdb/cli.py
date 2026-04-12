@@ -1,6 +1,7 @@
 """CLI commands for BugDB."""
 
 import json
+import logging
 from pathlib import Path
 from typing import Annotated
 
@@ -11,8 +12,69 @@ from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from bugdb import __version__
-from bugdb.models import BugDatabase
+from bugdb.fetch_logging import configure_fetch_logging, format_fetch_summary
+from bugdb.models import BugDatabase, FetchReport
+from bugdb.progress import default_reporter
 from bugdb.site_builder import build_site
+
+_fetch_logger = logging.getLogger("bugdb.fetch")
+
+
+def _build_fetch_report(
+    database: BugDatabase,
+    output: Path,
+    all_failed_fetches: list,
+) -> FetchReport:
+    """Aggregate a ``FetchReport`` from the in-memory database and
+    the collected failed-fetch list.
+
+    Shared between the streaming summary emitted to the log file and
+    the optional ``--report`` JSON sidecar so both reflect the same
+    numbers. Cheap — pure Pydantic model construction.
+    """
+    from datetime import UTC, datetime
+
+    from bugdb.models import FailedFetchEntry, ProductStats
+
+    total_versions = sum(len(p.versions) for p in database.products)
+    total_known = sum(len(v.known_issues) for p in database.products for v in p.versions)
+    total_addressed = sum(len(v.addressed_issues) for p in database.products for v in p.versions)
+
+    product_stats = []
+    for p in database.products:
+        failed_for_product = [f for f in all_failed_fetches if f.product == p.id]
+        product_stats.append(
+            ProductStats(
+                product_id=p.id,
+                product_name=p.name,
+                versions_fetched=len(p.versions),
+                versions=[v.version for v in p.versions],
+                known_issues_count=sum(len(v.known_issues) for v in p.versions),
+                addressed_issues_count=sum(len(v.addressed_issues) for v in p.versions),
+                failed_fetch_count=len(failed_for_product),
+            )
+        )
+
+    return FetchReport(
+        generated_at=datetime.now(UTC),
+        bugdb_file=str(output),
+        total_products=len(database.products),
+        total_versions=total_versions,
+        total_known_issues=total_known,
+        total_addressed_issues=total_addressed,
+        product_stats=product_stats,
+        failed_fetches=[
+            FailedFetchEntry(
+                url=f.url,
+                error=f.error,
+                product=f.product,
+                version=f.version,
+                issue_type=f.issue_type,
+            )
+            for f in all_failed_fetches
+        ],
+    )
+
 
 app = typer.Typer(
     name="bugdb",
@@ -258,6 +320,30 @@ def fetch(
             ),
         ),
     ] = False,
+    progress: Annotated[
+        bool | None,
+        typer.Option(
+            "--progress/--no-progress",
+            help=(
+                "Show live progress bars and per-version updates. Default is "
+                "auto-detect: rich live bars on a TTY, streaming plain lines "
+                "when piped, suppressed entirely with --no-progress."
+            ),
+        ),
+    ] = None,
+    log_file: Annotated[
+        str | None,
+        typer.Option(
+            "--log-file",
+            "-l",
+            help=(
+                "Write a streaming fetch log with per-product events and a "
+                "summary block at the end. Pass a path (-l fetch.log), or "
+                "pass '-l auto' to default to <output>.log next to the bug "
+                "database. Omit the flag to disable file logging entirely."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Fetch bug data from Palo Alto Networks release notes website."""
     from datetime import UTC, datetime
@@ -271,11 +357,21 @@ def fetch(
     from bugdb.discovery_cache import DiscoveryCache
     from bugdb.models import (
         BugDatabase,
-        FailedFetchEntry,
         FetchReport,
         Metadata,
-        ProductStats,
     )
+
+    # Resolve the --log-file flag. ``None`` disables file logging.
+    # The literal sentinel ``"auto"`` means "next to the bug
+    # database at <output>.log", mirroring ``--report``'s
+    # ``<output>.report.json`` naming.
+    resolved_log_file: Path | None
+    if log_file is None:
+        resolved_log_file = None
+    elif log_file == "auto":
+        resolved_log_file = output.with_suffix(".log")
+    else:
+        resolved_log_file = Path(log_file)
 
     # One DiscoveryCache instance shared across every crawler in this run.
     # Loading once keeps warm-run I/O to a single JSON read + single write.
@@ -412,61 +508,145 @@ def fetch(
 
     all_failed_fetches: list[FailedFetch] = []
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Launching browser and crawling pages...", total=None)
+    # Lookup table for human-readable display names — used purely for
+    # the progress bar's initial "discovering versions" label before
+    # the crawler itself swaps in its own product_name via
+    # _set_task_total(). Falls back to the product id if the lookup
+    # misses (e.g. for future products added to the registry but not
+    # to the class hierarchy).
+    from bugdb.crawlers.registry import PRODUCT_CRAWLERS
 
-        all_products = []
+    def _display_name(pid: str) -> str:
+        cls = PRODUCT_CRAWLERS.get(pid)
+        return getattr(cls, "product_name", pid) if cls else pid
 
-        # Per-product crawl loop: a failure in one product should be
-        # surfaced with the product name, not masked as a generic
-        # "Error" on exit. Narrow the except so we know WHICH product
-        # blew up and can report it specifically.
-        for prod_name in products_to_fetch:
-            progress.update(task, description=f"Fetching {prod_name}...")
-            crawler_func = supported_products[prod_name]
+    # --debug streams log lines to stderr which tears Rich's live
+    # progress bars. Force the Null reporter when debug is active so
+    # the two modes don't fight over the terminal.
+    effective_progress = False if debug else progress
+    reporter = default_reporter(console, progress=effective_progress)
+    with configure_fetch_logging(resolved_log_file, debug=debug):
+        _fetch_logger.info("Fetch started: %s (%s)", product_display, version_display)
+        _fetch_logger.info(
+            "Targeting %d product(s); output=%s",
+            len(products_to_fetch),
+            output,
+        )
+        if resolved_log_file is not None:
+            console.print(f"[dim]Writing log to {resolved_log_file}[/dim]\n")
 
-            # Get skip_versions for this product (if in incremental mode)
-            skip_versions = existing_versions.get(prod_name, set())
-            if skip_versions:
-                progress.update(
-                    task,
-                    description=(
-                        f"Fetching {prod_name} (skipping {len(skip_versions)} existing versions)..."
-                    ),
-                )
-
-            try:
-                result = crawler_func(
-                    major_versions,
-                    headless=headless,
-                    debug=debug,
-                    skip_versions=skip_versions,
-                    discovery_cache=discovery_cache,
-                )
-            except Exception as e:
-                progress.stop()
-                console.print(f"[red]Error fetching {prod_name}:[/red] {e}")
-                raise typer.Exit(1) from e
-            all_products.extend(result.database.products)
-            all_failed_fetches.extend(result.failed_fetches)
-
-        # Flush the discovery cache after all crawlers have populated it,
-        # so the next run can start warm. A cache-write failure must
-        # never block a successful crawl — log and continue.
-        try:
-            discovery_cache.save()
-        except OSError as cache_err:
-            console.print(
-                f"[yellow]Warning:[/yellow] could not persist discovery cache "
-                f"({cache_err}); next run will start cold."
+        with reporter:
+            outer_task = reporter.add_task(
+                f"Fetching {len(products_to_fetch)} products",
+                total=len(products_to_fetch),
             )
 
-        # Create combined database
-        database = BugDatabase(
+            all_products = []
+
+            # Per-product crawl loop: a failure in one product should be
+            # surfaced with the product name, not masked as a generic
+            # "Error" on exit. Narrow the except so we know WHICH product
+            # blew up and can report it specifically.
+            for prod_name in products_to_fetch:
+                crawler_func = supported_products[prod_name]
+                display_name = _display_name(prod_name)
+
+                # Get skip_versions for this product (if in incremental mode)
+                skip_versions = existing_versions.get(prod_name, set())
+                if skip_versions:
+                    sub_description = (
+                        f"{display_name}: discovering "
+                        f"(skipping {len(skip_versions)} existing versions)"
+                    )
+                else:
+                    sub_description = f"{display_name}: discovering versions"
+                sub_task = reporter.add_task(
+                    sub_description,
+                    total=None,
+                    parent=outer_task,
+                )
+
+                try:
+                    result = crawler_func(
+                        major_versions,
+                        headless=headless,
+                        debug=debug,
+                        skip_versions=skip_versions,
+                        discovery_cache=discovery_cache,
+                        reporter=reporter,
+                        task=sub_task,
+                    )
+                except Exception as e:
+                    reporter.complete(sub_task)
+                    _fetch_logger.error("Error fetching %s: %s", prod_name, e)
+                    console.print(f"[red]Error fetching {prod_name}:[/red] {e}")
+                    raise typer.Exit(1) from e
+                reporter.complete(sub_task)
+                reporter.update(outer_task, advance=1)
+                all_products.extend(result.database.products)
+                all_failed_fetches.extend(result.failed_fetches)
+
+            # Flush the discovery cache after all crawlers have populated it,
+            # so the next run can start warm. A cache-write failure must
+            # never block a successful crawl — log and continue.
+            try:
+                discovery_cache.save()
+            except OSError as cache_err:
+                _fetch_logger.warning("Could not persist discovery cache: %s", cache_err)
+                console.print(
+                    f"[yellow]Warning:[/yellow] could not persist discovery cache "
+                    f"({cache_err}); next run will start cold."
+                )
+
+            # Create combined database
+            database = BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(UTC),
+                    version="1.0.0",
+                    source="Palo Alto Networks Release Notes",
+                ),
+                products=all_products,
+            )
+
+            # Merge with existing database if in incremental mode
+            if existing_database is not None:
+                _fetch_logger.info("Merging with existing data...")
+                reporter.log("Merging with existing data...")
+                try:
+                    database = merge_databases(existing_database, database)
+                except Exception as e:
+                    _fetch_logger.error("Error merging databases: %s", e)
+                    console.print(f"[red]Error merging databases:[/red] {e}")
+                    raise typer.Exit(1) from e
+
+            _fetch_logger.info("Writing %s", output)
+            reporter.log(f"Writing {output}...")
+
+            # Create output directory if needed
+            output.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write JSON file — narrow except around the IO write so disk
+            # errors report as "Error writing output" rather than a bare
+            # "Error" attributable to anything in the pipeline.
+            try:
+                with open(output, "w", encoding="utf-8") as f:
+                    json.dump(
+                        database.model_dump(mode="json", exclude_none=True),
+                        f,
+                        indent=2,
+                        default=str,
+                    )
+            except OSError as e:
+                _fetch_logger.error("Error writing %s: %s", output, e)
+                console.print(f"[red]Error writing {output}:[/red] {e}")
+                raise typer.Exit(1) from e
+
+        # Build the FetchReport from *only the products fetched in this
+        # run* (``all_products``), NOT from the post-merge ``database``
+        # which includes every pre-existing product from the incremental
+        # base. Otherwise an incremental fetch of a single product
+        # would report totals for the entire bugdb.json — misleading.
+        fetched_database = BugDatabase(
             metadata=Metadata(
                 generated_at=datetime.now(UTC),
                 version="1.0.0",
@@ -474,80 +654,20 @@ def fetch(
             ),
             products=all_products,
         )
+        fetch_report = _build_fetch_report(fetched_database, output, all_failed_fetches)
 
-        # Merge with existing database if in incremental mode
-        if existing_database is not None:
-            progress.update(task, description="Merging with existing data...")
-            try:
-                database = merge_databases(existing_database, database)
-            except Exception as e:
-                progress.stop()
-                console.print(f"[red]Error merging databases:[/red] {e}")
-                raise typer.Exit(1) from e
+        # Stream the summary through the fetch logger so it lands in
+        # the log file (if any) with consistent timestamps. Lines are
+        # self-contained so each one is independently emitted.
+        for summary_line in format_fetch_summary(fetch_report).splitlines():
+            _fetch_logger.info(summary_line)
+        _fetch_logger.info("Fetch finished")
 
-        progress.update(task, description="Writing JSON file...")
-
-        # Create output directory if needed
-        output.parent.mkdir(parents=True, exist_ok=True)
-
-        # Write JSON file — narrow except around the IO write so disk
-        # errors report as "Error writing output" rather than a bare
-        # "Error" attributable to anything in the pipeline.
-        try:
-            with open(output, "w", encoding="utf-8") as f:
-                json.dump(
-                    database.model_dump(mode="json", exclude_none=True),
-                    f,
-                    indent=2,
-                    default=str,
-                )
-        except OSError as e:
-            progress.stop()
-            console.print(f"[red]Error writing {output}:[/red] {e}")
-            raise typer.Exit(1) from e
-
-    # Count issues
-    total_versions = sum(len(p.versions) for p in database.products)
-    total_known = sum(len(v.known_issues) for p in database.products for v in p.versions)
-    total_addressed = sum(len(v.addressed_issues) for p in database.products for v in p.versions)
-
-    # Write report if requested
+    # Write JSON report sidecar if --report was passed. Orthogonal to
+    # --log-file: the text log file streams events, the report JSON
+    # is a one-shot machine-readable snapshot.
     report_path = None
     if report:
-        product_stats = []
-        for p in database.products:
-            failed_for_product = [f for f in all_failed_fetches if f.product == p.id]
-            product_stats.append(
-                ProductStats(
-                    product_id=p.id,
-                    product_name=p.name,
-                    versions_fetched=len(p.versions),
-                    known_issues_count=sum(len(v.known_issues) for v in p.versions),
-                    addressed_issues_count=sum(len(v.addressed_issues) for v in p.versions),
-                    failed_fetch_count=len(failed_for_product),
-                )
-            )
-
-        fetch_report = FetchReport(
-            generated_at=datetime.now(UTC),
-            bugdb_file=str(output),
-            total_products=len(database.products),
-            total_versions=total_versions,
-            total_known_issues=total_known,
-            total_addressed_issues=total_addressed,
-            product_stats=product_stats,
-            failed_fetches=[
-                FailedFetchEntry(
-                    url=f.url,
-                    error=f.error,
-                    product=f.product,
-                    version=f.version,
-                    issue_type=f.issue_type,
-                )
-                for f in all_failed_fetches
-            ],
-        )
-
         report_path = output.with_suffix("").with_suffix(".report.json")
         with open(report_path, "w", encoding="utf-8") as f:
             json.dump(
@@ -557,59 +677,33 @@ def fetch(
                 default=str,
             )
 
-    # Build product list for display
-    product_names = ", ".join(p.name for p in database.products)
-
     # Determine title based on mode
     if retry_mode:
         title = "Retry Fetch Complete"
-        mode_info = f"  • Products retried: {', '.join(products_to_fetch)}\n"
     elif existing_database is not None:
         title = "Incremental Fetch Complete"
-        new_versions_count = total_versions - sum(len(v) for v in existing_versions.values())
-        mode_info = f"  • New versions added: {new_versions_count}\n"
     else:
         title = "Fetch Complete"
-        mode_info = ""
 
-    report_info = f"  • Report: {report_path}\n" if report_path else ""
+    # Render the summary from the same FetchReport used for the log
+    # file. Both channels see identical data, grouped by product with
+    # per-product version lists — the only difference is formatting
+    # (Rich panel vs timestamped log lines).
+    summary_text = format_fetch_summary(fetch_report)
 
-    console.print(
-        Panel(
-            f"[green]✓[/green] Fetched release notes:\n"
-            f"  • Products: {product_names}\n"
-            f"  • Total versions: {total_versions}\n"
-            f"{mode_info}"
-            f"  • Known issues: {total_known}\n"
-            f"  • Addressed issues: {total_addressed}\n"
-            f"  • Output: {output}\n"
-            f"{report_info}".rstrip("\n"),
-            title=title,
-            border_style="green",
+    # In --debug mode the summary is already streaming to stderr via
+    # the logger — printing the Rich panel too would duplicate it.
+    if not debug:
+        report_info = f"\nReport: {report_path}" if report_path else ""
+        log_info = f"\nLog:    {resolved_log_file}" if resolved_log_file else ""
+        panel_body = (
+            f"[green]✓[/green] Fetched release notes\n\n"
+            f"{summary_text}\n\n"
+            f"Output: {output}"
+            f"{report_info}"
+            f"{log_info}"
         )
-    )
-
-    # Display failed fetches report if any
-    if all_failed_fetches:
-        console.print()
-        failed_summary = "\n".join(
-            f"  • {f.product}"
-            + (f" {f.version}" if f.version else "")
-            + f" ({f.issue_type}): {f.error[:80]}..."
-            if len(f.error) > 80
-            else f"  • {f.product}"
-            + (f" {f.version}" if f.version else "")
-            + f" ({f.issue_type}): {f.error}"
-            for f in all_failed_fetches
-        )
-        console.print(
-            Panel(
-                f"[yellow]⚠[/yellow] Failed to fetch {len(all_failed_fetches)} page(s) "
-                f"after retries:\n{failed_summary}",
-                title="Failed Fetches",
-                border_style="yellow",
-            )
-        )
+        console.print(Panel(panel_body, title=title, border_style="green"))
 
 
 @app.command()
@@ -747,6 +841,30 @@ def build(
             help="Bypass the persistent discovery cache and re-probe upstream URLs.",
         ),
     ] = False,
+    progress: Annotated[
+        bool | None,
+        typer.Option(
+            "--progress/--no-progress",
+            help=(
+                "Show live progress bars and per-version updates during fetch. "
+                "Default is auto-detect: rich live bars on a TTY, streaming "
+                "plain lines when piped, suppressed entirely with --no-progress."
+            ),
+        ),
+    ] = None,
+    log_file: Annotated[
+        str | None,
+        typer.Option(
+            "--log-file",
+            "-l",
+            help=(
+                "Write a streaming fetch log. Pass a path (-l fetch.log), "
+                "or pass '-l auto' to default to <bugdb>.log. Omit to "
+                "disable. When combined with --skip-fetch, the file is "
+                "still created with a 'fetch stage skipped' marker."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Fetch bug data, generate release notes, and build the static site.
 
@@ -781,6 +899,19 @@ def build(
             )
             raise typer.Exit(1)
         console.print(f"[dim]Skipping fetch — reusing existing {bugdb}[/dim]")
+
+        # Even when fetch is skipped, still write a minimal log file
+        # so users running `build --log-file` always get *something*
+        # next to their bug database. The log just notes that the
+        # fetch stage was skipped so the absence of per-version
+        # events is explained rather than mysterious.
+        if log_file is not None:
+            skip_log_path = bugdb.with_suffix(".log") if log_file == "auto" else Path(log_file)
+            with configure_fetch_logging(skip_log_path, debug=debug):
+                _fetch_logger.info(
+                    "Fetch stage skipped (--skip-fetch). Reusing existing %s",
+                    bugdb,
+                )
     else:
         console.print(
             Panel(
@@ -799,6 +930,8 @@ def build(
             report=False,
             retry=None,
             refresh_discovery=refresh_discovery,
+            progress=progress,
+            log_file=log_file,
         )
 
     # Stage 2: regenerate release-notes.json. Always force — this is

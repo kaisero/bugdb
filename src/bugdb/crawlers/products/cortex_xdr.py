@@ -251,7 +251,7 @@ class CortexXDRCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Cortex XDR Agent...")
+        logger.info("Crawling Cortex XDR Agent...")
         failed_fetches: list[FailedFetch] = []
         skip_versions = skip_versions or set()
 
@@ -262,7 +262,7 @@ class CortexXDRCrawler(BaseCrawler):
         try:
             soup = await self._fetch_cortex_page_with_semaphore(releases_url, wait_time=5000)
         except Exception as e:
-            self._log(f"  Error fetching releases page: {e}")
+            logger.error(f"Error fetching releases page: {e}")
             failed_fetches.append(
                 FailedFetch(
                     url=releases_url,
@@ -277,23 +277,28 @@ class CortexXDRCrawler(BaseCrawler):
             )
 
         release_links = self._parse_cortex_xdr_releases_page(soup)
-        self._log(f"  Found {len(release_links)} releases to process")
+        logger.info(f"  Found {len(release_links)} releases to process")
 
         releases_to_fetch: list[tuple[str, str, str | None]] = []
         for version, url, release_date in release_links:
             if version in skip_versions:
-                self._log(f"  Skipping existing version: {version}")
+                logger.info(f"  Skipping existing version: {version}")
             else:
                 releases_to_fetch.append((version, url, release_date))
 
         if not releases_to_fetch:
-            self._log("  No new versions to fetch")
+            logger.info("  No new versions to fetch")
+            self._set_task_total(0, f"{self.product_name}: nothing new to fetch")
             return CrawlResult(
                 product=Product(id=self.product_id, name=self.product_name, versions=[]),
                 failed_fetches=failed_fetches,
             )
 
-        self._log(f"  Fetching {len(releases_to_fetch)} versions...")
+        logger.info(f"  Fetching {len(releases_to_fetch)} versions...")
+        self._set_task_total(
+            len(releases_to_fetch),
+            f"{self.product_name}: fetching {len(releases_to_fetch)} versions",
+        )
 
         version_dates: dict[str, str | None] = {v: d for v, _, d in releases_to_fetch}
 
@@ -305,6 +310,8 @@ class CortexXDRCrawler(BaseCrawler):
                 return (version, soup, None)
             except Exception as e:
                 return (version, None, str(e))
+            finally:
+                self._advance_task(f"{self.product_name}: {version} done")
 
         fetch_tasks = [fetch_release(ver, url) for ver, url, _ in releases_to_fetch]
         results = await asyncio.gather(*fetch_tasks)
@@ -313,7 +320,7 @@ class CortexXDRCrawler(BaseCrawler):
 
         for version, soup, error in results:
             if error:
-                self._log(f"  Error fetching {version}: {error}")
+                logger.error(f"Error fetching {version}: {error}")
                 failed_fetches.append(
                     FailedFetch(
                         url=next((u for v, u, _ in releases_to_fetch if v == version), ""),
@@ -327,7 +334,12 @@ class CortexXDRCrawler(BaseCrawler):
 
             known_issues, addressed_issues = self._parse_cortex_xdr_release_page(soup)
 
-            self._log(f"  {version}: {len(known_issues)} known, {len(addressed_issues)} addressed")
+            logger.info(
+                "%s: %d known, %d addressed",
+                version,
+                len(known_issues),
+                len(addressed_issues),
+            )
 
             if known_issues or addressed_issues:
                 all_product_versions.append(

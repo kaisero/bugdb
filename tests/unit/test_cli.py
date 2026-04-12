@@ -590,3 +590,296 @@ class TestBuildCommand:
         assert "Build Finished" in _flat(result.stdout)
         assert (site_out / "index.html").exists()
         assert (site_out / "assets" / "bugdb.json").exists()
+
+
+class TestFetchProgressFlag:
+    """Tests for the --progress / --no-progress flag on bugdb fetch."""
+
+    def test_fetch_help_advertises_progress_flag(self):
+        """The flag must show up in --help so users discover it."""
+        result = runner.invoke(app, ["fetch", "--help"])
+        assert result.exit_code == 0
+        # Rich wraps the help text so check the flat version.
+        flat = _flat(result.stdout)
+        assert "--progress" in flat
+        assert "--no-progress" in flat
+
+    def test_build_help_advertises_progress_flag(self):
+        result = runner.invoke(app, ["build", "--help"])
+        assert result.exit_code == 0
+        flat = _flat(result.stdout)
+        assert "--progress" in flat
+        assert "--no-progress" in flat
+
+    def test_fetch_no_progress_selects_null_reporter(self, tmp_path):
+        """--no-progress must route through the Null reporter, which
+        guarantees no per-version progress output in the captured
+        stdout. We assert indirectly by spying on ``default_reporter``
+        and checking its ``progress=`` kwarg."""
+        output_file = tmp_path / "bugdb.json"
+        mock_result = _make_fetch_result()
+
+        with (
+            patch.dict(
+                "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+                {"panos": MagicMock(return_value=mock_result)},
+            ),
+            patch("bugdb.cli.default_reporter") as mock_factory,
+        ):
+            mock_factory.return_value.__enter__.return_value = mock_factory.return_value
+            mock_factory.return_value.add_task.return_value = 1
+
+            result = runner.invoke(
+                app,
+                ["fetch", "panos", "-o", str(output_file), "--no-progress"],
+            )
+
+        assert result.exit_code == 0, result.stdout
+        # default_reporter(console, progress=False) is what --no-progress
+        # lowers to in the CLI layer.
+        assert mock_factory.called
+        _args, kwargs = mock_factory.call_args
+        assert kwargs.get("progress") is False
+
+    def test_fetch_progress_flag_selects_auto_default(self, tmp_path):
+        """Without --progress or --no-progress, the CLI must pass
+        ``progress=None`` to ``default_reporter`` so the factory's
+        TTY auto-detection rules apply."""
+        output_file = tmp_path / "bugdb.json"
+        mock_result = _make_fetch_result()
+
+        with (
+            patch.dict(
+                "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+                {"panos": MagicMock(return_value=mock_result)},
+            ),
+            patch("bugdb.cli.default_reporter") as mock_factory,
+        ):
+            mock_factory.return_value.__enter__.return_value = mock_factory.return_value
+            mock_factory.return_value.add_task.return_value = 1
+
+            result = runner.invoke(app, ["fetch", "panos", "-o", str(output_file)])
+
+        assert result.exit_code == 0, result.stdout
+        _args, kwargs = mock_factory.call_args
+        assert kwargs.get("progress") is None
+
+    def test_fetch_explicit_progress_passes_true(self, tmp_path):
+        output_file = tmp_path / "bugdb.json"
+        mock_result = _make_fetch_result()
+
+        with (
+            patch.dict(
+                "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+                {"panos": MagicMock(return_value=mock_result)},
+            ),
+            patch("bugdb.cli.default_reporter") as mock_factory,
+        ):
+            mock_factory.return_value.__enter__.return_value = mock_factory.return_value
+            mock_factory.return_value.add_task.return_value = 1
+
+            result = runner.invoke(
+                app,
+                ["fetch", "panos", "-o", str(output_file), "--progress"],
+            )
+
+        assert result.exit_code == 0, result.stdout
+        _args, kwargs = mock_factory.call_args
+        assert kwargs.get("progress") is True
+
+    def test_fetch_passes_reporter_and_task_to_crawler_func(self, tmp_path):
+        """Each per-product crawler call must receive the reporter and
+        a freshly allocated sub-task handle."""
+        output_file = tmp_path / "bugdb.json"
+        mock_result = _make_fetch_result()
+        crawler_mock = MagicMock(return_value=mock_result)
+
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": crawler_mock},
+        ):
+            result = runner.invoke(
+                app,
+                ["fetch", "panos", "-o", str(output_file), "--no-progress"],
+            )
+
+        assert result.exit_code == 0, result.stdout
+        assert crawler_mock.called
+        _args, kwargs = crawler_mock.call_args
+        assert "reporter" in kwargs
+        assert "task" in kwargs
+        assert kwargs["reporter"] is not None
+
+
+class TestFetchLogFile:
+    """Tests for the --log-file / -l flag on bugdb fetch and bugdb build."""
+
+    def test_fetch_help_advertises_log_file_flag(self):
+        result = runner.invoke(app, ["fetch", "--help"])
+        assert result.exit_code == 0
+        flat = _flat(result.stdout)
+        assert "--log-file" in flat
+        assert "-l" in flat
+
+    def test_build_help_advertises_log_file_flag(self):
+        result = runner.invoke(app, ["build", "--help"])
+        assert result.exit_code == 0
+        flat = _flat(result.stdout)
+        assert "--log-file" in flat
+
+    def test_fetch_with_log_file_writes_streaming_log(self, tmp_path):
+        """``--log-file PATH`` creates the file and writes both the
+        startup event and the final summary block."""
+        output_file = tmp_path / "bugdb.json"
+        log_file = tmp_path / "fetch.log"
+        mock_result = _make_fetch_result()
+
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "fetch",
+                    "panos",
+                    "-o",
+                    str(output_file),
+                    "--no-progress",
+                    "--log-file",
+                    str(log_file),
+                ],
+            )
+
+        assert result.exit_code == 0, result.stdout
+        assert log_file.exists()
+        content = log_file.read_text()
+        # Startup event
+        assert "Fetch started: panos" in content
+        # Summary block header
+        assert "Fetch Summary" in content
+        # Totals from the mocked result
+        assert "Products fetched:" in content
+        assert "Total versions:" in content
+        assert "Known issues:" in content
+        assert "Addressed issues:" in content
+        # End-of-run marker
+        assert "Fetch finished" in content
+
+    def test_fetch_with_log_file_auto_writes_next_to_output(self, tmp_path):
+        """``-l auto`` resolves to ``<output>.log`` alongside the bug database."""
+        output_file = tmp_path / "bugdb.json"
+        expected_log = tmp_path / "bugdb.log"
+        mock_result = _make_fetch_result()
+
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "fetch",
+                    "panos",
+                    "-o",
+                    str(output_file),
+                    "--no-progress",
+                    "-l",
+                    "auto",
+                ],
+            )
+
+        assert result.exit_code == 0, result.stdout
+        assert expected_log.exists()
+        assert "Fetch Summary" in expected_log.read_text()
+
+    def test_fetch_without_log_file_writes_nothing(self, tmp_path):
+        """Without the flag, no log file is created — default behavior
+        unchanged for anyone who hasn't opted in."""
+        output_file = tmp_path / "bugdb.json"
+        mock_result = _make_fetch_result()
+
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
+            result = runner.invoke(
+                app,
+                ["fetch", "panos", "-o", str(output_file), "--no-progress"],
+            )
+
+        assert result.exit_code == 0, result.stdout
+        # No log file in the output directory.
+        assert not (tmp_path / "bugdb.log").exists()
+        assert not (tmp_path / "fetch.log").exists()
+
+    def test_fetch_log_file_captures_failed_fetches(self, tmp_path):
+        """The failed-fetches section of the summary block must list
+        the specific URLs, products, versions, and error messages that
+        couldn't be crawled."""
+        output_file = tmp_path / "bugdb.json"
+        log_file = tmp_path / "fetch.log"
+        mock_result = _make_fetch_result(
+            failed_fetches=[
+                FailedFetch(
+                    url="https://docs.paloaltonetworks.com/panos/12-1-5/boom",
+                    error="Timeout after 30000ms",
+                    product="panos",
+                    version="12.1.5",
+                    issue_type="known",
+                ),
+            ],
+        )
+
+        with patch.dict(
+            "bugdb.crawlers.registry.PRODUCT_WRAPPERS",
+            {"panos": MagicMock(return_value=mock_result)},
+        ):
+            result = runner.invoke(
+                app,
+                [
+                    "fetch",
+                    "panos",
+                    "-o",
+                    str(output_file),
+                    "--no-progress",
+                    "-l",
+                    str(log_file),
+                ],
+            )
+
+        assert result.exit_code == 0, result.stdout
+        content = log_file.read_text()
+        assert "Failed fetches:      1" in content
+        # Detail section with the URL, version, and error message
+        assert "panos" in content
+        assert "12.1.5" in content
+        assert "https://docs.paloaltonetworks.com/panos/12-1-5/boom" in content
+        assert "Timeout after 30000ms" in content
+
+    def test_build_skip_fetch_still_writes_log(self, tmp_path):
+        """``bugdb build --skip-fetch --log-file PATH`` must still
+        create the log file with a 'fetch stage skipped' marker, so
+        users always get *something* when they pass --log-file."""
+        bugdb_file = tmp_path / "bugs.json"
+        _write_minimal_bugdb_file(bugdb_file)
+        site_out = tmp_path / "dist"
+        log_file = tmp_path / "build.log"
+
+        result = runner.invoke(
+            app,
+            [
+                "build",
+                "--skip-fetch",
+                "-b",
+                str(bugdb_file),
+                "-o",
+                str(site_out),
+                "--log-file",
+                str(log_file),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout
+        assert log_file.exists()
+        assert "Fetch stage skipped" in log_file.read_text()
