@@ -1,5 +1,5 @@
 """Assert every (product, version) pair in the baseline is still present
-in the current data.json.
+in the current bugdb.json.
 
 This is the test that would have caught a "PAN-OS 11.2 dropped" regression.
 It does NOT catch "new upstream major version appeared" — see the canary
@@ -51,6 +51,6 @@ def test_baseline_version_still_present(
     available = sorted(product.versions.keys())
     assert version in product.versions, (
         f"Version {version!r} of {product_id!r} missing from current "
-        f"data.json. Currently available versions for this product: "
+        f"bugdb.json. Currently available versions for this product: "
         f"{available}. This is a crawler regression."
     )

@@ -109,8 +109,12 @@ class PrismaAccessCrawler(BaseCrawler):
                     if href.endswith(".html"):
                         href = href[:-5]
 
-                    # Classify by last path segment to avoid false matches
+                    # Classify by last path segment to avoid false matches.
                     last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
+                    # Skip "known-and-addressed-issues" hub pages — they
+                    # are link-only indexes with no issue tables.
+                    if "known-and-addressed" in last_segment:
+                        continue
                     if "addressed" in last_segment and href not in vi.addressed_issues_urls:
                         vi.addressed_issues_urls.append(href)
                     elif "known" in last_segment and href not in vi.known_issues_urls:
@@ -118,7 +122,6 @@ class PrismaAccessCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
-            self._log(f"  Error discovering version pages: {e}")
 
         version_infos.sort(
             key=lambda v: self._version_sort_key(v.version),
@@ -144,22 +147,34 @@ class PrismaAccessCrawler(BaseCrawler):
         skip_versions = skip_versions or set()
         all_failed_fetches: list[FailedFetch] = []
 
+        # Cache-aware discovery — see BaseCrawler._resolve_version_infos.
         if major_versions is None:
-            self._log("Discovering available Prisma Access versions...")
-            major_versions = await self.discover_versions()
-            self._log(f"Found versions: {', '.join(major_versions)}")
+            logger.info("Discovering available Prisma Access versions...")
+        vi_by_major = await self._resolve_version_infos(
+            discover_majors_fn=self.discover_versions,
+            discover_pages_fn=self.discover_version_pages,
+            explicit_majors=major_versions,
+            skip_versions=skip_versions,
+        )
+        if major_versions is None:
+            logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
+
+        total_versions = sum(len(v) for v in vi_by_major.values())
+        self._set_task_total(
+            total_versions,
+            f"{self.product_name}: fetching {total_versions} versions"
+            if total_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions = []
 
-        for major_version in major_versions:
+        for major_version, version_infos in vi_by_major.items():
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling Prisma Access {version_str}...")
-
-            version_infos = await self.discover_version_pages(major_version)
-            version_infos = [vi for vi in version_infos if vi.version not in skip_versions]
+            logger.info("Crawling Prisma Access %s...", version_str)
 
             if not version_infos:
-                self._log("  No versions to crawl (all skipped or none found)")
+                logger.info("No versions to crawl (all skipped or none found)")
                 continue
 
             product_versions, failed_fetches = await self._crawl_versions_parallel(

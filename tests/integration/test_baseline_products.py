@@ -1,5 +1,5 @@
 """Assert every product present in the baseline is still present in the
-current data.json. A product disappearing is the loudest possible signal
+current bugdb.json. A product disappearing is the loudest possible signal
 that a crawler silently broke.
 
 Parametrization: one test per baseline product id, so a single missing
@@ -42,11 +42,11 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 def test_baseline_product_still_present(
     baseline_product_id: str, current_snapshot: BaselineSnapshot
 ) -> None:
-    """Every product from the baseline must exist in current data.json."""
+    """Every product from the baseline must exist in current bugdb.json."""
     current_products = set(current_snapshot.products.keys())
     assert baseline_product_id in current_products, (
         f"Product {baseline_product_id!r} was in the committed baseline but "
-        f"is MISSING from current assets/data.json. This is a crawler "
+        f"is MISSING from current assets/bugdb.json. This is a crawler "
         f"regression — investigate fetch logs for "
         f"{baseline_product_id}. Current products: {sorted(current_products)}"
     )

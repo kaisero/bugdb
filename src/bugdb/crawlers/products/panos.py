@@ -48,16 +48,40 @@ class PANOSCrawler(BaseCrawler):
         """Resolve the landing URL for a major version, probing if needed.
 
         Tries the NGFW path first (used by 12.1+) and falls back to the
-        legacy `/pan-os/<v>/pan-os-release-notes` path. Caches the result
-        in ``self._base_url_for_version``.
+        legacy ``/pan-os/<v>/pan-os-release-notes`` path. Results are
+        cached in three layers, each checked in order:
+
+        1. Instance-scoped ``self._base_url_for_version`` — fastest,
+           resets on every ``PANOSCrawler()`` instantiation.
+        2. Persistent ``self._discovery_cache`` (``.cache/bugdb/``) —
+           survives across ``bugdb fetch`` invocations under a 24-hour
+           TTL. Only consulted when the cache entry is fresh so stale
+           upstream URL reorganisations don't silently mask failures.
+        3. Network probes — actually hit docs.paloaltonetworks.com.
+           On success, the winning URL is written back to both L1 and
+           L2 so subsequent calls (same run or next run) skip probing.
         """
         cached = self._base_url_for_version.get(major_version)
         if cached:
             return cached
+
+        # L2: persistent cache — but only when the product's entry is
+        # fresh. A stale cache should fall through to a fresh probe so
+        # upstream URL changes are picked up within the TTL window.
+        if self._discovery_cache is not None and self._discovery_cache.is_fresh(self.product_id):
+            persisted = self._discovery_cache.get_url_pattern(self.product_id, major_version)
+            if persisted:
+                logger.debug("PAN-OS URL pattern cache hit for %s: %s", major_version, persisted)
+                self._base_url_for_version[major_version] = persisted
+                return persisted
+
+        # L3: probe both templates. First success wins.
         for template in (self._NGFW_BASE, self._LEGACY_BASE):
             candidate = template.format(v=major_version)
             if await self._probe_landing_url(candidate):
                 self._base_url_for_version[major_version] = candidate
+                if self._discovery_cache is not None:
+                    self._discovery_cache.put_url_pattern(self.product_id, major_version, candidate)
                 return candidate
         return None
 
@@ -119,7 +143,6 @@ class PANOSCrawler(BaseCrawler):
                 "No landing URL found for PAN-OS %s (tried NGFW and legacy paths)",
                 major_version,
             )
-            self._log(f"  No landing URL found for PAN-OS {major_version}")
             return version_infos
 
         try:
@@ -149,8 +172,15 @@ class PANOSCrawler(BaseCrawler):
                         href = href[:-5]
 
                     # Classify by last path segment to avoid false matches
-                    # (e.g., "known-and-addressed-issues/addressed-issues")
+                    # (e.g., "known-and-addressed-issues/addressed-issues").
                     last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
+                    # Skip "known-and-addressed-issues" hub pages. They
+                    # are link-only indexes with no <table> elements, so
+                    # fetching them is pure waste (returns zero issues).
+                    # See tests/fixtures/panos/12-1-5-known-and-addressed-issues.html
+                    # for the hub shape.
+                    if "known-and-addressed" in last_segment:
+                        continue
                     if "addressed" in last_segment and href not in vi.addressed_issues_urls:
                         vi.addressed_issues_urls.append(href)
                     elif "known" in last_segment and href not in vi.known_issues_urls:
@@ -158,7 +188,6 @@ class PANOSCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
-            self._log(f"  Error discovering version pages: {e}")
 
         version_infos.sort(
             key=lambda v: self._version_sort_key(v.version),
@@ -185,22 +214,35 @@ class PANOSCrawler(BaseCrawler):
         skip_versions = skip_versions or set()
         all_failed_fetches: list[FailedFetch] = []
 
+        # Resolve the (major -> [VersionInfo]) map via the cache-aware
+        # helper. On a warm incremental run this is a zero-network call.
         if major_versions is None:
-            self._log("Discovering available PAN-OS versions...")
-            major_versions = await self.discover_versions()
-            self._log(f"Found versions: {', '.join(major_versions)}")
+            logger.info("Discovering available PAN-OS versions...")
+        vi_by_major = await self._resolve_version_infos(
+            discover_majors_fn=self.discover_versions,
+            discover_pages_fn=self.discover_version_pages,
+            explicit_majors=major_versions,
+            skip_versions=skip_versions,
+        )
+        if major_versions is None:
+            logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
+
+        total_versions = sum(len(v) for v in vi_by_major.values())
+        self._set_task_total(
+            total_versions,
+            f"{self.product_name}: fetching {total_versions} versions"
+            if total_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions = []
 
-        for major_version in major_versions:
+        for major_version, version_infos in vi_by_major.items():
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling PAN-OS {version_str}...")
-
-            version_infos = await self.discover_version_pages(major_version)
-            version_infos = [vi for vi in version_infos if vi.version not in skip_versions]
+            logger.info("Crawling PAN-OS %s...", version_str)
 
             if not version_infos:
-                self._log("  No versions to crawl (all skipped or none found)")
+                logger.info("No versions to crawl (all skipped or none found)")
                 continue
 
             product_versions, failed_fetches = await self._crawl_versions_parallel(

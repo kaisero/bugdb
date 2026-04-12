@@ -38,7 +38,6 @@ from bugdb.crawlers import (
 from bugdb.crawlers import (
     BaseCrawler as PaloAltoCrawler,
 )
-from bugdb.crawlers.utils import configure_logging
 from bugdb.models import BugDatabase, Issue, Metadata, Product, ProductVersion
 
 
@@ -578,6 +577,294 @@ class TestPaloAltoCrawlerAsync:
                 )
 
     @pytest.mark.asyncio
+    async def test_panos_warm_cache_skips_discovery(self, mock_playwright_panos, tmp_path):
+        """S3 warm-cache path: a fresh version_infos cache short-circuits
+        both discover_versions and discover_version_pages entirely.
+        """
+        from bugdb.crawlers.models import VersionInfo
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+
+        # Pre-populate the cache with a VersionInfo for 12-1 / 12.1.5.
+        # The URL doesn't matter for this test — we're only verifying
+        # that discovery is skipped, not that the URLs resolve.
+        cache.put_version_infos(
+            "panos",
+            {
+                "12-1": [
+                    VersionInfo(
+                        version="12.1.5",
+                        known_issues_urls=["/ngfw/release-notes/12-1/pan-os-12-1-5-known-issues"],
+                        addressed_issues_urls=[
+                            "/ngfw/release-notes/12-1/pan-os-12-1-5-addressed-issues"
+                        ],
+                    )
+                ]
+            },
+        )
+        cache.save()
+
+        reloaded = DiscoveryCache(path=cache_path)
+        assert reloaded.is_fresh("panos")
+
+        # Patch both discovery methods to raise — if either fires the
+        # cache-skip path is broken.
+        async def _raise_discover_versions():
+            raise AssertionError("discover_versions should not be called on a warm cache hit")
+
+        async def _raise_discover_version_pages(major_version: str):
+            raise AssertionError(
+                f"discover_version_pages should not be called on a warm cache hit, "
+                f"got {major_version!r}"
+            )
+
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded) as crawler:
+                crawler.discover_versions = _raise_discover_versions  # type: ignore[assignment]
+                crawler.discover_version_pages = _raise_discover_version_pages  # type: ignore[assignment]
+
+                vi_by_major = await crawler._resolve_version_infos(
+                    discover_majors_fn=crawler.discover_versions,
+                    discover_pages_fn=crawler.discover_version_pages,
+                    explicit_majors=None,
+                    skip_versions=set(),
+                )
+
+        assert "12-1" in vi_by_major
+        assert len(vi_by_major["12-1"]) == 1
+        assert vi_by_major["12-1"][0].version == "12.1.5"
+
+    @pytest.mark.asyncio
+    async def test_panos_warm_cache_filters_skip_versions(self, mock_playwright_panos, tmp_path):
+        """S3 warm-cache path + skip_versions: cached entries are filtered
+        by the passed-in skip_versions set so already-fetched versions
+        don't get re-crawled.
+        """
+        from bugdb.crawlers.models import VersionInfo
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+        cache.put_version_infos(
+            "panos",
+            {
+                "12-1": [
+                    VersionInfo(version="12.1.5", known_issues_urls=[], addressed_issues_urls=[]),
+                    VersionInfo(version="12.1.4", known_issues_urls=[], addressed_issues_urls=[]),
+                ]
+            },
+        )
+        cache.save()
+
+        reloaded = DiscoveryCache(path=cache_path)
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded) as crawler:
+                vi_by_major = await crawler._resolve_version_infos(
+                    discover_majors_fn=crawler.discover_versions,
+                    discover_pages_fn=crawler.discover_version_pages,
+                    explicit_majors=None,
+                    skip_versions={"12.1.4"},  # 12.1.5 is new
+                )
+
+        assert len(vi_by_major["12-1"]) == 1
+        assert vi_by_major["12-1"][0].version == "12.1.5"
+
+    @pytest.mark.asyncio
+    async def test_panos_explicit_majors_bypasses_cache(self, mock_playwright_panos, tmp_path):
+        """S3 explicit-majors path: when the caller passes explicit_majors
+        (i.e. `bugdb fetch panos --version 12-1`), the cache must be
+        ignored and discover_pages_fn must be called for each named major.
+        The user asked for something specific.
+        """
+        from bugdb.crawlers.models import VersionInfo
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+        # Pre-populate with stale/incorrect data to prove we don't use it.
+        cache.put_version_infos(
+            "panos",
+            {
+                "12-1": [
+                    VersionInfo(
+                        version="FAKE-FROM-CACHE",
+                        known_issues_urls=[],
+                        addressed_issues_urls=[],
+                    )
+                ]
+            },
+        )
+        cache.save()
+
+        reloaded = DiscoveryCache(path=cache_path)
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded) as crawler:
+                vi_by_major = await crawler._resolve_version_infos(
+                    discover_majors_fn=crawler.discover_versions,
+                    discover_pages_fn=crawler.discover_version_pages,
+                    explicit_majors=["12-1"],
+                    skip_versions=set(),
+                )
+
+        # The fake cache value must NOT appear in the result.
+        versions = [vi.version for vi in vi_by_major.get("12-1", [])]
+        assert "FAKE-FROM-CACHE" not in versions
+        assert "12.1.5" in versions  # real discovery found this from fixtures
+
+    @pytest.mark.asyncio
+    async def test_panos_stale_cache_re_discovers(self, mock_playwright_panos, tmp_path):
+        """S3 stale-cache path: a cache older than 24h must trigger a
+        fresh discovery, and the fresh result must replace the stale
+        cache entry.
+        """
+        from datetime import UTC, datetime, timedelta
+
+        from bugdb.crawlers.models import VersionInfo
+        from bugdb.discovery_cache import TTL_SECONDS, DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+        cache.put_version_infos(
+            "panos",
+            {
+                "12-1": [
+                    VersionInfo(
+                        version="STALE-VALUE",
+                        known_issues_urls=[],
+                        addressed_issues_urls=[],
+                    )
+                ]
+            },
+        )
+        # Backdate the cache by TTL + 1 minute.
+        old = datetime.now(UTC) - timedelta(seconds=TTL_SECONDS + 60)
+        cache._data["products"]["panos"]["updated_at"] = old.isoformat(timespec="seconds")
+        cache.save()
+
+        reloaded = DiscoveryCache(path=cache_path)
+        assert reloaded.is_fresh("panos") is False
+
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded) as crawler:
+                vi_by_major = await crawler._resolve_version_infos(
+                    discover_majors_fn=crawler.discover_versions,
+                    discover_pages_fn=crawler.discover_version_pages,
+                    explicit_majors=None,
+                    skip_versions=set(),
+                )
+
+        # Stale value must be gone, fresh discovery must have run.
+        versions = [vi.version for vi in vi_by_major.get("12-1", [])]
+        assert "STALE-VALUE" not in versions
+        assert "12.1.5" in versions
+
+    @pytest.mark.asyncio
+    async def test_panos_url_pattern_cache_hit_skips_probe(self, mock_playwright_panos, tmp_path):
+        """S1 cache-hit path: a fresh persistent cache short-circuits the
+        dual-template probe in ``_resolve_landing_url``. Second crawl
+        invocation with the same cache must not call ``_probe_landing_url``.
+        """
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+
+        # First run: probe normally, populate the cache.
+        cache = DiscoveryCache(path=cache_path)
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=cache) as crawler:
+                first_url = await crawler._resolve_landing_url("12-1")
+                assert first_url == "/ngfw/release-notes/12-1"
+        cache.save()
+
+        # Second run: fresh crawler, same cache file. Patch _probe_landing_url
+        # to raise if called — if the cache-hit path works, it's never called.
+        reloaded_cache = DiscoveryCache(path=cache_path)
+        assert reloaded_cache.is_fresh("panos")
+        assert reloaded_cache.get_url_pattern("panos", "12-1") == "/ngfw/release-notes/12-1"
+
+        probe_called = False
+
+        async def _raising_probe(url: str) -> bool:
+            nonlocal probe_called
+            probe_called = True
+            raise AssertionError(
+                f"_probe_landing_url should not be called on cache hit, got {url!r}"
+            )
+
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=reloaded_cache) as crawler:
+                crawler._probe_landing_url = _raising_probe  # type: ignore[assignment]
+                second_url = await crawler._resolve_landing_url("12-1")
+
+        assert second_url == "/ngfw/release-notes/12-1"
+        assert probe_called is False
+
+    @pytest.mark.asyncio
+    async def test_panos_url_pattern_cache_miss_still_probes(self, mock_playwright_panos, tmp_path):
+        """S1 cache-miss path: when the cache has no entry for the major,
+        fall through to the normal probe chain and populate the cache.
+        """
+        from bugdb.discovery_cache import DiscoveryCache
+
+        cache_path = tmp_path / "discovery.json"
+        cache = DiscoveryCache(path=cache_path)
+        assert cache.get_url_pattern("panos", "12-1") is None
+
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler(discovery_cache=cache) as crawler:
+                url = await crawler._resolve_landing_url("12-1")
+
+        assert url == "/ngfw/release-notes/12-1"
+        assert cache.get_url_pattern("panos", "12-1") == "/ngfw/release-notes/12-1"
+
+    @pytest.mark.asyncio
+    async def test_panos_discover_skips_known_and_addressed_hub_pages(self, mock_playwright_panos):
+        """Regression pin for S2: discover_version_pages must filter out
+        hub pages whose last path segment contains "known-and-addressed".
+
+        The fixture ``panos/12-1-index.html`` lists six such hub URLs
+        (12.1.0 through 12.1.5). They are link-only indexes with no
+        issue tables (verified in
+        ``panos/12-1-5-known-and-addressed-issues.html``), so fetching
+        them wastes a request per hotfix. Before the S2 fix the
+        substring classification in discover_version_pages added them
+        to ``addressed_issues_urls`` because "addressed" appears in the
+        slug; after the S2 fix the filter runs first and skips them.
+        """
+        with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_panos):
+            async with PANOSCrawler() as crawler:
+                version_infos = await crawler.discover_version_pages("12-1")
+
+                assert version_infos, "discover_version_pages returned nothing"
+
+                # No URL in any VersionInfo's known or addressed list may
+                # contain the "known-and-addressed" hub substring.
+                all_urls: list[str] = []
+                for vi in version_infos:
+                    all_urls.extend(vi.known_issues_urls)
+                    all_urls.extend(vi.addressed_issues_urls)
+
+                hub_urls = [url for url in all_urls if "known-and-addressed" in url.lower()]
+                assert not hub_urls, (
+                    f"PAN-OS discover_version_pages is still emitting "
+                    f"'known-and-addressed' hub URLs: {hub_urls}. These "
+                    f"pages are link-only indexes and fetching them is "
+                    f"pure waste. Check the S2 filter in "
+                    f"src/bugdb/crawlers/products/panos.py::discover_version_pages."
+                )
+
+                # Positive assertion: the leaf known/addressed pages
+                # for 12.1.5 ARE present, so the filter didn't overshoot.
+                assert any(url.endswith("/pan-os-12-1-5-known-issues") for url in all_urls), (
+                    "12.1.5 known-issues leaf URL is missing from discover_version_pages output"
+                )
+                assert any(url.endswith("/pan-os-12-1-5-addressed-issues") for url in all_urls), (
+                    "12.1.5 addressed-issues leaf URL is missing from discover_version_pages output"
+                )
+
+    @pytest.mark.asyncio
     async def test_crawl_prisma_access_agent(self, mock_playwright_prisma):
         """Test crawling Prisma Access Agent."""
         with patch("bugdb.crawlers.base.async_playwright", return_value=mock_playwright_prisma):
@@ -771,7 +1058,6 @@ class TestCrawlerConfiguration:
         crawler = PaloAltoCrawler()
 
         assert crawler.headless is True
-        assert crawler.verbose is False
         assert crawler.debug is False
         assert crawler.max_concurrency == 3
         assert crawler.max_retries == 3
@@ -781,7 +1067,6 @@ class TestCrawlerConfiguration:
         """Test custom crawler configuration."""
         crawler = PaloAltoCrawler(
             headless=False,
-            verbose=True,
             debug=True,
             max_concurrency=10,
             max_retries=5,
@@ -789,54 +1074,15 @@ class TestCrawlerConfiguration:
         )
 
         assert crawler.headless is False
-        assert crawler.verbose is True
         assert crawler.debug is True
         assert crawler.max_concurrency == 10
         assert crawler.max_retries == 5
         assert crawler.retry_delay == 1.0
 
-    def test_crawler_logging_disabled_by_default(self, capsys):
-        """Test that logging is disabled by default."""
-        crawler = PaloAltoCrawler(verbose=False)
-        crawler._log("Test message")
-
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
-    def test_crawler_logging_when_verbose(self, capsys):
-        """Test that logging works when verbose is enabled."""
-        crawler = PaloAltoCrawler(verbose=True)
-        crawler._log("Test message")
-
-        captured = capsys.readouterr()
-        assert "Test message" in captured.out
-
     def test_crawler_debug_configuration(self):
         """Test that debug mode can be enabled."""
         crawler = PaloAltoCrawler(debug=True)
         assert crawler.debug is True
-
-
-class TestDebugLogging:
-    """Tests for debug logging functionality."""
-
-    def test_configure_logging_sets_debug_level(self):
-        """Test that configure_logging sets the correct log level."""
-        import logging
-
-        from bugdb.crawlers.utils import logger
-
-        configure_logging(debug=True)
-        assert logger.level == logging.DEBUG
-
-    def test_configure_logging_sets_info_level(self):
-        """Test that configure_logging sets INFO level when debug is False."""
-        import logging
-
-        from bugdb.crawlers.utils import logger
-
-        configure_logging(debug=False)
-        assert logger.level == logging.INFO
 
 
 class TestMultiVersionPageParsing:
@@ -3771,7 +4017,6 @@ class TestPluginCrawlerFunctions:
         expected_params = [
             "major_versions",
             "headless",
-            "verbose",
             "debug",
             "max_concurrency",
             "skip_versions",
@@ -4106,7 +4351,6 @@ class TestDeviceSecurityCrawlFunction:
 
         assert "major_versions" in param_names
         assert "headless" in param_names
-        assert "verbose" in param_names
         assert "debug" in param_names
         assert "max_concurrency" in param_names
         assert "skip_versions" in param_names
@@ -4816,7 +5060,6 @@ class TestCortexXDRCrawlFunction:
 
         assert "major_versions" in param_names
         assert "headless" in param_names
-        assert "verbose" in param_names
         assert "debug" in param_names
         assert "max_concurrency" in param_names
         assert "skip_versions" in param_names
@@ -4828,3 +5071,179 @@ class TestCortexXDRCrawlFunction:
 
         # The crawl function should exist and be callable
         assert callable(crawl_cortex_xdr)
+
+
+# ---------------------------------------------------------------------------
+# Progress reporter integration
+# ---------------------------------------------------------------------------
+
+
+class SpyProgressReporter:
+    """Records every reporter call for assertion in tests.
+
+    Follows the ``ProgressReporter`` protocol structurally — no
+    inheritance needed since the protocol is ``@runtime_checkable``.
+    Exposed as a spy, not a mock, so tests can inspect the ordered
+    event log and distinguish ``update(advance=1)`` ticks from
+    description-only updates.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[tuple] = []
+        self._next_id: int = 0
+
+    def add_task(self, description, total=None, parent=None):
+        self._next_id += 1
+        self.events.append(("add_task", self._next_id, description, total, parent))
+        return self._next_id
+
+    def update(self, task, *, advance=0, description=None, total=None):
+        self.events.append(("update", task, advance, description, total))
+
+    def complete(self, task):
+        self.events.append(("complete", task))
+
+    def log(self, message):
+        self.events.append(("log", message))
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return None
+
+    def advance_events(self):
+        """Convenience: yield every ``update`` event whose advance>0."""
+        return [e for e in self.events if e[0] == "update" and e[2] > 0]
+
+
+class TestProgressReporterIntegration:
+    """BaseCrawler emits progress events when a reporter+task pair is wired."""
+
+    @pytest.mark.asyncio
+    async def test_crawl_versions_parallel_advances_once_per_version(
+        self, mock_playwright_globalprotect
+    ):
+        """Each completed version must produce exactly one advance=1
+        event, in ``finally``-block semantics so failures still tick
+        the bar and leave no stuck counters."""
+        spy = SpyProgressReporter()
+        task = spy.add_task("test", total=None)
+
+        with patch(
+            "bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect
+        ):
+            async with PaloAltoCrawler(reporter=spy, task=task) as crawler:
+                version_infos = [
+                    VersionInfo(
+                        version="6.2.1",
+                        known_issues_urls=["/globalprotect/release-notes/6-2/6-2-1-known-issues"],
+                        addressed_issues_urls=[
+                            "/globalprotect/release-notes/6-2/6-2-1-addressed-issues"
+                        ],
+                    ),
+                    VersionInfo(
+                        version="6.1.3",
+                        known_issues_urls=["/globalprotect/release-notes/6-1/6-1-3-known-issues"],
+                        addressed_issues_urls=[
+                            "/globalprotect/release-notes/6-1/6-1-3-addressed-issues"
+                        ],
+                    ),
+                ]
+
+                await crawler._crawl_versions_parallel(version_infos, product_name="GP")
+
+        advances = spy.advance_events()
+        assert len(advances) == 2, f"expected 2 advance=1 events, got {advances}"
+        # Every advance carries the finishing version in its description,
+        # so users see which one just completed.
+        descriptions = [e[3] for e in advances]
+        assert any("6.2.1" in d for d in descriptions)
+        assert any("6.1.3" in d for d in descriptions)
+
+    @pytest.mark.asyncio
+    async def test_crawl_versions_parallel_advances_on_exception(
+        self, mock_playwright_globalprotect
+    ):
+        """If ``_crawl_version`` raises, the ``finally`` block must
+        still advance the bar so the counter doesn't get stuck below
+        the total. We simulate failure by patching _crawl_version."""
+        spy = SpyProgressReporter()
+        task = spy.add_task("test", total=None)
+
+        with patch(
+            "bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect
+        ):
+            async with PaloAltoCrawler(reporter=spy, task=task) as crawler:
+                crawler._crawl_version = AsyncMock(side_effect=RuntimeError("boom"))
+                version_infos = [
+                    VersionInfo(
+                        version=f"6.2.{n}",
+                        known_issues_urls=[f"/gp/6-2-{n}-known"],
+                        addressed_issues_urls=[f"/gp/6-2-{n}-addressed"],
+                    )
+                    for n in range(3)
+                ]
+
+                await crawler._crawl_versions_parallel(version_infos, product_name="GP")
+
+        advances = spy.advance_events()
+        assert len(advances) == 3, f"expected 3 advance=1 events (one per failure), got {advances}"
+
+    @pytest.mark.asyncio
+    async def test_no_reporter_is_zero_overhead_noop(self, mock_playwright_globalprotect):
+        """Default ``reporter=None`` path must not raise or touch any
+        attribute — this is the backwards-compat guarantee for every
+        test and library caller that existed before the feature."""
+        with patch(
+            "bugdb.crawlers.base.async_playwright", return_value=mock_playwright_globalprotect
+        ):
+            async with PaloAltoCrawler() as crawler:
+                assert crawler._reporter is None
+                assert crawler._task is None
+                version_infos = [
+                    VersionInfo(
+                        version="6.2.1",
+                        known_issues_urls=["/globalprotect/release-notes/6-2/6-2-1-known-issues"],
+                        addressed_issues_urls=[
+                            "/globalprotect/release-notes/6-2/6-2-1-addressed-issues"
+                        ],
+                    ),
+                ]
+                versions, _failed = await crawler._crawl_versions_parallel(version_infos)
+                assert isinstance(versions, list)
+
+    def test_set_task_total_updates_reporter(self):
+        """``_set_task_total`` forwards to reporter.update when both
+        reporter and task are set; no-op otherwise."""
+        spy = SpyProgressReporter()
+        task = spy.add_task("x", total=None)
+
+        crawler = PaloAltoCrawler(reporter=spy, task=task)
+        crawler._set_task_total(15, "PAN-OS: fetching 15 versions")
+
+        updates = [e for e in spy.events if e[0] == "update" and e[4] == 15]
+        assert len(updates) == 1
+        assert updates[0][3] == "PAN-OS: fetching 15 versions"
+
+    def test_set_task_total_without_reporter_is_noop(self):
+        """With no reporter/task pair, ``_set_task_total`` must be a
+        silent no-op — this is what keeps the default path free of
+        overhead."""
+        crawler = PaloAltoCrawler()
+        # Must not raise.
+        crawler._set_task_total(42, "ignored")
+
+    def test_advance_task_updates_reporter(self):
+        """``_advance_task`` forwards ``advance=1`` to the reporter."""
+        spy = SpyProgressReporter()
+        task = spy.add_task("x", total=3)
+
+        crawler = PaloAltoCrawler(reporter=spy, task=task)
+        crawler._advance_task("PAN-OS: 12.1.5 done")
+        crawler._advance_task("PAN-OS: 11.2.3 done")
+
+        advances = spy.advance_events()
+        assert len(advances) == 2
+        assert advances[0][3] == "PAN-OS: 12.1.5 done"
+        assert advances[1][3] == "PAN-OS: 11.2.3 done"

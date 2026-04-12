@@ -1,6 +1,6 @@
 """Shared fixtures for the data-fidelity integration tier.
 
-These tests compare the current `assets/data.json` against a committed
+These tests compare the current `assets/bugdb.json` against a committed
 baseline snapshot. They are session-scoped because loading a 13 MB JSON
 file per test is wasteful.
 
@@ -30,23 +30,26 @@ from bugdb.baseline import (
 
 # Repo layout: tests/integration/conftest.py -> repo root is parents[2]
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_DATA_PATH = REPO_ROOT / "assets" / "data.json"
+DEFAULT_BUGDB_PATH = REPO_ROOT / "assets" / "bugdb.json"
+# NOTE: the baseline filename deliberately stays `data_baseline.json`
+# — it's an independent fingerprint artifact, not a copy of the raw
+# bug database, and renaming would invalidate the committed snapshot.
 DEFAULT_BASELINE_PATH = REPO_ROOT / "tests" / "baselines" / "data_baseline.json"
 
 REFRESH_ENV_VAR = "BUGDB_REFRESH_BASELINE"
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    """Allow overriding the data and baseline paths from the CLI.
+    """Allow overriding the bugdb and baseline paths from the CLI.
 
     Useful for staging runs and local experimentation.
     """
     group = parser.getgroup("bugdb-integration")
     group.addoption(
-        "--data-path",
+        "--bugdb-path",
         action="store",
         default=None,
-        help="Path to assets/data.json (default: repo assets/data.json).",
+        help="Path to assets/bugdb.json (default: repo assets/bugdb.json).",
     )
     group.addoption(
         "--baseline-path",
@@ -57,10 +60,10 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture(scope="session")
-def data_path(request: pytest.FixtureRequest) -> Path:
-    """Resolved path to the data.json under test."""
-    cli = request.config.getoption("--data-path")
-    return Path(cli) if cli else DEFAULT_DATA_PATH
+def bugdb_path(request: pytest.FixtureRequest) -> Path:
+    """Resolved path to the bugdb.json under test."""
+    cli = request.config.getoption("--bugdb-path")
+    return Path(cli) if cli else DEFAULT_BUGDB_PATH
 
 
 @pytest.fixture(scope="session")
@@ -71,24 +74,25 @@ def baseline_path(request: pytest.FixtureRequest) -> Path:
 
 
 @pytest.fixture(scope="session")
-def data_json(data_path: Path) -> dict[str, Any]:
-    """Load assets/data.json exactly once per session."""
-    if not data_path.exists():
+def bugdb_json(bugdb_path: Path) -> dict[str, Any]:
+    """Load assets/bugdb.json exactly once per session."""
+    if not bugdb_path.exists():
         pytest.fail(
-            f"Data file not found: {data_path}. Run `uv run bugdb fetch` first or pass --data-path."
+            f"Bug database file not found: {bugdb_path}. "
+            f"Run `uv run bugdb fetch` first or pass --bugdb-path."
         )
-    with data_path.open("r", encoding="utf-8") as fh:
+    with bugdb_path.open("r", encoding="utf-8") as fh:
         return json.load(fh)
 
 
 @pytest.fixture(scope="session")
-def current_snapshot(data_json: dict[str, Any]) -> BaselineSnapshot:
-    """Build a fresh fingerprint of the current data.json.
+def current_snapshot(bugdb_json: dict[str, Any]) -> BaselineSnapshot:
+    """Build a fresh fingerprint of the current bugdb.json.
 
     Reusing the same function as the baseline saver guarantees that the
     comparison is apples-to-apples.
     """
-    return build_baseline(data_json)
+    return build_baseline(bugdb_json)
 
 
 @pytest.fixture(scope="session")

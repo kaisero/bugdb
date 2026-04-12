@@ -22,6 +22,7 @@ wheels/
 .venv/
 venv/
 ENV/
+.devcontainer/
 
 # IDE
 .idea/
@@ -33,6 +34,10 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Discovery cache (populated by `bugdb fetch` to skip re-probing across runs;
+# 24h TTL, safe to delete, regenerated automatically)
+.cache/
 
 # Generated files
 dist/

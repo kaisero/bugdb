@@ -46,7 +46,7 @@ class DeviceSecurityCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error discovering Device Security years: %s", e)
-            self._log(f"  Error discovering years: {e}")
+            logger.error(f"Error discovering years: {e}")
 
         # Sort descending (newest first)
         years.sort(reverse=True)
@@ -111,19 +111,27 @@ class DeviceSecurityCrawler(BaseCrawler):
         skip_versions = skip_versions or set()
         failed_fetches: list[FailedFetch] = []
 
-        self._log("Discovering available Device Security years...")
+        logger.info("Discovering available Device Security years...")
         years = await self.discover_years()
-        self._log(f"Found years: {', '.join(years)}")
+        logger.info(f"Found years: {', '.join(years)}")
+
+        years_to_fetch = [y for y in years if y not in skip_versions]
+        self._set_task_total(
+            len(years_to_fetch),
+            f"{self.product_name}: fetching {len(years_to_fetch)} years"
+            if years_to_fetch
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_known: dict[str, list[Issue]] = {}
         all_addressed: dict[str, list[Issue]] = {}
 
         for year in years:
             if year in skip_versions:
-                self._log(f"  Skipping year {year}")
+                logger.info(f"  Skipping year {year}")
                 continue
 
-            self._log(f"Crawling Device Security {year}...")
+            logger.info(f"Crawling Device Security {year}...")
 
             # Known and addressed issues URLs for this year
             known_url = f"/iot/release-notes/known-issues/known-issues-in-{year}"
@@ -144,9 +152,9 @@ class DeviceSecurityCrawler(BaseCrawler):
                         all_known[key] = []
                     all_known[key].extend(issues)
                 total = sum(len(i) for i in issues_by_feature.values())
-                self._log(f"  {year}: {total} known issues")
+                logger.info(f"  {year}: {total} known issues")
             else:
-                self._log(f"  Error fetching {year} known issues: {results[0]}")
+                logger.error(f"Error fetching {year} known issues: {results[0]}")
                 failed_fetches.append(
                     FailedFetch(
                         url=known_url,
@@ -166,9 +174,9 @@ class DeviceSecurityCrawler(BaseCrawler):
                         all_addressed[key] = []
                     all_addressed[key].extend(issues)
                 total = sum(len(i) for i in issues_by_feature.values())
-                self._log(f"  {year}: {total} addressed issues")
+                logger.info(f"  {year}: {total} addressed issues")
             else:
-                self._log(f"  Error fetching {year} addressed issues: {results[1]}")
+                logger.error(f"Error fetching {year} addressed issues: {results[1]}")
                 failed_fetches.append(
                     FailedFetch(
                         url=addressed_url,
@@ -178,6 +186,8 @@ class DeviceSecurityCrawler(BaseCrawler):
                         issue_type="addressed",
                     )
                 )
+
+            self._advance_task(f"{self.product_name}: {year} done")
 
         # Retry failed fetches
         if failed_fetches:

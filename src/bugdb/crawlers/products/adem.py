@@ -152,7 +152,8 @@ class ADEMCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Autonomous DEM...")
+        logger.info("Crawling Autonomous DEM...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
         failed_fetches: list[FailedFetch] = []
 
         known_issues_url = (
@@ -176,9 +177,13 @@ class ADEMCrawler(BaseCrawler):
         if not isinstance(results[0], Exception):
             known_by_version = self._parse_adem_issues_page(results[0], "known")
             total_known = sum(len(issues) for issues in known_by_version.values())
-            self._log(f"  Found {total_known} known issues across {len(known_by_version)} versions")
+            logger.info(
+                "Found %d known issues across %d versions",
+                total_known,
+                len(known_by_version),
+            )
         else:
-            self._log(f"  Error fetching known issues: {results[0]}")
+            logger.error(f"Error fetching known issues: {results[0]}")
             failed_fetches.append(
                 FailedFetch(
                     url=known_issues_url,
@@ -191,12 +196,12 @@ class ADEMCrawler(BaseCrawler):
         if not isinstance(results[1], Exception):
             addressed_by_version = self._parse_adem_issues_page(results[1], "addressed")
             total_addressed = sum(len(issues) for issues in addressed_by_version.values())
-            self._log(
+            logger.info(
                 f"  Found {total_addressed} addressed issues across "
                 f"{len(addressed_by_version)} versions"
             )
         else:
-            self._log(f"  Error fetching addressed issues: {results[1]}")
+            logger.error(f"Error fetching addressed issues: {results[1]}")
             failed_fetches.append(
                 FailedFetch(
                     url=addressed_issues_url,
@@ -233,6 +238,8 @@ class ADEMCrawler(BaseCrawler):
             key=lambda v: self._version_sort_key(v.version),
             reverse=True,
         )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(

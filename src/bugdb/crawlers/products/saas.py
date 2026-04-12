@@ -31,7 +31,8 @@ class RemoteBrowserIsolationCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Remote Browser Isolation...")
+        logger.info("Crawling Remote Browser Isolation...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
         failed_fetches: list[FailedFetch] = []
 
         known_issues_url = (
@@ -48,9 +49,9 @@ class RemoteBrowserIsolationCrawler(BaseCrawler):
                 if table.find_parent("table"):
                     continue
                 known_issues.extend(self._parse_issues_table(table))
-            self._log(f"  Found {len(known_issues)} known issues")
+            logger.info("Found %d known issues", len(known_issues))
         except Exception as e:
-            self._log(f"  Error fetching known issues: {e}")
+            logger.error("Error fetching known issues: %s", e)
             failed_fetches.append(
                 FailedFetch(
                     url=known_issues_url,
@@ -75,6 +76,8 @@ class RemoteBrowserIsolationCrawler(BaseCrawler):
                     addressed_issues=[],
                 )
             )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(
@@ -106,7 +109,8 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling AI Runtime Security...")
+        logger.info("Crawling AI Runtime Security...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
         failed_fetches: list[FailedFetch] = []
 
         known_issues_url = "/ai-runtime-security/release-notes/known-issues"
@@ -126,9 +130,9 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
                 if table.find_parent("table"):
                     continue
                 known_issues.extend(self._parse_issues_table(table))
-            self._log(f"  Found {len(known_issues)} known issues")
+            logger.info("Found %d known issues", len(known_issues))
         else:
-            self._log(f"  Error fetching known issues: {results[0]}")
+            logger.error("Error fetching known issues: %s", results[0])
             failed_fetches.append(
                 FailedFetch(
                     url=known_issues_url,
@@ -143,9 +147,9 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
                 if table.find_parent("table"):
                     continue
                 addressed_issues.extend(self._parse_issues_table(table))
-            self._log(f"  Found {len(addressed_issues)} addressed issues")
+            logger.info("Found %d addressed issues", len(addressed_issues))
         else:
-            self._log(f"  Error fetching addressed issues: {results[1]}")
+            logger.error("Error fetching addressed issues: %s", results[1])
             failed_fetches.append(
                 FailedFetch(
                     url=addressed_issues_url,
@@ -171,6 +175,8 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
                     addressed_issues=addressed_issues,
                 )
             )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(
@@ -202,7 +208,8 @@ class StrataLoggingServiceCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Strata Logging Service...")
+        logger.info("Crawling Strata Logging Service...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
         failed_fetches: list[FailedFetch] = []
 
         known_issues_url = "/strata-logging-service/release-notes/known-issues"
@@ -222,9 +229,9 @@ class StrataLoggingServiceCrawler(BaseCrawler):
                 if table.find_parent("table"):
                     continue
                 known_issues.extend(self._parse_issues_table(table))
-            self._log(f"  Found {len(known_issues)} known issues")
+            logger.info("Found %d known issues", len(known_issues))
         else:
-            self._log(f"  Error fetching known issues: {results[0]}")
+            logger.error("Error fetching known issues: %s", results[0])
             failed_fetches.append(
                 FailedFetch(
                     url=known_issues_url,
@@ -239,9 +246,9 @@ class StrataLoggingServiceCrawler(BaseCrawler):
                 if table.find_parent("table"):
                     continue
                 addressed_issues.extend(self._parse_issues_table(table))
-            self._log(f"  Found {len(addressed_issues)} addressed issues")
+            logger.info("Found %d addressed issues", len(addressed_issues))
         else:
-            self._log(f"  Error fetching addressed issues: {results[1]}")
+            logger.error("Error fetching addressed issues: %s", results[1])
             failed_fetches.append(
                 FailedFetch(
                     url=addressed_issues_url,
@@ -267,6 +274,8 @@ class StrataLoggingServiceCrawler(BaseCrawler):
                     addressed_issues=addressed_issues,
                 )
             )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(

@@ -125,8 +125,12 @@ class GlobalProtectCrawler(BaseCrawler):
                         href = href[:-5]
 
                     # Classify by last path segment to avoid false matches
-                    # (e.g., "known-issues-related-to-gp-app/addressed-issues")
+                    # (e.g., "known-issues-related-to-gp-app/addressed-issues").
                     last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
+                    # Skip "known-and-addressed-issues" hub pages — they
+                    # are link-only indexes with no issue tables.
+                    if "known-and-addressed" in last_segment:
+                        continue
                     if "addressed" in last_segment and href not in vi.addressed_issues_urls:
                         vi.addressed_issues_urls.append(href)
                     elif "known" in last_segment and href not in vi.known_issues_urls:
@@ -134,7 +138,6 @@ class GlobalProtectCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
-            self._log(f"  Error discovering version pages: {e}")
 
         # Sort by version (newest first)
         version_infos.sort(
@@ -162,26 +165,35 @@ class GlobalProtectCrawler(BaseCrawler):
         skip_versions = skip_versions or set()
         all_failed_fetches: list[FailedFetch] = []
 
-        # Discover versions if not specified
+        # Cache-aware discovery: warm runs skip the probe + per-major
+        # index fetches entirely. See BaseCrawler._resolve_version_infos.
         if major_versions is None:
-            self._log("Discovering available GlobalProtect versions...")
-            major_versions = await self.discover_versions()
-            self._log(f"Found versions: {', '.join(major_versions)}")
+            logger.info("Discovering available GlobalProtect versions...")
+        vi_by_major = await self._resolve_version_infos(
+            discover_majors_fn=self.discover_versions,
+            discover_pages_fn=self.discover_version_pages,
+            explicit_majors=major_versions,
+            skip_versions=skip_versions,
+        )
+        if major_versions is None:
+            logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
+
+        total_versions = sum(len(v) for v in vi_by_major.values())
+        self._set_task_total(
+            total_versions,
+            f"{self.product_name}: fetching {total_versions} versions"
+            if total_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions = []
 
-        for major_version in major_versions:
+        for major_version, version_infos in vi_by_major.items():
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling GlobalProtect {version_str}...")
-
-            # Discover version pages for this major version
-            version_infos = await self.discover_version_pages(major_version)
-
-            # Filter out skipped versions
-            version_infos = [vi for vi in version_infos if vi.version not in skip_versions]
+            logger.info("Crawling GlobalProtect %s...", version_str)
 
             if not version_infos:
-                self._log("  No versions to crawl (all skipped or none found)")
+                logger.info("No versions to crawl (all skipped or none found)")
                 continue
 
             # Crawl all versions in parallel

@@ -137,6 +137,10 @@ class ProductStats(BaseModel):
     product_id: str = Field(..., description="Product identifier")
     product_name: str = Field(..., description="Product display name")
     versions_fetched: int = Field(..., description="Number of versions fetched")
+    versions: list[str] = Field(
+        default_factory=list,
+        description="Version strings fetched for this product (e.g. ['12.1.5', '11.2.3'])",
+    )
     known_issues_count: int = Field(..., description="Number of known issues fetched")
     addressed_issues_count: int = Field(..., description="Number of addressed issues fetched")
     failed_fetch_count: int = Field(..., description="Number of failed URL fetches")
@@ -151,7 +155,7 @@ class FetchReport(BaseModel):
         default_factory=lambda: datetime.now(UTC),
         description="Report generation timestamp",
     )
-    data_file: str = Field(..., description="Path to the associated data output file")
+    bugdb_file: str = Field(..., description="Path to the associated bug database file")
     total_products: int = Field(..., description="Total number of products fetched")
     total_versions: int = Field(..., description="Total number of versions fetched")
     total_known_issues: int = Field(..., description="Total known issues fetched")

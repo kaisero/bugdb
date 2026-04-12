@@ -16,6 +16,7 @@ stages:
   - test
   - integration
   - canary
+  - fetch
   - deploy
 
 # ---------------------------------------------------------------------------
@@ -42,18 +43,25 @@ lint:
     - if: $CI_MERGE_REQUEST_IID
 
 # ---------------------------------------------------------------------------
-# Fast tier: unit + mock-crawler tests. Runs on every commit to develop.
+# Fast tier: unit + crawler tests. Runs on every commit to develop and
+# on every merge request.
 #
-# No `playwright install` step: all fast-tier crawler tests use the
-# MockPlaywright fixture defined in tests/conftest.py, so installing a
-# real Chromium (~200 MB, ~30s) on every commit is pure waste. If a
-# genuinely-browser-needing test is ever added, mark it and move it to
-# the integration stage.
+# The `playwright install --with-deps chromium` step is required even
+# though most crawler tests use the MockPlaywright fixture from
+# tests/conftest.py. The root cause: several tests (TestCortexXDRCrawler,
+# TestADEMCrawler, TestSCMCrawler, TestCloudNGFW*, TestDeviceSecurityCrawler,
+# TestPluginVersionDiscovery) patch individual fetch methods but enter
+# the crawler via `async with CortexXDRCrawler()`, which triggers
+# BaseCrawler.__aenter__ → async_playwright().start() → chromium.launch().
+# Until __aenter__ is made lazy or those tests are refactored to patch
+# `async_playwright` at module level, a real Chromium must be installed.
+# Tracked as roadmap item D3 (mock fixture coverage expansion).
 # ---------------------------------------------------------------------------
 test:
   stage: test
   script:
     - uv sync --locked --group test
+    - uv run playwright install --with-deps chromium
     - uv run pytest --junitxml=report.xml -v
   artifacts:
     when: always
@@ -66,7 +74,7 @@ test:
 # ---------------------------------------------------------------------------
 # Heavy tier: data-fidelity integration tests against the committed
 # baseline. Deliberately isolated from the fast `test` stage:
-#   - loads 13 MB data.json once per session
+#   - loads 13 MB bugdb.json once per session
 #   - parametrizes ~1900 assertions per (product, version) pair
 #   - signal "did the fetch lose data" must not be drowned by parser churn
 #
@@ -79,6 +87,16 @@ data-baseline-integration:
   stage: integration
   script:
     - uv sync --locked --group test
+    # Download bugdb.json from the Package Registry — the file is not
+    # committed to the repo (13 MB). The update-bugdb scheduled job
+    # keeps it current; if it hasn't run yet this job skips cleanly.
+    - mkdir -p assets
+    - |
+      curl --silent --fail \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json" \
+        -o assets/bugdb.json \
+      || { echo "bugdb.json not in Package Registry — skipping integration tests"; exit 0; }
     - uv run pytest tests/integration/
         -m data_baseline
         --junitxml=integration.xml
@@ -97,13 +115,14 @@ data-baseline-integration:
     # Explicit manual runs from the GitLab UI.
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
-    # MRs that touch data, the baseline, or the integration tests.
+    # MRs that touch the committed data or baseline snapshot. Test
+    # code and baseline.py changes are validated by the nightly
+    # schedule — triggering on those in MRs would fail because
+    # assets/bugdb.json (13 MB) is not committed to the repo.
     - if: $CI_MERGE_REQUEST_IID
       changes:
-        - assets/data.json
+        - assets/bugdb.json
         - tests/baselines/**/*
-        - tests/integration/**/*
-        - src/bugdb/baseline.py
 
 # ---------------------------------------------------------------------------
 # Canary: probes real docs.paloaltonetworks.com URLs to detect when Palo
@@ -139,7 +158,68 @@ upstream-canary:
       when: manual
 
 # ---------------------------------------------------------------------------
+# Fetch: incremental crawl of all products, uploading the result to
+# GitLab's Generic Packages registry. Runs on a schedule (every 3 days,
+# configured in the GitLab UI) and can be triggered manually.
+#
+# The first run will do a full fetch (no existing bugdb.json in the
+# registry → curl 404 → starts from scratch). Subsequent runs download
+# the previous bugdb.json and pass --incremental so only new versions
+# are crawled.
+#
+# CI minutes budget: ~5-10 min incremental, ~15-20 min full.
+# At every-3-days that's ~70 min/month — fits in the free tier's 400.
+# ---------------------------------------------------------------------------
+update-bugdb:
+  stage: fetch
+  script:
+    - uv sync --locked
+    - uv run playwright install --with-deps chromium
+    # Download existing bugdb.json from Package Registry (if any).
+    # First run will 404 — that's fine, fetch starts from scratch.
+    - mkdir -p assets
+    - |
+      curl --silent --fail \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json" \
+        -o assets/bugdb.json \
+      || echo "No existing bugdb.json in registry — starting fresh"
+    # Incremental fetch: only crawl versions not already present.
+    # Falls back to full fetch when assets/bugdb.json doesn't exist.
+    - >-
+      uv run bugdb fetch
+      -o assets/bugdb.json
+      --incremental
+      --no-progress
+      -l assets/bugdb.log
+    # Upload the updated bugdb.json to the Generic Packages registry.
+    # "latest" as the version keeps a single mutable artifact — no
+    # version sprawl, and the Pages deploy always reads "latest".
+    - |
+      curl --silent --fail \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        --upload-file assets/bugdb.json \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json"
+  artifacts:
+    when: always
+    paths:
+      - assets/bugdb.log
+    expire_in: 7 days
+  timeout: 30 minutes
+  rules:
+    # Scheduled pipeline (every 3 days via GitLab schedule UI).
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    # Manual trigger from the GitLab UI on any branch.
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
+
+# ---------------------------------------------------------------------------
 # Deploy: static site to GitLab Pages.
+#
+# Downloads bugdb.json from the Generic Packages registry (populated by
+# the update-bugdb scheduled job), builds the site with real data baked
+# in, and deploys to Pages. No external CDN dependency — the frontend
+# loads assets/bugdb.json from the same origin via a relative path.
 #
 # Fires only when a commit lands on `main` via a push pipeline, which
 # in practice means "after a merge request has been merged into main"
@@ -154,12 +234,20 @@ pages:
   stage: deploy
   script:
     - uv sync --locked
-    - uv run bugdb generate-sample
-    - uv run bugdb build-site-cmd -o public
-    # Replace local data.json path with external URL
-    - sed -i "s|fetch('assets/data.json')|fetch('https://repo.dependencyhell.net/bugdb/data.json')|g" public/assets/app.js
-    # Remove local data.json since we're using external
-    - rm -f public/assets/data.json
+    # Download bugdb.json from the Package Registry. If the scheduled
+    # fetch hasn't run yet the curl will fail and the deploy aborts
+    # with a clear message — run update-bugdb manually first.
+    - mkdir -p assets
+    - |
+      curl --silent --fail \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json" \
+        -o assets/bugdb.json \
+      || { echo "ERROR: bugdb.json not found in Package Registry. Run the update-bugdb job first."; exit 1; }
+    # Generate release-notes.json next to bugdb.json so build-site-cmd
+    # auto-discovers it (see SiteBuilder.build_site in site_builder.py).
+    - uv run bugdb generate-release-notes -o assets/release-notes.json --force
+    - uv run bugdb build-site-cmd -b assets/bugdb.json -o public
   artifacts:
     paths:
       - public

@@ -4,19 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BugDB - Palo Alto Networks Bug Database</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'pan-orange': '#FA582D',
-                        'pan-dark': '#1A1A1A',
-                    }
-                }
-            }
-        }
-    </script>
+    <!--
+        Content Security Policy (defense-in-depth against XSS).
+
+        default-src 'none' means "deny everything by default" — every
+        directive below is an explicit allowlist.
+
+        script-src 'self'          — only our bundled app.js. No inline
+                                     scripts, no eval, no CDN scripts.
+        style-src 'self' 'unsafe-inline'
+                                   — our bundled tailwind.css, plus
+                                     inline <style> blocks which the
+                                     template uses for a handful of
+                                     autocomplete rules. The
+                                     inline-style allowance is not an
+                                     XSS hole because we never build
+                                     style attributes from user data.
+        img-src 'self' data:       — self-hosted assets + inline data: URIs.
+        font-src 'self'            — self-hosted fonts (none today).
+        connect-src 'self'         — fetch() of bugdb.json and
+                                     release-notes.json. Both live at the
+                                     same origin as the page (the GitLab
+                                     Pages deploy rewrites bugdb.json's URL
+                                     via a build-time sed; if that URL
+                                     ever points at a different origin
+                                     this directive must be widened).
+        base-uri 'none'            — no <base href=...> injection.
+        form-action 'none'         — no forms submit anywhere.
+
+        NOTE: `frame-ancestors` is intentionally omitted — browsers
+        ignore it when delivered via <meta>, and emit a console warning
+        if it's present. Clickjacking protection has to come from an
+        HTTP header set by the web server (X-Frame-Options: DENY or
+        Content-Security-Policy: frame-ancestors 'none'). For the
+        GitLab Pages deploy, the Pages CDN already sets
+        X-Frame-Options: SAMEORIGIN by default.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+    <link rel="stylesheet" href="assets/tailwind.css">
     <style>
         .autocomplete-container {
             position: relative;
@@ -75,10 +100,10 @@
                     <p class="text-gray-400 text-sm">Palo Alto Networks Bug Database</p>
                 </div>
                 <div class="text-right text-sm text-gray-400">
-                    <a id="release-notes-link" href="#" onclick="showReleaseNotesModal(); return false;"
-                       class="hidden text-pan-orange hover:text-orange-300 hover:underline mb-1 block">
+                    <button id="release-notes-link" type="button"
+                            class="hidden text-pan-orange hover:text-orange-300 hover:underline mb-1 block bg-transparent border-0 p-0 cursor-pointer">
                         Release Notes
-                    </a>
+                    </button>
                     <p>Generated: <span id="generated-date">-</span></p>
                     <p>Version: {{ app_version }}</p>
                 </div>
@@ -274,6 +299,16 @@
         </div>
     </div>
 
-    <script src="assets/app.js"></script>
+    <!--
+        `type="module"` gets us two things for free:
+        1. Strict mode (on top of the IIFE's 'use strict' — belt and braces).
+        2. Deferred execution by default (the browser waits for the DOM to
+           be parsed before running the script), so the script tag's
+           position no longer matters and the internal initElements()
+           call is guaranteed to find its targets.
+        It also enables native ESM `import`/`export` if we ever need
+        to break app.js into modules.
+    -->
+    <script src="assets/app.js" type="module"></script>
 </body>
 </html>

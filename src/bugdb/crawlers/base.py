@@ -1,8 +1,12 @@
 """Base crawler class with shared functionality."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
@@ -11,9 +15,12 @@ from playwright.async_api import Browser, Page, async_playwright
 from bugdb.models import Issue, ProductVersion
 
 from .models import FailedFetch, VersionCrawlResult, VersionInfo
+
+if TYPE_CHECKING:
+    from bugdb.discovery_cache import DiscoveryCache
+    from bugdb.progress import ProgressReporter, TaskHandle
 from .utils import (
     BASE_URL,
-    configure_logging,
     extract_affected_components,
     extract_bug_id_and_fix_info,
     extract_cell_text_with_tables,
@@ -42,28 +49,52 @@ class BaseCrawler:
     def __init__(
         self,
         headless: bool = True,
-        verbose: bool = False,
         debug: bool = False,
         max_concurrency: int = 3,
         max_retries: int = 3,
         retry_delay: float = 2.0,
+        discovery_cache: DiscoveryCache | None = None,
+        reporter: ProgressReporter | None = None,
+        task: TaskHandle | None = None,
     ):
         """Initialize the crawler.
 
         Args:
             headless: Whether to run browser in headless mode.
-            verbose: Whether to print progress messages.
-            debug: Whether to enable debug logging (more detailed than verbose).
+            debug: Whether to enable debug logging. The actual handler
+                attachment (stderr stream handler) is owned by the CLI's
+                ``configure_fetch_logging`` context manager; this flag
+                is retained on the instance for crawler code that wants
+                to branch on verbosity without going through the logger.
             max_concurrency: Maximum number of concurrent page fetches.
             max_retries: Maximum number of retry attempts for failed requests.
             retry_delay: Base delay between retries in seconds (exponential backoff).
+            discovery_cache: Optional persistent cache for URL patterns and
+                discovered version infos, shared across crawlers by the CLI.
+                If ``None``, the crawler runs without cache (always probes
+                from scratch). Backwards-compatible for direct instantiation
+                in tests.
+            reporter: Optional progress reporter. When provided together
+                with a ``task`` handle, the crawler emits one
+                ``update(advance=1)`` event per completed version,
+                letting the CLI render a live bar. Default ``None`` is
+                a zero-overhead no-op so existing callers stay
+                unchanged.
+            task: Optional progress task handle (opaque to the
+                crawler) that pairs with ``reporter``. The CLI
+                pre-creates one task per product before calling the
+                wrapper so the bar exists even while version discovery
+                is still running; ``_set_task_total`` later fills in
+                the total once discovery resolves.
         """
         self.headless = headless
-        self.verbose = verbose
         self.debug = debug
         self.max_concurrency = max_concurrency
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self._discovery_cache = discovery_cache
+        self._reporter: ProgressReporter | None = reporter
+        self._task: TaskHandle | None = task
         self._playwright = None
         self._browser: Browser | None = None
         self._semaphore: asyncio.Semaphore | None = None
@@ -71,10 +102,6 @@ class BaseCrawler:
         # Global backoff state - shared across all concurrent fetches
         self._global_backoff_until: float = 0.0
         self._backoff_lock: asyncio.Lock | None = None
-
-        # Configure logging if debug is enabled
-        if debug:
-            configure_logging(debug=True)
 
     async def __aenter__(self):
         logger.debug("Starting Playwright browser (headless=%s)", self.headless)
@@ -92,16 +119,111 @@ class BaseCrawler:
         if self._playwright:
             await self._playwright.stop()
 
-    def _log(self, message: str) -> None:
-        """Emit a progress/status message via the module logger.
+    def _set_task_total(self, total: int, description: str | None = None) -> None:
+        """Tell the progress reporter how many versions this crawl is
+        about to process.
 
-        Previously this method both called ``print(message)`` (when
-        ``verbose=True``) AND ``logger.info(message)`` unconditionally,
-        which double-emitted to any terminal that had logging
-        configured. It's now logger-only; callers that want console
-        output attach a handler (e.g. ``RichHandler``) in the CLI.
+        Called by each product crawler's ``crawl()`` method after
+        :meth:`_resolve_version_infos` returns, so the CLI's per-product
+        bar can swap from a spinner to a determinate ``0/N`` bar. No-op
+        when no reporter/task pair is attached.
         """
-        logger.info("%s", message)
+        if self._reporter is not None and self._task is not None:
+            self._reporter.update(self._task, total=total, description=description)
+
+    def _advance_task(self, description: str | None = None, advance: int = 1) -> None:
+        """Advance the progress reporter's task counter.
+
+        Used by product crawlers that don't go through
+        :meth:`_crawl_versions_parallel` (e.g. plugins, Cortex XDR,
+        SaaS services with custom inline fetch loops) so the same
+        per-version "one bar tick per completed version" semantics
+        apply regardless of the fetch strategy. No-op when no
+        reporter/task pair is attached.
+        """
+        if self._reporter is not None and self._task is not None:
+            self._reporter.update(self._task, advance=advance, description=description)
+
+    async def _resolve_version_infos(
+        self,
+        discover_majors_fn: Callable[[], Awaitable[list[str]]],
+        discover_pages_fn: Callable[[str], Awaitable[list[VersionInfo]]],
+        explicit_majors: list[str] | None,
+        skip_versions: set[str] | None = None,
+    ) -> dict[str, list[VersionInfo]]:
+        """Return ``{major: [VersionInfo, ...]}`` using the cache when fresh.
+
+        Centralises the "which versions do we need to crawl" decision so
+        every product crawler gets the same cache-aware behaviour without
+        each one rolling its own logic.
+
+        Three paths, in order of preference:
+
+        1. **Explicit majors.** If the caller passes ``explicit_majors``
+           (i.e. ``bugdb fetch panos --version 12-1``), we bypass the cache
+           entirely and call ``discover_pages_fn`` for each named major.
+           The user asked for something specific — give it to them fresh.
+
+        2. **Fresh cache.** If ``self._discovery_cache.is_fresh(product_id)``
+           returns True, load the cached ``version_infos`` map and return
+           it filtered by ``skip_versions``. Zero network requests.
+
+        3. **Cold / stale cache.** Call ``discover_majors_fn()`` to learn
+           which majors exist, then ``discover_pages_fn(major)`` for each,
+           write the result to the cache, and return it filtered by
+           ``skip_versions``.
+
+        Args:
+            discover_majors_fn: Typically ``self.discover_versions``. Called
+                only in path 3.
+            discover_pages_fn: Typically ``self.discover_version_pages``.
+                Called in paths 1 and 3.
+            explicit_majors: Caller-supplied major list. Triggers path 1
+                when non-empty; otherwise paths 2/3 apply.
+            skip_versions: Full version strings (e.g. ``{"12.1.5"}``) to
+                drop from the result. Applied after loading/discovering so
+                we never crawl versions we already have.
+
+        Returns:
+            ``{major: [VersionInfo, ...]}`` ready to feed into
+            ``_crawl_versions_parallel``. Empty lists are filtered out by
+            callers so the caller can still log "no versions to crawl".
+        """
+        skip_versions = skip_versions or set()
+
+        # Path 1: caller asked for specific majors. Always go to network.
+        if explicit_majors:
+            result: dict[str, list[VersionInfo]] = {}
+            for major in explicit_majors:
+                version_infos = await discover_pages_fn(major)
+                result[major] = [vi for vi in version_infos if vi.version not in skip_versions]
+            return result
+
+        # Path 2: fresh cache hit — skip discovery entirely.
+        if self._discovery_cache is not None and self._discovery_cache.is_fresh(self.product_id):
+            cached = self._discovery_cache.get_version_infos(self.product_id)
+            if cached is not None:
+                logger.debug(
+                    "%s discovery cache hit (%d majors)",
+                    self.product_id,
+                    len(cached),
+                )
+                return {
+                    major: [vi for vi in version_infos if vi.version not in skip_versions]
+                    for major, version_infos in cached.items()
+                }
+
+        # Path 3: cold or stale — discover fresh, write to cache.
+        majors = await discover_majors_fn()
+        fresh: dict[str, list[VersionInfo]] = {}
+        for major in majors:
+            fresh[major] = await discover_pages_fn(major)
+        if self._discovery_cache is not None:
+            self._discovery_cache.put_version_infos(self.product_id, fresh)
+        return {
+            major: [vi for vi in version_infos if vi.version not in skip_versions]
+            for major, version_infos in fresh.items()
+        }
 
     def _is_connection_refused_error(self, error: Exception) -> bool:
         """Check if an error is a connection refused error.
@@ -130,8 +252,7 @@ class BaseCrawler:
             now = time.monotonic()
             if self._global_backoff_until > now:
                 wait_time = self._global_backoff_until - now
-                self._log(f"  [Backoff] Waiting {wait_time:.1f}s for network recovery...")
-                logger.info("Global backoff active, waiting %.1f seconds", wait_time)
+                logger.info("[Backoff] Waiting %.1fs for network recovery...", wait_time)
 
         # Wait outside the lock so other tasks can also check and wait
         now = time.monotonic()
@@ -152,12 +273,8 @@ class BaseCrawler:
             # Only extend if this is a new/later backoff
             if new_backoff_until > self._global_backoff_until:
                 self._global_backoff_until = new_backoff_until
-                self._log(
-                    f"  [Backoff] Connection refused - all fetches paused for "
-                    f"{self.GLOBAL_BACKOFF_DURATION:.0f}s"
-                )
                 logger.warning(
-                    "Connection refused detected, triggering global backoff for %.0f seconds",
+                    "[Backoff] Connection refused - all fetches paused for %.0fs",
                     self.GLOBAL_BACKOFF_DURATION,
                 )
 
@@ -231,7 +348,6 @@ class BaseCrawler:
                         self.max_retries,
                         e,
                     )
-                    self._log(f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}")
                 finally:
                     if page is not None:
                         await page.close()
@@ -297,7 +413,6 @@ class BaseCrawler:
                         self.max_retries,
                         e,
                     )
-                    self._log(f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}")
                 finally:
                     if page is not None:
                         await page.close()
@@ -920,9 +1035,20 @@ class BaseCrawler:
         )
 
     async def _crawl_versions_parallel(
-        self, version_infos: list[VersionInfo], product_name: str = ""
+        self,
+        version_infos: list[VersionInfo],
+        product_name: str = "",
     ) -> tuple[list[ProductVersion], list[FailedFetch]]:
         """Crawl multiple versions in parallel.
+
+        When ``self._reporter`` and ``self._task`` are both set (the CLI
+        wired up progress reporting), each completed version — success
+        *or* failure — advances the bar by one and updates the
+        description with the finishing version. The bar advances in
+        completion order even though ``asyncio.gather`` still waits for
+        the whole batch: the ``finally`` block inside ``_one`` runs as
+        soon as its own coroutine resolves, giving users per-version
+        feedback without reordering the result list.
 
         Args:
             version_infos: List of version information objects.
@@ -931,7 +1057,26 @@ class BaseCrawler:
         Returns:
             Tuple of (list of ProductVersion objects, list of FailedFetch objects).
         """
-        tasks = [self._crawl_version(vi, product_name) for vi in version_infos]
+        reporter = self._reporter
+        task = self._task
+        # Prefer the class-level ``product_name`` for reporter labels
+        # ("PAN-OS: 12.1.5 done") — it's always the human-readable
+        # product display name. Fall back to the product_id passed
+        # in for error tracking if a subclass doesn't set one.
+        display_name = getattr(self, "product_name", "") or product_name
+
+        async def _one(vi: VersionInfo) -> VersionCrawlResult:
+            try:
+                return await self._crawl_version(vi, product_name)
+            finally:
+                if reporter is not None and task is not None:
+                    if display_name:
+                        label = f"{display_name}: {vi.version} done"
+                    else:
+                        label = f"{vi.version} done"
+                    reporter.update(task, advance=1, description=label)
+
+        tasks = [_one(vi) for vi in version_infos]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         product_versions = []
@@ -941,7 +1086,7 @@ class BaseCrawler:
             if isinstance(result, Exception):
                 # Entire version crawl failed - track all URLs as failed
                 vi = version_infos[i]
-                self._log(f"    Error crawling {vi.version}: {result}")
+                logger.error("Error crawling %s: %s", vi.version, result)
                 for url in vi.known_issues_urls:
                     all_failed_fetches.append(
                         FailedFetch(
@@ -970,9 +1115,11 @@ class BaseCrawler:
             pv = result.product_version
             if pv.known_issues or pv.addressed_issues:
                 product_versions.append(pv)
-                self._log(
-                    f"    {pv.version}: {len(pv.known_issues)} known, "
-                    f"{len(pv.addressed_issues)} addressed"
+                logger.info(
+                    "%s: %d known, %d addressed",
+                    pv.version,
+                    len(pv.known_issues),
+                    len(pv.addressed_issues),
                 )
 
         return product_versions, all_failed_fetches
@@ -994,7 +1141,7 @@ class BaseCrawler:
         if not failed_fetches:
             return [], []
 
-        self._log(f"  Retrying {len(failed_fetches)} failed fetches sequentially...")
+        logger.info("Retrying %d failed fetches sequentially...", len(failed_fetches))
 
         recovered_issues = []
         still_failed = []
@@ -1005,10 +1152,10 @@ class BaseCrawler:
 
             for attempt in range(max_retries):
                 try:
-                    self._log(f"    Retry {attempt + 1}/{max_retries} for {failed.url}")
+                    logger.info("Retry %d/%d for %s", attempt + 1, max_retries, failed.url)
                     issues = await self._parse_issues_page(failed.url)
                     recovered_issues.extend(issues)
-                    self._log(f"    Recovered {len(issues)} issues from {failed.url}")
+                    logger.info("Recovered %d issues from %s", len(issues), failed.url)
                     success = True
                     break
                 except Exception as e:
@@ -1029,8 +1176,8 @@ class BaseCrawler:
                 )
 
         if still_failed:
-            self._log(f"  {len(still_failed)} fetches still failed after retries")
+            logger.warning("%d fetches still failed after retries", len(still_failed))
         else:
-            self._log("  All failed fetches recovered successfully")
+            logger.info("All failed fetches recovered successfully")
 
         return recovered_issues, still_failed

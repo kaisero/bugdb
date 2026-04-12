@@ -66,36 +66,84 @@ All `bugdb` commands below should be prefixed with `uv run` (e.g.
 
 ## Usage
 
+### Unified Build (Recommended)
+
+Single command that fetches all bug data, regenerates release notes,
+and builds the static site. This is the shortest path from a clean
+checkout to a deployable website.
+
+```bash
+# Full build: fetch everything, build into dist/
+bugdb build
+
+# Incremental: only fetch versions not already in assets/bugdb.json
+bugdb build --incremental
+
+# Skip fetch entirely and just rebuild the site from existing data
+# (useful for iterative frontend work)
+bugdb build --skip-fetch
+
+# Force re-probe of upstream URLs (bypasses 24-hour discovery cache)
+bugdb build --refresh-discovery
+```
+
 ### Fetch Release Notes
 
-Crawl release notes from Palo Alto Networks documentation:
+If you want more control over which products to fetch, use `bugdb fetch`
+directly:
 
 ```bash
 # Fetch a single product
-bugdb fetch panos -o data/data.json
+bugdb fetch panos -o assets/bugdb.json
 
 # Fetch all supported products
-bugdb fetch -o data/data.json
+bugdb fetch -o assets/bugdb.json
 
 # Fetch specific version(s)
-bugdb fetch panos --version 11-2 -o data/data.json
-bugdb fetch panos --version 11-2,11-1,10-2 -o data/data.json
+bugdb fetch panos --version 11-2 -o assets/bugdb.json
+bugdb fetch panos --version 11-2,11-1,10-2 -o assets/bugdb.json
 
 # Incremental update (add new versions to existing data)
-bugdb fetch panos -o data/data.json --incremental
+bugdb fetch panos -o assets/bugdb.json --incremental
 
 # Force overwrite existing file
-bugdb fetch panos -o data/data.json --force
+bugdb fetch panos -o assets/bugdb.json --force
+
+# Silence the live progress bar (useful for quiet CI runs)
+bugdb fetch -o assets/bugdb.json --no-progress
+
+# Write a streaming fetch log with per-version events + summary
+bugdb fetch -o assets/bugdb.json -l fetch.log
+bugdb fetch -o assets/bugdb.json -l auto   # writes assets/bugdb.log
 ```
+
+On a TTY, `bugdb fetch` renders a live Rich progress bar that shows
+an outer `Fetching N products` counter and a per-product inner task
+whose description updates as each version completes. When stdout is
+piped (CI logs, `| cat`, `| tee`), the reporter auto-degrades to
+one grep-friendly line per event (`[progress] update: GlobalProtect:
+6.2.8-h7 done (4/32)`) so you can still see exactly what's in flight
+without a redrawing spinner. Pass `--no-progress` to suppress all
+progress output entirely.
+
+For post-mortem review, pass `--log-file PATH` (short: `-l`) to
+write a timestamped fetch log containing every per-product
+discovery event, per-version success line, retry warning, and
+backoff notice, followed by a summary block with totals and the
+full list of failed fetches. `-l auto` writes to `<output>.log`
+next to the bug database; `-l fetch.log` writes to an explicit
+path. Grep `grep ERROR fetch.log` to surface every failure, or
+`grep 'Fetch Summary' -A 20 fetch.log` to read the summary block
+without scrolling.
 
 ### Build Static Site
 
-Generate the HTML website from bug data:
+If you already have a bug database file and just want to rebuild the HTML:
 
 ```bash
-bugdb build-site-cmd                     # Uses assets/data.json, outputs to dist/
-bugdb build-site-cmd -d data/data.json   # Custom data file
-bugdb build-site-cmd -o output/          # Custom output directory
+bugdb build-site-cmd                        # Uses assets/bugdb.json, outputs to dist/
+bugdb build-site-cmd -b assets/bugdb.json   # Custom bug database
+bugdb build-site-cmd -o output/             # Custom output directory
 ```
 
 ### View the Site
@@ -110,10 +158,12 @@ open dist/index.html
 
 | Command | Description |
 |---------|-------------|
-| `bugdb fetch <product>` | Fetch release notes for a product |
+| `bugdb build` | Unified workflow: fetch → release notes → build site |
+| `bugdb fetch <product>` | Fetch release notes for a single product |
 | `bugdb fetch` | Fetch all supported products |
-| `bugdb build-site-cmd` | Build static HTML site |
-| `bugdb generate-sample` | Generate sample data for testing |
+| `bugdb build-site-cmd` | Build the static HTML site from an existing bug database file |
+| `bugdb generate-release-notes` | Regenerate the release notes JSON for the site |
+| `bugdb validate` | Validate a bug database JSON file against the schema |
 | `bugdb --version` | Show version |
 | `bugdb --help` | Show help |
 
@@ -127,6 +177,8 @@ open dist/index.html
 | `-f, --force` | Overwrite existing output file |
 | `--headless/--no-headless` | Run browser in headless mode |
 | `--debug` | Enable debug logging |
+| `--progress/--no-progress` | Show live progress bar (default: auto-detect TTY) |
+| `-l, --log-file` | Write streaming fetch log to PATH; `-l auto` defaults to `<output>.log` |
 
 ## JSON Schema
 
@@ -208,7 +260,7 @@ bugdb/
 │   └── templates/
 │       └── index.html          # Main HTML template
 ├── data/
-│   └── data.json               # Bug database
+│   └── bugdb.json               # Bug database
 ├── dist/                       # Generated static site
 └── tests/
     ├── test_cli.py

@@ -5,19 +5,19 @@ This directory holds committed JSON snapshots used by the
 
 ## What is a baseline?
 
-A compressed fingerprint of `assets/data.json` at a point in time. For every
+A compressed fingerprint of `assets/bugdb.json` at a point in time. For every
 `(product, version)` it records:
 
 - `known` — number of known issues
 - `addressed` — number of addressed issues
 - `bug_ids` — sorted list of bug identifiers
 
-Only these fields. The baseline is **not** a copy of `data.json`.
+Only these fields. The baseline is **not** a copy of `bugdb.json`.
 
 ## What it guarantees
 
 The integration tests read the baseline and assert, against the current
-`assets/data.json`:
+`assets/bugdb.json`:
 
 1. Every product in the baseline is still present.
 2. Every `(product, version)` in the baseline is still present.
@@ -46,14 +46,14 @@ automatically and never happens in CI without manual intervention.
 BUGDB_REFRESH_BASELINE=1 uv run pytest tests/integration/ -m data_baseline
 ```
 
-This rewrites `data_baseline.json` from the current `assets/data.json`,
+This rewrites `data_baseline.json` from the current `assets/bugdb.json`,
 then fails the test session with a clear banner telling you to review the
 diff and commit it.
 
 ### Reviewable refresh (CLI, recommended for large changes)
 
 ```bash
-uv run python -m bugdb.baseline refresh --data assets/data.json --baseline tests/baselines/data_baseline.json
+uv run python -m bugdb.baseline refresh --bugdb assets/bugdb.json --baseline tests/baselines/data_baseline.json
 ```
 
 Prints a human-readable diff (products/versions added or removed, count
