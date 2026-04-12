@@ -87,6 +87,16 @@ data-baseline-integration:
   stage: integration
   script:
     - uv sync --locked --group test
+    # Download bugdb.json from the Package Registry — the file is not
+    # committed to the repo (13 MB). The update-bugdb scheduled job
+    # keeps it current; if it hasn't run yet this job skips cleanly.
+    - mkdir -p assets
+    - |
+      curl --silent --fail \
+        --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+        "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json" \
+        -o assets/bugdb.json \
+      || { echo "bugdb.json not in Package Registry — skipping integration tests"; exit 0; }
     - uv run pytest tests/integration/
         -m data_baseline
         --junitxml=integration.xml
