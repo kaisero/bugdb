@@ -179,6 +179,8 @@ update-bugdb:
 # after an MR merge).
 # ---------------------------------------------------------------------------
 pages:
+  tags:
+    - deploy
   stage: deploy
   script:
     - whoami
