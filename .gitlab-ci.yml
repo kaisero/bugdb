@@ -205,7 +205,7 @@ update-bugdb:
     paths:
       - assets/bugdb.log
     expire_in: 7 days
-  timeout: 30 minutes
+  timeout: 90 minutes
   rules:
     # Scheduled pipeline (every 3 days via GitLab schedule UI).
     - if: $CI_PIPELINE_SOURCE == "schedule"
