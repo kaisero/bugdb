@@ -1,10 +1,8 @@
+image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+
 variables:
   UV_LINK_MODE: copy
-  UV_CACHE_DIR: "$CI_PROJECT_DIR/.uv-cache"
-  # Chromium resolves its shared libraries against the micromamba `pw`
-  # env (built once in ~ — see project setup notes). /usr/lib64 and
-  # /lib64 stay on the path so host-only libs like libudev resolve too.
-  LD_LIBRARY_PATH: "$HOME/micromamba/envs/pw/lib:/usr/lib64:/lib64"
+  UV_CACHE_DIR: .uv-cache
 
 cache:
   key:
@@ -23,9 +21,9 @@ stages:
 
 # ---------------------------------------------------------------------------
 # Lint: ruff check + format-check. In its own stage ahead of `test` so
-# lint-only changes get feedback in seconds. Uses only the `dev`
-# dependency group (no Playwright install). No browser → LD_LIBRARY_PATH
-# is harmless here.
+# lint-only changes get feedback in seconds without waiting on test setup.
+# Uses only the `dev` dependency group (no Playwright install).
+# Runs on every develop commit AND on every merge request.
 # ---------------------------------------------------------------------------
 lint:
   stage: lint
@@ -45,16 +43,25 @@ lint:
     - if: $CI_MERGE_REQUEST_IID
 
 # ---------------------------------------------------------------------------
-# Fast tier: unit + crawler tests. The browser binary is already in
-# ~/.cache/ms-playwright (installed once during host setup), so we do NOT
-# run `playwright install` here — the shell runner persists the cache
-# between jobs, unlike the old Docker image. LD_LIBRARY_PATH (set in
-# variables) lets the cached Chromium find its libs.
+# Fast tier: unit + crawler tests. Runs on every commit to develop and
+# on every merge request.
+#
+# The `playwright install --with-deps chromium` step is required even
+# though most crawler tests use the MockPlaywright fixture from
+# tests/conftest.py. The root cause: several tests (TestCortexXDRCrawler,
+# TestADEMCrawler, TestSCMCrawler, TestCloudNGFW*, TestDeviceSecurityCrawler,
+# TestPluginVersionDiscovery) patch individual fetch methods but enter
+# the crawler via `async with CortexXDRCrawler()`, which triggers
+# BaseCrawler.__aenter__ → async_playwright().start() → chromium.launch().
+# Until __aenter__ is made lazy or those tests are refactored to patch
+# `async_playwright` at module level, a real Chromium must be installed.
+# Tracked as roadmap item D3 (mock fixture coverage expansion).
 # ---------------------------------------------------------------------------
 test:
   stage: test
   script:
     - uv sync --locked --group test
+    - uv run playwright install --with-deps chromium
     - uv run pytest --junitxml=report.xml -v
   artifacts:
     when: always
@@ -66,8 +73,15 @@ test:
 
 # ---------------------------------------------------------------------------
 # Heavy tier: data-fidelity integration tests against the committed
-# baseline. No browser launch — pure data assertions — so the lib path
-# is irrelevant here, but harmless.
+# baseline. Deliberately isolated from the fast `test` stage:
+#   - loads 13 MB bugdb.json once per session
+#   - parametrizes ~1900 assertions per (product, version) pair
+#   - signal "did the fetch lose data" must not be drowned by parser churn
+#
+# Does NOT run on every commit. Triggered by:
+#   - scheduled pipelines (nightly)
+#   - manual button on any branch
+#   - MRs that actually touch fetched data or the baseline
 # ---------------------------------------------------------------------------
 data-baseline-integration:
   stage: integration
@@ -96,19 +110,32 @@ data-baseline-integration:
     expire_in: 30 days
   timeout: 10 minutes
   rules:
+    # Scheduled nightly runs always execute.
     - if: $CI_PIPELINE_SOURCE == "schedule"
+    # Explicit manual runs from the GitLab UI.
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
+    # MRs that touch the committed data or baseline snapshot. Test
+    # code and baseline.py changes are validated by the nightly
+    # schedule — triggering on those in MRs would fail because
+    # assets/bugdb.json (13 MB) is not committed to the repo.
     - if: $CI_MERGE_REQUEST_IID
       changes:
         - assets/bugdb.json
         - tests/baselines/**/*
 
 # ---------------------------------------------------------------------------
-# Canary: probes real docs.paloaltonetworks.com URLs to detect a new
-# major version the crawler's candidate list doesn't know about.
-# Scheduled nightly only. allow_failure so upstream network flakes don't
-# page oncall.
+# Canary: probes real docs.paloaltonetworks.com URLs to detect when Palo
+# Alto ships a new major version that the crawler's hard-coded candidate
+# list doesn't know about. This is the only tier that catches the
+# PAN-OS 12.1 class of bug.
+#
+# Lives in its OWN stage (not alongside data-baseline-integration) so a
+# flaky upstream network probe can't block a green data-baseline run from
+# deploying. Different failure modes deserve different blast radii.
+#
+# Scheduled nightly only — we don't want MRs blocked on upstream network
+# availability.
 # ---------------------------------------------------------------------------
 upstream-canary:
   stage: canary
@@ -124,7 +151,7 @@ upstream-canary:
       junit: canary.xml
     expire_in: 30 days
   timeout: 5 minutes
-  allow_failure: true
+  allow_failure: true  # Network flakes shouldn't page oncall at 3am.
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
     - if: $CI_PIPELINE_SOURCE == "web"
@@ -132,14 +159,22 @@ upstream-canary:
 
 # ---------------------------------------------------------------------------
 # Fetch: incremental crawl of all products, uploading the result to
-# GitLab's Generic Packages registry. This job DOES launch Chromium, so
-# LD_LIBRARY_PATH matters. Browser binary already cached in ~ from setup.
-# Schedule: every 3 days (GitLab UI). Can also be triggered manually.
+# GitLab's Generic Packages registry. Runs on a schedule (every 3 days,
+# configured in the GitLab UI) and can be triggered manually.
+#
+# The first run will do a full fetch (no existing bugdb.json in the
+# registry → curl 404 → starts from scratch). Subsequent runs download
+# the previous bugdb.json and pass --incremental so only new versions
+# are crawled.
+#
+# CI minutes budget: ~5-10 min incremental, ~15-20 min full.
+# At every-3-days that's ~70 min/month — fits in the free tier's 400.
 # ---------------------------------------------------------------------------
 update-bugdb:
   stage: fetch
   script:
     - uv sync --locked
+    - uv run playwright install --with-deps chromium
     # Download existing bugdb.json from Package Registry (if any).
     # First run will 404 — that's fine, fetch starts from scratch.
     - mkdir -p assets
@@ -150,6 +185,7 @@ update-bugdb:
         -o assets/bugdb.json \
       || echo "No existing bugdb.json in registry — starting fresh"
     # Incremental fetch: only crawl versions not already present.
+    # Falls back to full fetch when assets/bugdb.json doesn't exist.
     - >-
       uv run bugdb fetch
       -o assets/bugdb.json
@@ -157,6 +193,8 @@ update-bugdb:
       --no-progress
       -l assets/bugdb.log
     # Upload the updated bugdb.json to the Generic Packages registry.
+    # "latest" as the version keeps a single mutable artifact — no
+    # version sprawl, and the Pages deploy always reads "latest".
     - |
       curl --silent --fail \
         --header "JOB-TOKEN: $CI_JOB_TOKEN" \
@@ -169,27 +207,36 @@ update-bugdb:
     expire_in: 7 days
   timeout: 30 minutes
   rules:
+    # Scheduled pipeline (every 3 days via GitLab schedule UI).
     - if: $CI_PIPELINE_SOURCE == "schedule"
+    # Manual trigger from the GitLab UI on any branch.
     - if: $CI_PIPELINE_SOURCE == "web"
       when: manual
 
 # ---------------------------------------------------------------------------
-# Deploy: static site to GitLab Pages. No browser launch — just reads
-# bugdb.json and builds the site. Fires only on a push to main (i.e.
-# after an MR merge).
+# Deploy: static site to GitLab Pages.
+#
+# Downloads bugdb.json from the Generic Packages registry (populated by
+# the update-bugdb scheduled job), builds the site with real data baked
+# in, and deploys to Pages. No external CDN dependency — the frontend
+# loads assets/bugdb.json from the same origin via a relative path.
+#
+# Fires only when a commit lands on `main` via a push pipeline, which
+# in practice means "after a merge request has been merged into main"
+# (GitLab runs a push-source pipeline on the resulting merge commit).
+# Explicitly branch-gated to "main" rather than $CI_DEFAULT_BRANCH so
+# the behaviour doesn't silently change if the repo's default branch
+# is ever switched. The CI_PIPELINE_SOURCE == "push" guard excludes
+# schedule, web-manual, tag, and merge-request-event pipelines so they
+# cannot accidentally trigger a deploy.
 # ---------------------------------------------------------------------------
 pages:
-  tags:
-    - deploy
   stage: deploy
   script:
-    - whoami
-    - echo "HOME=$HOME"
-    - echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
-    - which uv || echo "uv NOT on PATH"
-    - ls -d "$HOME/micromamba/envs/pw/lib" || echo "conda libs NOT found"
-    - ls -d "$HOME/.cache/ms-playwright" || echo "browser cache NOT found"
     - uv sync --locked
+    # Download bugdb.json from the Package Registry. If the scheduled
+    # fetch hasn't run yet the curl will fail and the deploy aborts
+    # with a clear message — run update-bugdb manually first.
     - mkdir -p assets
     - |
       curl --silent --fail \
@@ -197,6 +244,8 @@ pages:
         "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/bugdb/latest/bugdb.json" \
         -o assets/bugdb.json \
       || { echo "ERROR: bugdb.json not found in Package Registry. Run the update-bugdb job first."; exit 1; }
+    # Generate release-notes.json next to bugdb.json so build-site-cmd
+    # auto-discovers it (see SiteBuilder.build_site in site_builder.py).
     - uv run bugdb generate-release-notes -o assets/release-notes.json --force
     - uv run bugdb build-site-cmd -b assets/bugdb.json -o public
   artifacts:
