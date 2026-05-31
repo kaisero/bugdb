@@ -30,6 +30,12 @@ stages:
 lint:
   stage: lint
   script:
+    - whoami
+    - echo "HOME=$HOME"
+    - echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH"
+    - which uv || echo "uv NOT on PATH"
+    - ls -d "$HOME/micromamba/envs/pw/lib" || echo "conda libs NOT found"
+    - ls -d "$HOME/.cache/ms-playwright" || echo "browser cache NOT found"
     - uv sync --locked --group dev
     - uv run ruff check --output-format=gitlab . > ruff-report.json || (uv run ruff check . && exit 1)
     - uv run ruff format --check .
