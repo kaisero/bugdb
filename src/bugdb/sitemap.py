@@ -41,7 +41,12 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
     "remote-browser-isolation": ("/remote-browser-isolation/",),
     "ai-runtime-security": ("/ai-runtime-security/",),
     "strata-logging-service": ("/strata-logging-service/",),
-    "device-security": ("/iot-security/", "/device-security/"),
+    # The legacy `/iot/iot-security-release-notes` and `/iot-security/`
+    # paths no longer serve issue pages (the index 404s). The current
+    # docs live under `/iot/release-notes/`. The Network Discovery
+    # plugin shares that path but uses semantic versions, so its URLs
+    # are filtered out inside the DeviceSecurityCrawler.
+    "device-security": ("/iot/release-notes/",),
     "adem": ("/autonomous-dem/",),
     "scm": ("/strata-cloud-manager/",),
     "sdwan-plugin": (

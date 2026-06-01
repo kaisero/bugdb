@@ -23,6 +23,59 @@ class DeviceSecurityCrawler(BaseCrawler):
     product_id = "device-security"
     product_name = "Device Security"
 
+    # Anchor: a URL belongs to the device-security year layout if its
+    # slug ends with "-in-YYYY" (e.g., "known-issues-in-2025"). This
+    # filters out the Network Discovery plugin URLs that share the
+    # `/iot/release-notes/` prefix but use semantic versions.
+    _YEAR_SLUG_RE = re.compile(r"-in-(20\d{2})(?:[/-]|$)")
+
+    def discover_years_from_sitemap(self) -> list[str]:
+        """Return year strings (e.g. ['2026', '2025']) from sitemap entries,
+        newest first.
+
+        Only year-based issue pages count (Network Discovery plugin pages
+        share the same path prefix but use semantic versions, not years).
+        """
+        if self._sitemap is None:
+            return []
+        years: set[str] = set()
+        for entry in self._sitemap.for_product(self.product_id):
+            m = self._YEAR_SLUG_RE.search(entry.url)
+            if m:
+                years.add(m.group(1))
+        return sorted(years, reverse=True)
+
+    def discover_year_pages_from_sitemap(
+        self, year: str
+    ) -> tuple[Optional[str], Optional[str]]:
+        """Return `(known_path, addressed_path)` for a year, either may be None.
+
+        Honors the manifest by skipping URLs whose <lastmod> matches.
+        """
+        if self._sitemap is None:
+            return None, None
+        known: Optional[str] = None
+        addressed: Optional[str] = None
+        for entry in self._sitemap.for_product(self.product_id):
+            m = self._YEAR_SLUG_RE.search(entry.url)
+            if not m or m.group(1) != year:
+                continue
+            if self._manifest is not None and self._manifest.should_skip(
+                entry.url, entry.lastmod
+            ):
+                continue
+            path = entry.url.replace(
+                "https://docs.paloaltonetworks.com", ""
+            )
+            if path.endswith(".html"):
+                path = path[:-5]
+            lower = entry.url.lower()
+            if "known-issues" in lower and "addressed" not in lower and known is None:
+                known = path
+            elif "addressed-issues" in lower and addressed is None:
+                addressed = path
+        return known, addressed
+
     async def discover_years(self) -> list[str]:
         """Discover available years from the Device Security index.
 
@@ -110,9 +163,14 @@ class DeviceSecurityCrawler(BaseCrawler):
         """
         skip_versions = skip_versions or set()
         failed_fetches: list[FailedFetch] = []
+        use_sitemap = self._sitemap is not None
 
-        self._log("Discovering available Device Security years...")
-        years = await self.discover_years()
+        if use_sitemap:
+            self._log("Discovering Device Security years from sitemap...")
+            years = self.discover_years_from_sitemap()
+        else:
+            self._log("Discovering available Device Security years...")
+            years = await self.discover_years()
         self._log(f"Found years: {', '.join(years)}")
 
         all_known: dict[str, list[Issue]] = {}
@@ -125,18 +183,42 @@ class DeviceSecurityCrawler(BaseCrawler):
 
             self._log(f"Crawling Device Security {year}...")
 
-            # Known and addressed issues URLs for this year
-            known_url = f"/iot/iot-security-release-notes/{year}/known-issues"
-            addressed_url = f"/iot/iot-security-release-notes/{year}/addressed-issues"
+            # Year URL pairs. Sitemap path returns Optional pairs (a year
+            # may have only addressed issues yet); legacy path always
+            # builds both URLs and lets fetch retries reject 404s.
+            if use_sitemap:
+                known_url, addressed_url = self.discover_year_pages_from_sitemap(year)
+                if known_url is None and addressed_url is None:
+                    self._log(f"  No sitemap URLs for {year}")
+                    continue
+            else:
+                known_url = f"/iot/iot-security-release-notes/{year}/known-issues"
+                addressed_url = (
+                    f"/iot/iot-security-release-notes/{year}/addressed-issues"
+                )
 
-            fetch_tasks = [
-                self._fetch_page_with_semaphore(known_url),
-                self._fetch_page_with_semaphore(addressed_url),
-            ]
-            results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+            fetch_tasks = []
+            url_kinds: list[str] = []
+            if known_url is not None:
+                fetch_tasks.append(self._fetch_page_with_semaphore(known_url))
+                url_kinds.append("known")
+            if addressed_url is not None:
+                fetch_tasks.append(self._fetch_page_with_semaphore(addressed_url))
+                url_kinds.append("addressed")
+            raw_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+            # Pad into the legacy two-slot layout (known, addressed) so the
+            # downstream code below stays unchanged. A None slot means
+            # "no URL discovered" → treated as "no data, no failure".
+            results: list = [None, None]
+            slot = {"known": 0, "addressed": 1}
+            for kind, value in zip(url_kinds, raw_results):
+                results[slot[kind]] = value
 
             # Parse known issues
-            if not isinstance(results[0], Exception):
+            if results[0] is None:
+                pass  # no known-issues URL for this year — not a failure
+            elif not isinstance(results[0], Exception):
                 issues_by_feature = self._parse_device_security_issues_page(results[0], "known")
                 for feature, issues in issues_by_feature.items():
                     key = f"{year}"
@@ -148,7 +230,7 @@ class DeviceSecurityCrawler(BaseCrawler):
             else:
                 self._log(f"  Error fetching {year} known issues: {results[0]}")
                 failed_fetches.append(FailedFetch(
-                    url=known_url,
+                    url=known_url or "",
                     error=str(results[0]),
                     product=self.product_id,
                     version=year,
@@ -156,7 +238,9 @@ class DeviceSecurityCrawler(BaseCrawler):
                 ))
 
             # Parse addressed issues
-            if not isinstance(results[1], Exception):
+            if results[1] is None:
+                pass  # no addressed-issues URL for this year — not a failure
+            elif not isinstance(results[1], Exception):
                 issues_by_feature = self._parse_device_security_issues_page(results[1], "addressed")
                 for feature, issues in issues_by_feature.items():
                     key = f"{year}"
@@ -168,7 +252,7 @@ class DeviceSecurityCrawler(BaseCrawler):
             else:
                 self._log(f"  Error fetching {year} addressed issues: {results[1]}")
                 failed_fetches.append(FailedFetch(
-                    url=addressed_url,
+                    url=addressed_url or "",
                     error=str(results[1]),
                     product=self.product_id,
                     version=year,
