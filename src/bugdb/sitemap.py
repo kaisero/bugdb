@@ -44,7 +44,11 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
     "device-security": ("/iot-security/", "/device-security/"),
     "adem": ("/autonomous-dem/",),
     "scm": ("/strata-cloud-manager/",),
-    "sdwan-plugin": ("/panorama/plugins/sd-wan/", "/plugins/sd-wan-plugin/"),
+    "sdwan-plugin": (
+        # The sitemap uses "panorama-plugin-for-sd-wan" — the legacy
+        # paths under /panorama/plugins/sd-wan/ no longer appear.
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-sd-wan",
+    ),
     "vm-series-plugin": (
         "/plugins/vm-series-and-panorama-plugins-release-notes/vm-series-plugin",
     ),
@@ -58,7 +62,8 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
         "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-gcp",
     ),
     "plugin-vmware-nsx": (
-        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-nsx",
+        # Sitemap path includes "vmware-nsx", not just "nsx".
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-vmware-nsx",
     ),
     "plugin-vmware-vcenter": (
         "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-vmware-vcenter",
@@ -73,7 +78,10 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
         "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-cisco-trustsec",
     ),
     "plugin-ztp": (
-        "/plugins/vm-series-and-panorama-plugins-release-notes/zero-touch-provisioning-ztp-plugin",
+        # Sitemap path is "panorama-plugin-for-zero-touch-provisioning";
+        # the legacy `/plugins/.../zero-touch-provisioning-ztp-plugin`
+        # base URL no longer appears in the sitemap.
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-zero-touch-provisioning",
     ),
     "plugin-clustering": (
         "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-clustering",

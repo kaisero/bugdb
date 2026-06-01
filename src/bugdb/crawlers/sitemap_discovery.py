@@ -19,24 +19,46 @@ logger = logging.getLogger(__name__)
 # in a URL slug.  The legacy code uses several variants; this one is the
 # union: three numeric segments followed by an optional "-<alphanum>".
 _VERSION_TRIPLE_RE = re.compile(r"(\d+)-(\d+)-(\d+)(?:-([a-zA-Z0-9]+))?")
+# Run-together 3-digit version (e.g. "azure-plugin-522" → 5.2.2).
+# Many Panorama plugin slugs use this shape instead of the dashed form
+# used by PAN-OS / GlobalProtect / VM-Series. Anchored against other
+# digits on both sides only — a leading or trailing dash is fine (the
+# slug shape is "-NNN/" or "-NNN-").
+_VERSION_RUN_TOGETHER_RE = re.compile(r"(?<!\d)(\d)(\d)(\d)(?!\d)")
 # Page-type tokens we must NOT treat as a version suffix.
 _NON_VERSION_SUFFIXES = {"known", "addressed", "issues", "and"}
 
 
 def extract_dotted_version(url: str) -> Optional[str]:
-    """Extract a 1.2.3[-suffix] version from a URL with dashed segments.
+    """Extract a 1.2.3[-suffix] version from a URL.
 
-    E.g. "/.../pan-os-11-2-3-known-issues" → "11.2.3"
-         "/.../globalprotect-app-6-2-8-h9-known-issues" → "6.2.8-h9"
+    The Palo Alto docs URLs use two distinct version slug shapes:
+    - Dashed:        ".../pan-os-11-2-3-known-issues" → "11.2.3"
+                     ".../globalprotect-app-6-2-8-h9-known-issues" → "6.2.8-h9"
+    - Run-together:  ".../azure-plugin-522/..." → "5.2.2"
+                     ".../panorama-plugin-for-kubernetes-303/..." → "3.0.3"
+
+    When a URL contains BOTH shapes (e.g. AWS plugins which use a
+    run-together slug segment plus a dashed filename), the dashed form is
+    canonical and takes precedence — that's how the legacy
+    `PluginCrawler.extract_version_from_url` resolved the same ambiguity.
     """
-    m = _VERSION_TRIPLE_RE.search(url)
-    if not m:
-        return None
-    ver = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
-    suffix = m.group(4)
-    if suffix and suffix.lower() not in _NON_VERSION_SUFFIXES:
-        ver += f"-{suffix}"
-    return ver
+    # Prefer the dashed form. Take the rightmost match because filenames
+    # typically end with the version (e.g. ".../...-5-3-4").
+    matches = list(_VERSION_TRIPLE_RE.finditer(url))
+    if matches:
+        m = matches[-1]
+        ver = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+        suffix = m.group(4)
+        if suffix and suffix.lower() not in _NON_VERSION_SUFFIXES:
+            ver += f"-{suffix}"
+        return ver
+    # Fall back to run-together 3-digit form for plugin slugs.
+    matches = list(_VERSION_RUN_TOGETHER_RE.finditer(url))
+    if matches:
+        m = matches[-1]
+        return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+    return None
 
 
 def to_relative_path(url: str, base: str = "https://docs.paloaltonetworks.com") -> str:
