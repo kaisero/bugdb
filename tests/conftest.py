@@ -10,7 +10,6 @@ from bs4 import BeautifulSoup
 
 from bugdb.models import BugDatabase, Issue, Metadata, Product, ProductVersion
 
-
 # Path to fixtures directory
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -27,8 +26,8 @@ class MockPage:
         """
         self.fixtures_dir = fixtures_dir
         self.url_to_file_mapping = url_to_file_mapping
-        self._current_content: Optional[str] = None
-        self._current_url: Optional[str] = None
+        self._current_content: str | None = None
+        self._current_url: str | None = None
 
     async def goto(self, url: str, wait_until: str = "networkidle") -> None:
         """Simulate navigation to a URL."""
@@ -41,7 +40,10 @@ class MockPage:
 
     async def content(self) -> str:
         """Return the current page content."""
-        return self._current_content or "<html><head><title>Not Found</title></head><body>404</body></html>"
+        return (
+            self._current_content
+            or "<html><head><title>Not Found</title></head><body>404</body></html>"
+        )
 
     async def close(self) -> None:
         """Simulate closing the page."""
@@ -136,8 +138,15 @@ PANOS_URL_MAPPING = {
     # Known-and-addressed parent pages (contain hotfix sub-page links)
     "/pan-os-12-1-5-known-and-addressed-issues": "panos/12-1-5-known-and-addressed-issues.html",
     "/pan-os-11-2-4-known-and-addressed-issues": "panos/11-2-4-known-and-addressed-issues.html",
-    # Index pages (least specific, must come last)
-    "/pan-os/12-1/pan-os-release-notes": "panos/12-1-index.html",
+    # Index pages (least specific, must come last).
+    #
+    # IMPORTANT: /pan-os/12-1/pan-os-release-notes is INTENTIONALLY NOT
+    # MAPPED. Palo Alto moved PAN-OS 12.1+ release notes to the
+    # /ngfw/release-notes/<v> tree; the legacy URL 404s on the real site.
+    # A prior revision of this file mapped both URLs to the same fixture,
+    # which masked a crawler bug (see
+    # test_panos_12_1_only_discoverable_via_ngfw_url for the regression
+    # pin).
     "/ngfw/release-notes/12-1": "panos/12-1-index.html",
     "/pan-os/11-2/pan-os-release-notes": "panos/11-2-index.html",
 }

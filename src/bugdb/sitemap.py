@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Iterable, Optional
+from collections.abc import Iterable
 
 from lxml import etree
 
@@ -116,9 +116,9 @@ class SitemapEntry:
     """One `<url>` from the sitemap, with derived fields."""
 
     url: str
-    lastmod: Optional[str]
-    product_id: Optional[str]
-    major_version: Optional[str]
+    lastmod: str | None
+    product_id: str | None
+    major_version: str | None
     is_issue_page: bool
 
 
@@ -156,9 +156,9 @@ class SitemapIndex:
         )
 
 
-def _classify(url: str, lastmod: Optional[str]) -> SitemapEntry:
+def _classify(url: str, lastmod: str | None) -> SitemapEntry:
     lower = url.lower()
-    product_id: Optional[str] = None
+    product_id: str | None = None
     # Prefer the most-specific prefix match (longest).
     best_len = 0
     for pid, prefixes in _PRODUCT_PREFIXES.items():

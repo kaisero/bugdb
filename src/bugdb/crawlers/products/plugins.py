@@ -1,15 +1,21 @@
 """Generic Panorama/VM-Series plugin crawler implementation."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
-from typing import Optional
+from typing import TYPE_CHECKING
 
 from bugdb.models import Product, ProductVersion
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, PluginConfig, VersionInfo
 from ..sitemap_discovery import discover_version_pages
+
+if TYPE_CHECKING:
+    from bugdb.discovery_cache import DiscoveryCache
+    from bugdb.progress import ProgressReporter, TaskHandle
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +49,12 @@ PLUGIN_CONFIGS: dict[str, PluginConfig] = {
     "plugin-vmware-nsx": PluginConfig(
         product_id="plugin-vmware-nsx",
         product_name="Panorama Plugin for VMware NSX",
-        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-nsx",
-        version_link_patterns=["nsx-plugin-", "panorama-plugin-for-nsx-"],
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-vmware-nsx",
+        version_link_patterns=[
+            "nsx-plugin-",
+            "vmware-nsx-plugin-",
+            "panorama-plugin-for-vmware-nsx-",
+        ],
     ),
     "plugin-vmware-vcenter": PluginConfig(
         product_id="plugin-vmware-vcenter",
@@ -73,7 +83,7 @@ PLUGIN_CONFIGS: dict[str, PluginConfig] = {
     "plugin-ztp": PluginConfig(
         product_id="plugin-ztp",
         product_name="Panorama Plugin for Zero Touch Provisioning",
-        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/zero-touch-provisioning-ztp-plugin",
+        base_url="/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-zero-touch-provisioning",
         version_link_patterns=["ztp-plugin-", "zero-touch-provisioning-"],
     ),
     "plugin-clustering": PluginConfig(
@@ -100,23 +110,46 @@ class PluginCrawler(BaseCrawler):
         sitemap=None,
         manifest=None,
         headless: bool = True,
-        verbose: bool = False,
         debug: bool = False,
         max_concurrency: int = 3,
         max_retries: int = 3,
         retry_delay: float = 2.0,
+        discovery_cache: DiscoveryCache | None = None,
+        reporter: ProgressReporter | None = None,
+        task: TaskHandle | None = None,
     ):
-        """Initialize the plugin crawler."""
+        """Initialize the plugin crawler.
+
+        Args:
+            config: Plugin configuration.
+            headless: Whether to run browser in headless mode.
+            debug: Whether to enable debug logging.
+            max_concurrency: Maximum number of concurrent page fetches.
+            max_retries: Maximum number of retry attempts.
+            retry_delay: Base delay between retries.
+            transport: Optional Transport (httpx, etc.).
+            sitemap: Optional pre-loaded SitemapIndex.
+            manifest: Optional FetchManifest for incremental skipping.
+            discovery_cache: Optional persistent discovery cache shared
+                across crawlers by the CLI. Forwarded to
+                ``BaseCrawler.__init__`` unchanged.
+            reporter: Optional progress reporter. Forwarded to
+                ``BaseCrawler.__init__`` unchanged.
+            task: Optional progress task handle. Forwarded to
+                ``BaseCrawler.__init__`` unchanged.
+        """
         super().__init__(
             transport=transport,
             sitemap=sitemap,
             manifest=manifest,
             headless=headless,
-            verbose=verbose,
             debug=debug,
             max_concurrency=max_concurrency,
             max_retries=max_retries,
             retry_delay=retry_delay,
+            discovery_cache=discovery_cache,
+            reporter=reporter,
+            task=task,
         )
         self.config = config
         self.product_id = config.product_id
@@ -128,8 +161,9 @@ class PluginCrawler(BaseCrawler):
         Returns:
             List of VersionInfo with version strings and issue page URLs.
         """
-        logger.debug("Discovering %s versions from %s",
-                    self.config.product_name, self.config.base_url)
+        logger.debug(
+            "Discovering %s versions from %s", self.config.product_name, self.config.base_url
+        )
 
         version_infos: dict[str, VersionInfo] = {}
 
@@ -139,7 +173,7 @@ class PluginCrawler(BaseCrawler):
             href = re.sub(r"\.html$", "", href)
             return href
 
-        def extract_version_from_url(href: str) -> Optional[str]:
+        def extract_version_from_url(href: str) -> str | None:
             """Extract version number from a URL."""
             for pattern in self.config.version_link_patterns:
                 if pattern in href.lower():
@@ -172,10 +206,11 @@ class PluginCrawler(BaseCrawler):
                 href = link["href"]
                 href_lower = href.lower()
 
-                is_known = any(kw in href_lower for kw in self.config.known_issues_keywords)
-                is_addressed = any(kw in href_lower for kw in self.config.addressed_issues_keywords)
-
-                if not is_known and not is_addressed:
+                if not any(
+                    kw in href_lower
+                    for kw in self.config.known_issues_keywords
+                    + self.config.addressed_issues_keywords
+                ):
                     continue
 
                 if not any(p in href_lower for p in self.config.version_link_patterns):
@@ -194,16 +229,34 @@ class PluginCrawler(BaseCrawler):
                         addressed_issues_urls=[],
                     )
 
-                if is_known and normalized_url not in version_infos[version].known_issues_urls:
-                    version_infos[version].known_issues_urls.append(normalized_url)
-                    logger.debug("Found known issues URL for %s: %s", version, normalized_url)
-                elif is_addressed and normalized_url not in version_infos[version].addressed_issues_urls:
+                # Classify by last path segment to avoid false matches
+                # (e.g., parent path "known-and-addressed/addressed-issues").
+                last_segment = normalized_url.rstrip("/").rsplit("/", 1)[-1].lower()
+                # Skip "known-and-addressed-issues" hub pages — they are
+                # link-only indexes with no issue tables, so fetching
+                # them is pure waste. Defensive: the same keyword-based
+                # classification below would otherwise match both
+                # "known" and "addressed" on these hub URLs.
+                if "known-and-addressed" in last_segment:
+                    continue
+                is_addressed = any(
+                    kw in last_segment for kw in self.config.addressed_issues_keywords
+                )
+                is_known = any(kw in last_segment for kw in self.config.known_issues_keywords)
+
+                if (
+                    is_addressed
+                    and normalized_url not in version_infos[version].addressed_issues_urls
+                ):
                     version_infos[version].addressed_issues_urls.append(normalized_url)
                     logger.debug("Found addressed issues URL for %s: %s", version, normalized_url)
+                elif is_known and normalized_url not in version_infos[version].known_issues_urls:
+                    version_infos[version].known_issues_urls.append(normalized_url)
+                    logger.debug("Found known issues URL for %s: %s", version, normalized_url)
 
         except Exception as e:
             logger.error("Error discovering %s versions: %s", self.config.product_name, e)
-            self._log(f"  Error discovering versions: {e}")
+            logger.error(f"Error discovering versions: {e}")
 
         sorted_versions = sorted(
             version_infos.values(),
@@ -227,8 +280,8 @@ class PluginCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl plugin release notes.
 
@@ -243,20 +296,17 @@ class PluginCrawler(BaseCrawler):
         failed_fetches: list[FailedFetch] = []
 
         if self._sitemap is not None:
-            self._log(
-                f"Discovering {self.config.product_name} versions from sitemap..."
-            )
+            logger.info(f"Discovering {self.config.product_name} versions from sitemap...")
             discovered_versions = self.discover_versions_from_sitemap()
         else:
-            self._log(
-                f"Discovering available {self.config.product_name} versions..."
-            )
+            logger.info(f"Discovering available {self.config.product_name} versions...")
             discovered_versions = await self.discover_versions()
 
         if major_versions is not None:
             major_version_prefixes = [mv.replace("-", ".") for mv in major_versions]
             discovered_versions = [
-                v for v in discovered_versions
+                v
+                for v in discovered_versions
                 if any(v.version.startswith(prefix) for prefix in major_version_prefixes)
             ]
 
@@ -264,20 +314,24 @@ class PluginCrawler(BaseCrawler):
             versions_str = ", ".join(v.version for v in discovered_versions[:5])
             if len(discovered_versions) > 5:
                 versions_str += f" (+{len(discovered_versions) - 5} more)"
-            self._log(f"Found {len(discovered_versions)} versions: {versions_str}")
+            logger.info(f"Found {len(discovered_versions)} versions: {versions_str}")
 
         all_product_versions: list[ProductVersion] = []
 
-        versions_to_fetch = [
-            v for v in discovered_versions
-            if v.version not in skip_versions
-        ]
+        versions_to_fetch = [v for v in discovered_versions if v.version not in skip_versions]
         skipped_count = len(discovered_versions) - len(versions_to_fetch)
         if skipped_count > 0:
-            self._log(f"  Skipping {skipped_count} already-fetched versions")
+            logger.info(f"  Skipping {skipped_count} already-fetched versions")
+
+        self._set_task_total(
+            len(versions_to_fetch),
+            f"{self.config.product_name}: fetching {len(versions_to_fetch)} versions"
+            if versions_to_fetch
+            else f"{self.config.product_name}: nothing new to fetch",
+        )
 
         for version_info in versions_to_fetch:
-            self._log(f"  Crawling {self.config.product_name} {version_info.version}...")
+            logger.info(f"  Crawling {self.config.product_name} {version_info.version}...")
 
             fetch_tasks = []
             url_types = []
@@ -298,37 +352,45 @@ class PluginCrawler(BaseCrawler):
             for i, result in enumerate(results):
                 issue_type, url = url_types[i]
                 if isinstance(result, Exception):
-                    if issue_type == "known":
-                        failed_fetches.append(FailedFetch(
+                    # Record the failure for BOTH issue_types. Previously only
+                    # the "known" branch appended a FailedFetch, so addressed-
+                    # issue fetch errors disappeared from the retry pass and
+                    # the fetch report entirely.
+                    failed_fetches.append(
+                        FailedFetch(
                             url=url,
                             error=str(result),
                             product=self.config.product_id,
                             version=version_info.version,
-                            issue_type="known",
-                        ))
+                            issue_type=issue_type,
+                        )
+                    )
                     logger.debug("Error fetching %s issues %s: %s", issue_type, url, result)
+                elif issue_type == "known":
+                    known_issues.extend(result)
                 else:
-                    if issue_type == "known":
-                        known_issues.extend(result)
-                    else:
-                        addressed_issues.extend(result)
+                    addressed_issues.extend(result)
 
             known_issues = self._deduplicate_issues(known_issues)
             addressed_issues = self._deduplicate_issues(addressed_issues)
 
             if known_issues or addressed_issues:
-                all_product_versions.append(ProductVersion(
-                    version=version_info.version,
-                    known_issues=known_issues,
-                    addressed_issues=addressed_issues,
-                ))
-                self._log(f"    {version_info.version}: {len(known_issues)} known, "
-                         f"{len(addressed_issues)} addressed")
+                all_product_versions.append(
+                    ProductVersion(
+                        version=version_info.version,
+                        known_issues=known_issues,
+                        addressed_issues=addressed_issues,
+                    )
+                )
+                logger.info(
+                    f"    {version_info.version}: {len(known_issues)} known, "
+                    f"{len(addressed_issues)} addressed"
+                )
+
+            self._advance_task(f"{self.config.product_name}: {version_info.version} done")
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         all_product_versions.sort(

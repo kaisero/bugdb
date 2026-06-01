@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bugdb"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Static HTML website generator for browsing Palo Alto Networks bug/issue data"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +19,11 @@ dependencies = [
     "httpx[http2]>=0.27.0",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
+dev = [
+    "pre-commit>=4.5.1",
+    "ruff>=0.15.10",
+]
 test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -28,6 +32,10 @@ test = [
 
 [project.scripts]
 bugdb = "bugdb.cli:app"
+
+[tool.hatch.version]
+path = "VERSION"
+pattern = "(?P<version>.+)"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/bugdb"]
@@ -40,3 +48,55 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# Default run excludes heavy integration tiers. Opt in explicitly, e.g.
+#   pytest -m data_baseline tests/integration/
+#   pytest -m canary tests/canary/
+addopts = "--strict-markers -m 'not data_baseline and not canary'"
+markers = [
+    "data_baseline: compares assets/data.json against the committed baseline snapshot. Heavy; runs in the separate GitLab 'integration' pipeline.",
+    "canary: probes real docs.paloaltonetworks.com URLs to catch upstream version releases. Nightly pipeline only.",
+    "slow: marks tests as slow (reserved for future use).",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff — linter + formatter, enforced via pre-commit locally and the GitLab
+# `lint` CI job. The pre-commit hook rev in .pre-commit-config.yaml MUST
+# match the ruff version pinned in [dependency-groups] dev above, or
+# contributors will see different findings locally vs. in CI.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+extend-exclude = [
+    "tests/fixtures",
+    "tests/baselines",
+    "src/bugdb/templates",
+]
+
+[tool.ruff.lint]
+# Conservative starter set. Widen only after the codebase has adapted.
+#   E, W = pycodestyle
+#   F    = pyflakes
+#   I    = isort
+#   B    = flake8-bugbear
+#   UP   = pyupgrade
+#   SIM  = flake8-simplify
+#   RUF  = ruff-specific
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files may carry long assertion messages.
+"tests/**/*.py" = ["E501"]
+# conftest.py files re-export fixtures for pytest's import discovery; those
+# "unused" imports are load-bearing.
+"tests/**/conftest.py" = ["F401"]
+# sample_data.py is demo/fixture data with intentionally narrative issue
+# descriptions; rewrapping them hurts readability.
+"src/bugdb/sample_data.py" = ["E501"]
+# crawlers/__init__.py re-exports the public API grouped by category
+# (models, utils, base, products, plugins, registry) with comment headers;
+# __all__ mirrors that grouping intentionally.
+"src/bugdb/crawlers/__init__.py" = ["RUF022"]
+
+[tool.ruff.format]
+# Defaults: black-compatible style, double quotes, spaces.

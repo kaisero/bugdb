@@ -1,7 +1,6 @@
 """Tests for BugDB site builder."""
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -67,15 +66,15 @@ class TestSiteBuilder:
         assert assets_dir.exists()
         assert assets_dir.is_dir()
 
-    def test_build_creates_data_json(self, sample_database, temp_output_dir):
-        """Test that build creates data.json with correct content."""
+    def test_build_creates_bugdb_json(self, sample_database, temp_output_dir):
+        """Test that build creates bugdb.json with correct content."""
         builder = SiteBuilder(temp_output_dir)
         builder.build(sample_database)
 
-        data_file = temp_output_dir / "assets" / "data.json"
-        assert data_file.exists()
+        bugdb_file = temp_output_dir / "assets" / "bugdb.json"
+        assert bugdb_file.exists()
 
-        with open(data_file) as f:
+        with open(bugdb_file) as f:
             data = json.load(f)
 
         assert "products" in data
@@ -103,27 +102,27 @@ class TestBuildSiteFunctions:
         build_site_from_database(sample_database, temp_output_dir)
 
         assert (temp_output_dir / "index.html").exists()
-        assert (temp_output_dir / "assets" / "data.json").exists()
+        assert (temp_output_dir / "assets" / "bugdb.json").exists()
         assert (temp_output_dir / "assets" / "app.js").exists()
 
     def test_build_site_from_json_file(self, sample_database, tmp_path, temp_output_dir):
         """Test build_site function with JSON file."""
         # Create a JSON file
-        data_file = tmp_path / "bugs.json"
-        with open(data_file, "w") as f:
+        bugdb_file = tmp_path / "bugs.json"
+        with open(bugdb_file, "w") as f:
             json.dump(sample_database.model_dump(mode="json"), f, default=str)
 
         # Build site from JSON file
-        build_site(data_file, temp_output_dir)
+        build_site(bugdb_file, temp_output_dir)
 
         assert (temp_output_dir / "index.html").exists()
-        assert (temp_output_dir / "assets" / "data.json").exists()
+        assert (temp_output_dir / "assets" / "bugdb.json").exists()
 
     def test_data_json_contains_all_issues(self, sample_database, temp_output_dir):
-        """Test that data.json contains all issue data."""
+        """Test that bugdb.json contains all issue data."""
         build_site_from_database(sample_database, temp_output_dir)
 
-        with open(temp_output_dir / "assets" / "data.json") as f:
+        with open(temp_output_dir / "assets" / "bugdb.json") as f:
             data = json.load(f)
 
         issue = data["products"][0]["versions"][0]["known_issues"][0]

@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import re
-from typing import Optional
 
 from bugdb.models import Issue, Product, ProductVersion
 
@@ -28,14 +27,23 @@ class SCMCrawler(BaseCrawler):
     product_id = "scm"
     product_name = "Strata Cloud Manager"
 
-    def _parse_adem_date(self, text: str) -> Optional[str]:
+    def _parse_adem_date(self, text: str) -> str | None:
         """Parse a date string (shared with ADEM format)."""
         text = text.strip()
 
         months = {
-            "january": "01", "february": "02", "march": "03", "april": "04",
-            "may": "05", "june": "06", "july": "07", "august": "08",
-            "september": "09", "october": "10", "november": "11", "december": "12",
+            "january": "01",
+            "february": "02",
+            "march": "03",
+            "april": "04",
+            "may": "05",
+            "june": "06",
+            "july": "07",
+            "august": "08",
+            "september": "09",
+            "october": "10",
+            "november": "11",
+            "december": "12",
         }
 
         match = re.match(r"^([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})$", text)
@@ -73,7 +81,7 @@ class SCMCrawler(BaseCrawler):
     def _parse_scm_known_issues_page(self, soup) -> dict[str, list[Issue]]:
         """Parse SCM known issues page organized by component."""
         results: dict[str, list[Issue]] = {}
-        current_component: Optional[str] = None
+        current_component: str | None = None
 
         component_pattern = re.compile(r"^(.*?)\s*Known\s*Issues?$", re.IGNORECASE)
 
@@ -131,15 +139,25 @@ class SCMCrawler(BaseCrawler):
         """Parse SCM addressed issues page organized by version and component."""
         results: dict[str, list[Issue]] = {}
         current_version = "Unknown"
-        current_component: Optional[str] = None
-        current_release_date: Optional[str] = None
+        current_component: str | None = None
+        current_release_date: str | None = None
 
         version_pattern = re.compile(r"(\d{4}\.r\d+\.\d+)")
 
         component_keywords = [
-            "Configuration Management", "Command Center", "Insights",
-            "Activity", "Health", "Incidents", "Policy", "Tenancy",
-            "Identity", "Objects", "Workflows", "Network", "SASE",
+            "Configuration Management",
+            "Command Center",
+            "Insights",
+            "Activity",
+            "Health",
+            "Incidents",
+            "Policy",
+            "Tenancy",
+            "Identity",
+            "Objects",
+            "Workflows",
+            "Network",
+            "SASE",
         ]
 
         for element in soup.find_all(["h2", "h3", "h4", "p", "table"]):
@@ -197,9 +215,7 @@ class SCMCrawler(BaseCrawler):
 
         return results
 
-    def _parse_scm_main_addressed_table(
-        self, table, results: dict[str, list[Issue]]
-    ) -> bool:
+    def _parse_scm_main_addressed_table(self, table, results: dict[str, list[Issue]]) -> bool:
         """Parse the main SCM addressed issues table with various bug ID formats."""
         headers = []
         thead = table.find("thead")
@@ -280,19 +296,22 @@ class SCMCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Strata Cloud Manager release notes.
 
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Strata Cloud Manager...")
+        logger.info("Crawling Strata Cloud Manager...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
 
         known_issues_url = "/strata-cloud-manager/release-notes/known-issues"
         addressed_issues_url = "/strata-cloud-manager/release-notes/addressed-issues"
-        multitenant_known_issues_url = "/sase/prisma-sase-multitenant-platform/release-updates/known-issues-msp"
+        multitenant_known_issues_url = (
+            "/sase/prisma-sase-multitenant-platform/release-updates/known-issues-msp"
+        )
         failed_fetches: list[FailedFetch] = []
 
         fetch_tasks = [
@@ -308,15 +327,17 @@ class SCMCrawler(BaseCrawler):
         if not isinstance(results[0], Exception):
             known_by_version = self._parse_scm_known_issues_page(results[0])
             total_known = sum(len(issues) for issues in known_by_version.values())
-            self._log(f"  Found {total_known} known issues")
+            logger.info(f"  Found {total_known} known issues")
         else:
-            self._log(f"  Error fetching known issues: {results[0]}")
-            failed_fetches.append(FailedFetch(
-                url=known_issues_url,
-                error=str(results[0]),
-                product=self.product_id,
-                issue_type="known",
-            ))
+            logger.error(f"Error fetching known issues: {results[0]}")
+            failed_fetches.append(
+                FailedFetch(
+                    url=known_issues_url,
+                    error=str(results[0]),
+                    product=self.product_id,
+                    issue_type="known",
+                )
+            )
 
         if not isinstance(results[2], Exception):
             multitenant_issues = self._parse_scm_multitenant_known_issues_page(results[2])
@@ -324,33 +345,35 @@ class SCMCrawler(BaseCrawler):
                 if "SaaS" not in known_by_version:
                     known_by_version["SaaS"] = []
                 known_by_version["SaaS"].extend(multitenant_issues)
-                self._log(f"  Found {len(multitenant_issues)} multitenant known issues")
+                logger.info(f"  Found {len(multitenant_issues)} multitenant known issues")
         else:
-            self._log(f"  Error fetching multitenant known issues: {results[2]}")
-            failed_fetches.append(FailedFetch(
-                url=multitenant_known_issues_url,
-                error=str(results[2]),
-                product=self.product_id,
-                issue_type="known",
-            ))
+            logger.error(f"Error fetching multitenant known issues: {results[2]}")
+            failed_fetches.append(
+                FailedFetch(
+                    url=multitenant_known_issues_url,
+                    error=str(results[2]),
+                    product=self.product_id,
+                    issue_type="known",
+                )
+            )
 
         if not isinstance(results[1], Exception):
             addressed_by_version = self._parse_scm_addressed_issues_page(results[1])
             total_addressed = sum(len(issues) for issues in addressed_by_version.values())
-            self._log(f"  Found {total_addressed} addressed issues")
+            logger.info(f"  Found {total_addressed} addressed issues")
         else:
-            self._log(f"  Error fetching addressed issues: {results[1]}")
-            failed_fetches.append(FailedFetch(
-                url=addressed_issues_url,
-                error=str(results[1]),
-                product=self.product_id,
-                issue_type="addressed",
-            ))
+            logger.error(f"Error fetching addressed issues: {results[1]}")
+            failed_fetches.append(
+                FailedFetch(
+                    url=addressed_issues_url,
+                    error=str(results[1]),
+                    product=self.product_id,
+                    issue_type="addressed",
+                )
+            )
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         all_versions_set = set(known_by_version.keys()) | set(addressed_by_version.keys())
@@ -361,16 +384,20 @@ class SCMCrawler(BaseCrawler):
             addressed = self._deduplicate_issues(addressed_by_version.get(ver, []))
 
             if known or addressed:
-                all_product_versions.append(ProductVersion(
-                    version=ver,
-                    known_issues=known,
-                    addressed_issues=addressed,
-                ))
+                all_product_versions.append(
+                    ProductVersion(
+                        version=ver,
+                        known_issues=known,
+                        addressed_issues=addressed,
+                    )
+                )
 
         all_product_versions.sort(
             key=lambda v: self._scm_version_sort_key(v.version),
             reverse=True,
         )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(

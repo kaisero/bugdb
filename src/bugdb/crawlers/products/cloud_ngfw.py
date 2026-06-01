@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from typing import Optional
 
 from bugdb.models import Product, ProductVersion
 
@@ -26,8 +25,8 @@ class CloudNGFWAzureCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Cloud NGFW for Azure release notes.
 
@@ -37,15 +36,14 @@ class CloudNGFWAzureCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Cloud NGFW for Azure...")
+        logger.info("Crawling Cloud NGFW for Azure...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
 
         # Fallbacks used only when no sitemap is injected. The current
         # docs paths under /cloud-ngfw-azure/* (the old /cloud-ngfw/azure/*
         # paths return 301s; the addressed-issues redirect goes to a
         # "What's New" page that has no bug table).
-        default_known = (
-            "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
-        )
+        default_known = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
         default_addressed = (
             "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
         )
@@ -63,9 +61,7 @@ class CloudNGFWAzureCrawler(BaseCrawler):
 
         # Retry failed fetches
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         # Deduplicate
@@ -75,11 +71,15 @@ class CloudNGFWAzureCrawler(BaseCrawler):
         # Create single "SaaS" version
         versions = []
         if known_issues or addressed_issues:
-            versions.append(ProductVersion(
-                version="SaaS",
-                known_issues=known_issues,
-                addressed_issues=addressed_issues,
-            ))
+            versions.append(
+                ProductVersion(
+                    version="SaaS",
+                    known_issues=known_issues,
+                    addressed_issues=addressed_issues,
+                )
+            )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(
@@ -103,8 +103,8 @@ class CloudNGFWAWSCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Cloud NGFW for AWS release notes.
 
@@ -114,11 +114,10 @@ class CloudNGFWAWSCrawler(BaseCrawler):
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Cloud NGFW for AWS...")
+        logger.info("Crawling Cloud NGFW for AWS...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
 
-        default_known = (
-            "/cloud-ngfw-aws/release-notes/cloud-ngfw-for-aws-known-issues"
-        )
+        default_known = "/cloud-ngfw-aws/release-notes/cloud-ngfw-for-aws-known-issues"
         known_urls, _ = discover_saas_urls(
             self._sitemap, self.product_id, manifest=self._manifest
         )
@@ -131,9 +130,7 @@ class CloudNGFWAWSCrawler(BaseCrawler):
 
         # Retry failed fetches
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         # Deduplicate
@@ -142,11 +139,15 @@ class CloudNGFWAWSCrawler(BaseCrawler):
         # Create single "SaaS" version
         versions = []
         if known_issues:
-            versions.append(ProductVersion(
-                version="SaaS",
-                known_issues=known_issues,
-                addressed_issues=[],
-            ))
+            versions.append(
+                ProductVersion(
+                    version="SaaS",
+                    known_issues=known_issues,
+                    addressed_issues=[],
+                )
+            )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(

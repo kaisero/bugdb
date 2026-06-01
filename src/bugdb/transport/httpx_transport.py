@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 import httpx
 from bs4 import BeautifulSoup
@@ -67,8 +66,8 @@ class HttpxDocsTransport:
 
     async def fetch(self, url: str) -> FetchedPage:
         async with self._sem:
-            last_exc: Optional[Exception] = None
-            resp: Optional[httpx.Response] = None
+            last_exc: Exception | None = None
+            resp: httpx.Response | None = None
             for attempt in range(self._max_retries):
                 try:
                     resp = await self._client.get(url)

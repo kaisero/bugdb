@@ -3,7 +3,6 @@
 import asyncio
 import logging
 import re
-from typing import Optional
 
 from bugdb.models import Issue, Product, ProductVersion
 
@@ -35,14 +34,20 @@ class SDWANPluginCrawler(BaseCrawler):
         logger.debug("Discovering SD-WAN Plugin versions by probing URLs")
 
         candidate_versions = [
-            "3-4", "3-3", "3-2", "3-1", "3-0",
-            "2-2", "2-1", "2-0",
+            "3-4",
+            "3-3",
+            "3-2",
+            "3-1",
+            "3-0",
+            "2-2",
+            "2-1",
+            "2-0",
             "1-0",
         ]
 
         valid_versions = []
 
-        async def check_version(version: str) -> Optional[str]:
+        async def check_version(version: str) -> str | None:
             """Check if a version URL exists."""
             version_num = version.replace("-", "") + "0"
             url = f"/sd-wan/release-notes/panorama-plugin-for-sd-wan/sd-wan-plugin-{version_num}"
@@ -70,8 +75,9 @@ class SDWANPluginCrawler(BaseCrawler):
         sorted_versions = sorted(
             valid_versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
         )
-        logger.debug("Discovered %d SD-WAN Plugin versions: %s",
-                     len(sorted_versions), sorted_versions)
+        logger.debug(
+            "Discovered %d SD-WAN Plugin versions: %s", len(sorted_versions), sorted_versions
+        )
         return sorted_versions
 
     async def _parse_sdwan_plugin_issues_page(
@@ -122,7 +128,7 @@ class SDWANPluginCrawler(BaseCrawler):
                         in_workaround = True
                         workaround_parts = []
                         for sibling in b_elem.next_siblings:
-                            if hasattr(sibling, 'get_text'):
+                            if hasattr(sibling, "get_text"):
                                 workaround_parts.append(sibling.get_text(strip=True))
                             elif isinstance(sibling, str):
                                 workaround_parts.append(sibling.strip())
@@ -144,7 +150,7 @@ class SDWANPluginCrawler(BaseCrawler):
                         component_match = re.match(r"^\(\s*([^)]+?)\s*\)\s*", p_text)
                         if component_match:
                             affected_components = [component_match.group(1).strip()]
-                            remaining = p_text[component_match.end():].strip()
+                            remaining = p_text[component_match.end() :].strip()
                             if remaining:
                                 description_parts.append(remaining)
                             continue
@@ -158,17 +164,16 @@ class SDWANPluginCrawler(BaseCrawler):
                 desc_prefix_match = re.match(
                     r"^Description\s+of\s+" + re.escape(bug_id) + r"[\s:.\-]*",
                     desc_cleaned,
-                    re.IGNORECASE
+                    re.IGNORECASE,
                 )
                 if desc_prefix_match:
-                    desc_cleaned = desc_cleaned[desc_prefix_match.end():].strip()
+                    desc_cleaned = desc_cleaned[desc_prefix_match.end() :].strip()
 
                 # Extract fix versions from fix_info_text
                 plugin_fix_versions = []
                 if fix_info_text:
                     version_matches = re.findall(
-                        r"(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9]+)?)",
-                        fix_info_text
+                        r"(\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9]+)?)", fix_info_text
                     )
                     seen = set()
                     for v in version_matches:
@@ -206,15 +211,15 @@ class SDWANPluginCrawler(BaseCrawler):
 
         except Exception as e:
             logger.error("Error parsing SD-WAN Plugin page %s: %s", url, e)
-            self._log(f"  Error parsing {url}: {e}")
+            logger.error(f"Error parsing {url}: {e}")
             raise
 
         return known_issues, addressed_by_version
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Panorama Plugin for SD-WAN release notes.
 
@@ -229,15 +234,22 @@ class SDWANPluginCrawler(BaseCrawler):
         failed_fetches: list[FailedFetch] = []
 
         if major_versions is None:
-            self._log("Discovering available Panorama Plugin for SD-WAN versions...")
+            logger.info("Discovering available Panorama Plugin for SD-WAN versions...")
             major_versions = await self.discover_versions()
-            self._log(f"Found versions: {', '.join(major_versions)}")
+            logger.info(f"Found versions: {', '.join(major_versions)}")
+
+        self._set_task_total(
+            len(major_versions) if major_versions else 0,
+            f"{self.product_name}: fetching {len(major_versions)} versions"
+            if major_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions: list[ProductVersion] = []
 
         for major_version in major_versions:
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling Panorama Plugin for SD-WAN {version_str}...")
+            logger.info(f"Crawling Panorama Plugin for SD-WAN {version_str}...")
 
             version_num = major_version.replace("-", "") + "0"
             known_issues_url = (
@@ -254,12 +266,14 @@ class SDWANPluginCrawler(BaseCrawler):
                 if version_str not in skip_versions:
                     known_filtered = self._deduplicate_issues(known_issues)
                     if known_filtered:
-                        all_product_versions.append(ProductVersion(
-                            version=version_str,
-                            known_issues=known_filtered,
-                            addressed_issues=[],
-                        ))
-                        self._log(f"    {version_str}: {len(known_filtered)} known issues")
+                        all_product_versions.append(
+                            ProductVersion(
+                                version=version_str,
+                                known_issues=known_filtered,
+                                addressed_issues=[],
+                            )
+                        )
+                        logger.info(f"    {version_str}: {len(known_filtered)} known issues")
 
                 for fix_version, issues in addressed_by_version.items():
                     if fix_version not in skip_versions:
@@ -267,32 +281,38 @@ class SDWANPluginCrawler(BaseCrawler):
                         if addressed_filtered:
                             existing_pv = next(
                                 (pv for pv in all_product_versions if pv.version == fix_version),
-                                None
+                                None,
                             )
                             if existing_pv:
                                 existing_pv.addressed_issues.extend(addressed_filtered)
                             else:
-                                all_product_versions.append(ProductVersion(
-                                    version=fix_version,
-                                    known_issues=[],
-                                    addressed_issues=addressed_filtered,
-                                ))
-                            self._log(f"    {fix_version}: {len(addressed_filtered)} addressed issues")
+                                all_product_versions.append(
+                                    ProductVersion(
+                                        version=fix_version,
+                                        known_issues=[],
+                                        addressed_issues=addressed_filtered,
+                                    )
+                                )
+                            logger.info(
+                                f"    {fix_version}: {len(addressed_filtered)} addressed issues"
+                            )
 
             except Exception as e:
-                failed_fetches.append(FailedFetch(
-                    url=known_issues_url,
-                    error=str(e),
-                    product=self.product_id,
-                    version=version_str,
-                    issue_type="known",
-                ))
-                self._log(f"  Error fetching {known_issues_url}: {e}")
+                failed_fetches.append(
+                    FailedFetch(
+                        url=known_issues_url,
+                        error=str(e),
+                        product=self.product_id,
+                        version=version_str,
+                        issue_type="known",
+                    )
+                )
+                logger.error(f"Error fetching {known_issues_url}: {e}")
+
+            self._advance_task(f"{self.product_name}: {version_str} done")
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         all_product_versions.sort(

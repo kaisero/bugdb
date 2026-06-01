@@ -4,7 +4,6 @@ import asyncio
 import logging
 import re
 from datetime import datetime
-from typing import Optional
 
 from bs4 import BeautifulSoup
 
@@ -17,7 +16,7 @@ from ..utils import CORTEX_BASE_URL, extract_workaround
 logger = logging.getLogger(__name__)
 
 
-def _extract_version_from_metadata(topic: dict) -> Optional[str]:
+def _extract_version_from_metadata(topic: dict) -> str | None:
     """Pull the "Version" metadata value from a FluidTopics topic dict."""
     for entry in topic.get("metadata", []):
         if entry.get("key") == "Version" and entry.get("values"):
@@ -25,7 +24,7 @@ def _extract_version_from_metadata(topic: dict) -> Optional[str]:
     return None
 
 
-def _extract_publication_date(topic: dict) -> Optional[str]:
+def _extract_publication_date(topic: dict) -> str | None:
     """Pull the publication date from a FluidTopics topic dict."""
     for entry in topic.get("metadata", []):
         if entry.get("key") in (
@@ -58,7 +57,13 @@ class CortexXDRCrawler(BaseCrawler):
         super().__init__(*args, **kwargs)
         self._fluidtopics = fluidtopics
 
-    def _parse_cortex_release_date(self, date_text: str) -> Optional[str]:
+    def _needs_browser(self) -> bool:
+        # FluidTopics is a JSON API client, not a browser path. When it's
+        # injected, Cortex never touches Playwright; skip the launch so
+        # the crawler works on machines without browser binaries.
+        return self._transport is None and self._fluidtopics is None
+
+    def _parse_cortex_release_date(self, date_text: str) -> str | None:
         """Parse Cortex XDR release date text to YYYY-MM-DD format."""
         if not date_text:
             return None
@@ -82,16 +87,16 @@ class CortexXDRCrawler(BaseCrawler):
         logger.debug("Could not parse Cortex release date: %s", date_text)
         return None
 
-    def _extract_cortex_xdr_version(self, text: str) -> Optional[str]:
+    def _extract_cortex_xdr_version(self, text: str) -> str | None:
         """Extract version number from Cortex XDR release text."""
         match = re.search(r"(\d+\.\d+(?:\.\d+)?)", text)
         if match:
             return match.group(1)
         return None
 
-    def _parse_cortex_xdr_releases_page(self, soup) -> list[tuple[str, str, Optional[str]]]:
+    def _parse_cortex_xdr_releases_page(self, soup) -> list[tuple[str, str, str | None]]:
         """Parse the Cortex XDR releases page to extract version links and dates."""
-        releases: list[tuple[str, str, Optional[str]]] = []
+        releases: list[tuple[str, str, str | None]] = []
         seen_versions: set[str] = set()
 
         tables = soup.find_all("table")
@@ -150,8 +155,12 @@ class CortexXDRCrawler(BaseCrawler):
                     release_date = self._parse_cortex_release_date(date_text)
 
                 releases.append((version, href, release_date))
-                logger.debug("Found Cortex XDR release: %s -> %s (date: %s)",
-                            version, href[:80], release_date)
+                logger.debug(
+                    "Found Cortex XDR release: %s -> %s (date: %s)",
+                    version,
+                    href[:80],
+                    release_date,
+                )
 
         return releases
 
@@ -166,11 +175,19 @@ class CortexXDRCrawler(BaseCrawler):
             if element.name in ["h1", "h2", "h3", "h4"]:
                 heading_text = element.get_text(strip=True).lower()
 
-                if ("addressed" in heading_text or "fixed" in heading_text) and "issue" in heading_text:
+                if (
+                    "addressed" in heading_text or "fixed" in heading_text
+                ) and "issue" in heading_text:
                     current_section = "addressed"
-                elif "known" in heading_text and ("limitation" in heading_text or "issue" in heading_text):
+                elif "known" in heading_text and (
+                    "limitation" in heading_text or "issue" in heading_text
+                ):
                     current_section = "known"
-                elif "feature" in heading_text or "enhancement" in heading_text or "improvement" in heading_text:
+                elif (
+                    "feature" in heading_text
+                    or "enhancement" in heading_text
+                    or "improvement" in heading_text
+                ):
                     current_section = "feature"
                 continue
 
@@ -205,7 +222,7 @@ class CortexXDRCrawler(BaseCrawler):
                     bug_id_text = bug_id_cell.get_text(strip=True)
 
                     platform_match = re.search(r"\(([^)]+)\)", bug_id_text)
-                    affected_components: Optional[list[str]] = None
+                    affected_components: list[str] | None = None
                     if platform_match:
                         platform = platform_match.group(1).strip().lower()
                         platform_map = {
@@ -221,7 +238,10 @@ class CortexXDRCrawler(BaseCrawler):
 
                     bug_id = re.sub(r"\([^)]+\)", "", bug_id_text)
                     bug_id = bug_id.split("\n")[0].strip()
-                    bug_id = re.sub(r"[‑–—]", "-", bug_id)
+                    # Normalize the three dash-like Unicode characters Palo Alto
+                    # sometimes uses (non-breaking hyphen, en dash, em dash) to
+                    # plain ASCII hyphen. The characters below are intentional.
+                    bug_id = re.sub(r"[‑–—]", "-", bug_id)  # noqa: RUF001
 
                     if not bug_id or not re.match(r"^[A-Z]+-\d+", bug_id):
                         match = re.search(r"([A-Z]+-\d+)", bug_id_cell.get_text())
@@ -256,8 +276,8 @@ class CortexXDRCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Cortex XDR Agent release notes.
 
@@ -268,9 +288,10 @@ class CortexXDRCrawler(BaseCrawler):
             return await self._crawl_via_fluidtopics(skip_versions)
         return await self._legacy_crawl(major_versions, skip_versions)
 
+
     async def _crawl_via_fluidtopics(
         self,
-        skip_versions: Optional[set[str]] = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Cortex XDR via the FluidTopics khub JSON API."""
         skip_versions = skip_versions or set()
@@ -305,7 +326,7 @@ class CortexXDRCrawler(BaseCrawler):
 
         # version → (known_issues, addressed_issues, release_date)
         versions_data: dict[
-            str, tuple[list[Issue], list[Issue], Optional[str]]
+            str, tuple[list[Issue], list[Issue], str | None]
         ] = {}
 
         for m in rn_maps:
@@ -459,7 +480,7 @@ class CortexXDRCrawler(BaseCrawler):
                 bug_id_text = bug_id_cell.get_text(strip=True)
 
                 platform_match = re.search(r"\(([^)]+)\)", bug_id_text)
-                affected_components: Optional[list[str]] = None
+                affected_components: list[str] | None = None
                 if platform_match:
                     platform = platform_match.group(1).strip().lower()
                     platform_map = {
@@ -509,58 +530,71 @@ class CortexXDRCrawler(BaseCrawler):
 
     async def _legacy_crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Cortex XDR via the legacy Playwright shadow-DOM walk."""
-        self._log("Crawling Cortex XDR Agent (legacy Playwright)...")
+        logger.info("Crawling Cortex XDR Agent (legacy Playwright)...")
         failed_fetches: list[FailedFetch] = []
         skip_versions = skip_versions or set()
 
-        releases_url = f"{CORTEX_BASE_URL}/r/Cortex-XDR/Cortex-XDR-Agent-Releases/Cortex-XDR-Agent-Releases"
+        releases_url = (
+            f"{CORTEX_BASE_URL}/r/Cortex-XDR/Cortex-XDR-Agent-Releases/Cortex-XDR-Agent-Releases"
+        )
 
         try:
             soup = await self._fetch_cortex_page_with_semaphore(releases_url, wait_time=5000)
         except Exception as e:
-            self._log(f"  Error fetching releases page: {e}")
-            failed_fetches.append(FailedFetch(
-                url=releases_url,
-                error=str(e),
-                product=self.product_id,
-                issue_type="releases",
-            ))
+            logger.error(f"Error fetching releases page: {e}")
+            failed_fetches.append(
+                FailedFetch(
+                    url=releases_url,
+                    error=str(e),
+                    product=self.product_id,
+                    issue_type="releases",
+                )
+            )
             return CrawlResult(
                 product=Product(id=self.product_id, name=self.product_name, versions=[]),
                 failed_fetches=failed_fetches,
             )
 
         release_links = self._parse_cortex_xdr_releases_page(soup)
-        self._log(f"  Found {len(release_links)} releases to process")
+        logger.info(f"  Found {len(release_links)} releases to process")
 
-        releases_to_fetch: list[tuple[str, str, Optional[str]]] = []
+        releases_to_fetch: list[tuple[str, str, str | None]] = []
         for version, url, release_date in release_links:
             if version in skip_versions:
-                self._log(f"  Skipping existing version: {version}")
+                logger.info(f"  Skipping existing version: {version}")
             else:
                 releases_to_fetch.append((version, url, release_date))
 
         if not releases_to_fetch:
-            self._log("  No new versions to fetch")
+            logger.info("  No new versions to fetch")
+            self._set_task_total(0, f"{self.product_name}: nothing new to fetch")
             return CrawlResult(
                 product=Product(id=self.product_id, name=self.product_name, versions=[]),
                 failed_fetches=failed_fetches,
             )
 
-        self._log(f"  Fetching {len(releases_to_fetch)} versions...")
+        logger.info(f"  Fetching {len(releases_to_fetch)} versions...")
+        self._set_task_total(
+            len(releases_to_fetch),
+            f"{self.product_name}: fetching {len(releases_to_fetch)} versions",
+        )
 
-        version_dates: dict[str, Optional[str]] = {v: d for v, _, d in releases_to_fetch}
+        version_dates: dict[str, str | None] = {v: d for v, _, d in releases_to_fetch}
 
-        async def fetch_release(version: str, url: str) -> tuple[str, Optional[any], Optional[str]]:
+        async def fetch_release(
+            version: str, url: str
+        ) -> tuple[str, BeautifulSoup | None, str | None]:
             try:
                 soup = await self._fetch_cortex_page_with_semaphore(url, wait_time=5000)
                 return (version, soup, None)
             except Exception as e:
                 return (version, None, str(e))
+            finally:
+                self._advance_task(f"{self.product_name}: {version} done")
 
         fetch_tasks = [fetch_release(ver, url) for ver, url, _ in releases_to_fetch]
         results = await asyncio.gather(*fetch_tasks)
@@ -569,32 +603,39 @@ class CortexXDRCrawler(BaseCrawler):
 
         for version, soup, error in results:
             if error:
-                self._log(f"  Error fetching {version}: {error}")
-                failed_fetches.append(FailedFetch(
-                    url=next((u for v, u, _ in releases_to_fetch if v == version), ""),
-                    error=error,
-                    product=self.product_id,
-                    version=version,
-                    issue_type="release",
-                ))
+                logger.error(f"Error fetching {version}: {error}")
+                failed_fetches.append(
+                    FailedFetch(
+                        url=next((u for v, u, _ in releases_to_fetch if v == version), ""),
+                        error=error,
+                        product=self.product_id,
+                        version=version,
+                        issue_type="release",
+                    )
+                )
                 continue
 
             known_issues, addressed_issues = self._parse_cortex_xdr_release_page(soup)
 
-            self._log(f"  {version}: {len(known_issues)} known, {len(addressed_issues)} addressed")
+            logger.info(
+                "%s: %d known, %d addressed",
+                version,
+                len(known_issues),
+                len(addressed_issues),
+            )
 
             if known_issues or addressed_issues:
-                all_product_versions.append(ProductVersion(
-                    version=version,
-                    release_date=version_dates.get(version),
-                    known_issues=self._deduplicate_issues(known_issues),
-                    addressed_issues=self._deduplicate_issues(addressed_issues),
-                ))
+                all_product_versions.append(
+                    ProductVersion(
+                        version=version,
+                        release_date=version_dates.get(version),
+                        known_issues=self._deduplicate_issues(known_issues),
+                        addressed_issues=self._deduplicate_issues(addressed_issues),
+                    )
+                )
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         all_product_versions.sort(

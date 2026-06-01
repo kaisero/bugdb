@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 import httpx
 
@@ -61,7 +60,7 @@ class FluidTopicsTransport:
             resp = await self._client.get(url)
         return FetchedPage(url=url, status_code=resp.status_code, html=resp.text)
 
-    async def list_maps(self, *, product: Optional[str] = None) -> list[dict]:
+    async def list_maps(self, *, product: str | None = None) -> list[dict]:
         resp = await self._client.get(f"{CORTEX_BASE}/api/khub/maps")
         resp.raise_for_status()
         maps = resp.json()

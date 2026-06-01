@@ -2,8 +2,6 @@
 
 import asyncio
 import logging
-import re
-from typing import Optional
 
 from bugdb.models import Product
 
@@ -45,16 +43,21 @@ class PrismaAccessCrawler(BaseCrawler):
         logger.debug("Discovering Prisma Access versions by probing URLs")
 
         candidate_versions = [
-            "6-1", "6-0",
-            "5-2", "5-1", "5-0",
-            "4-2", "4-1", "4-0",
+            "6-1",
+            "6-0",
+            "5-2",
+            "5-1",
+            "5-0",
+            "4-2",
+            "4-1",
+            "4-0",
         ]
 
         valid_versions = []
 
-        async def check_version(version: str) -> Optional[str]:
+        async def check_version(version: str) -> str | None:
             """Check if a version URL exists."""
-            url = f"/prisma-access/{version}/prisma-access-cloud-managed-release-notes"
+            url = f"/prisma-access/release-notes/{version}"
             try:
                 soup = await self._fetch_page_with_semaphore(url)
                 title = soup.find("title")
@@ -79,8 +82,9 @@ class PrismaAccessCrawler(BaseCrawler):
         sorted_versions = sorted(
             valid_versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
         )
-        logger.debug("Discovered %d Prisma Access versions: %s",
-                     len(sorted_versions), sorted_versions)
+        logger.debug(
+            "Discovered %d Prisma Access versions: %s", len(sorted_versions), sorted_versions
+        )
         return sorted_versions
 
     async def discover_version_pages(self, major_version: str) -> list[VersionInfo]:
@@ -93,7 +97,7 @@ class PrismaAccessCrawler(BaseCrawler):
             List of VersionInfo objects with URLs for each minor version.
         """
         version_infos = []
-        base_url = f"/prisma-access/{major_version}/prisma-access-cloud-managed-release-notes"
+        base_url = f"/prisma-access/release-notes/{major_version}"
 
         try:
             soup = await self._fetch_page_with_semaphore(base_url)
@@ -105,32 +109,36 @@ class PrismaAccessCrawler(BaseCrawler):
                 if "known" in href_lower or "addressed" in href_lower:
                     version = self._extract_version_from_url(href)
                     if not version:
-                        continue
+                        # Fall back to using major version (e.g., "6.1")
+                        version = major_version.replace("-", ".")
 
-                    vi = next(
-                        (v for v in version_infos if v.version == version), None
-                    )
+                    vi = next((v for v in version_infos if v.version == version), None)
                     if not vi:
-                        vi = VersionInfo(version=version, known_issues_urls=[], addressed_issues_urls=[])
+                        vi = VersionInfo(
+                            version=version, known_issues_urls=[], addressed_issues_urls=[]
+                        )
                         version_infos.append(vi)
 
                     if not href.startswith("/"):
                         href = f"/{href}"
                     if href.startswith("/content/techdocs/en_US"):
-                        href = href[len("/content/techdocs/en_US"):]
+                        href = href[len("/content/techdocs/en_US") :]
                     if href.endswith(".html"):
                         href = href[:-5]
 
-                    if "known" in href_lower:
-                        if href not in vi.known_issues_urls:
-                            vi.known_issues_urls.append(href)
-                    else:
-                        if href not in vi.addressed_issues_urls:
-                            vi.addressed_issues_urls.append(href)
+                    # Classify by last path segment to avoid false matches.
+                    last_segment = href.rstrip("/").rsplit("/", 1)[-1].lower()
+                    # Skip "known-and-addressed-issues" hub pages — they
+                    # are link-only indexes with no issue tables.
+                    if "known-and-addressed" in last_segment:
+                        continue
+                    if "addressed" in last_segment and href not in vi.addressed_issues_urls:
+                        vi.addressed_issues_urls.append(href)
+                    elif "known" in last_segment and href not in vi.known_issues_urls:
+                        vi.known_issues_urls.append(href)
 
         except Exception as e:
             logger.error("Error discovering version pages for %s: %s", major_version, e)
-            self._log(f"  Error discovering version pages: {e}")
 
         version_infos.sort(
             key=lambda v: self._version_sort_key(v.version),
@@ -141,8 +149,8 @@ class PrismaAccessCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Prisma Access release notes.
 
@@ -157,33 +165,53 @@ class PrismaAccessCrawler(BaseCrawler):
         all_failed_fetches: list[FailedFetch] = []
         use_sitemap = self._sitemap is not None
 
+        # Cache-aware discovery — see BaseCrawler._resolve_version_infos.
         if major_versions is None:
             if use_sitemap:
-                self._log(
-                    "Discovering available Prisma Access versions from sitemap..."
-                )
-                major_versions = self.discover_versions_from_sitemap()
+                logger.info("Discovering available Prisma Access versions from sitemap...")
             else:
-                self._log("Discovering available Prisma Access versions...")
-                major_versions = await self.discover_versions()
-            self._log(f"Found versions: {', '.join(major_versions)}")
+                logger.info("Discovering available Prisma Access versions...")
+
+        if use_sitemap:
+
+            async def _discover_majors() -> list[str]:
+                return self.discover_versions_from_sitemap()
+
+            async def _discover_pages(major: str) -> list:
+                return self.discover_version_pages_from_sitemap(major)
+
+            vi_by_major = await self._resolve_version_infos(
+                discover_majors_fn=_discover_majors,
+                discover_pages_fn=_discover_pages,
+                explicit_majors=major_versions,
+                skip_versions=skip_versions,
+            )
+        else:
+            vi_by_major = await self._resolve_version_infos(
+                discover_majors_fn=self.discover_versions,
+                discover_pages_fn=self.discover_version_pages,
+                explicit_majors=major_versions,
+                skip_versions=skip_versions,
+            )
+        if major_versions is None:
+            logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
+
+        total_versions = sum(len(v) for v in vi_by_major.values())
+        self._set_task_total(
+            total_versions,
+            f"{self.product_name}: fetching {total_versions} versions"
+            if total_versions
+            else f"{self.product_name}: nothing new to fetch",
+        )
 
         all_product_versions = []
 
-        for major_version in major_versions:
+        for major_version, version_infos in vi_by_major.items():
             version_str = major_version.replace("-", ".")
-            self._log(f"Crawling Prisma Access {version_str}...")
-
-            if use_sitemap:
-                version_infos = self.discover_version_pages_from_sitemap(major_version)
-            else:
-                version_infos = await self.discover_version_pages(major_version)
-            version_infos = [
-                vi for vi in version_infos if vi.version not in skip_versions
-            ]
+            logger.info("Crawling Prisma Access %s...", version_str)
 
             if not version_infos:
-                self._log("  No versions to crawl (all skipped or none found)")
+                logger.info("No versions to crawl (all skipped or none found)")
                 continue
 
             product_versions, failed_fetches = await self._crawl_versions_parallel(
@@ -194,7 +222,7 @@ class PrismaAccessCrawler(BaseCrawler):
             all_failed_fetches.extend(failed_fetches)
 
         if all_failed_fetches:
-            recovered, still_failed = await self._retry_failed_fetches_sequentially(
+            _recovered, still_failed = await self._retry_failed_fetches_sequentially(
                 all_failed_fetches
             )
             all_failed_fetches = still_failed

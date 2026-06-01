@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 from bugdb.fetch_manifest import FetchManifest
 from bugdb.sitemap import SitemapEntry, SitemapIndex
@@ -43,7 +42,7 @@ _VERSION_TWO_DASHED_BEFORE_MARKER_RE = re.compile(
 _NON_VERSION_SUFFIXES = {"known", "addressed", "issues", "and"}
 
 
-def extract_dotted_version(url: str) -> Optional[str]:
+def extract_dotted_version(url: str) -> str | None:
     """Extract a 1.2.3[-suffix] version from a URL.
 
     The Palo Alto docs URLs use two distinct version slug shapes:
@@ -97,7 +96,7 @@ def to_relative_path(url: str, base: str = "https://docs.paloaltonetworks.com") 
 
 def filter_unchanged(
     entries: list[SitemapEntry],
-    manifest: Optional[FetchManifest],
+    manifest: FetchManifest | None,
 ) -> list[SitemapEntry]:
     """Drop entries whose <lastmod> matches the manifest (incremental gate)."""
     if manifest is None:
@@ -199,7 +198,7 @@ def _is_specific_addressed_subpage(url: str) -> bool:
 
 
 def discover_major_versions(
-    sitemap: Optional[SitemapIndex], product_id: str
+    sitemap: SitemapIndex | None, product_id: str
 ) -> list[str]:
     """Distinct `major-minor` strings present in the sitemap for a product, newest first."""
     if sitemap is None:
@@ -215,10 +214,10 @@ def discover_major_versions(
 
 
 def discover_version_pages(
-    sitemap: Optional[SitemapIndex],
+    sitemap: SitemapIndex | None,
     product_id: str,
-    major_version: Optional[str] = None,
-    manifest: Optional[FetchManifest] = None,
+    major_version: str | None = None,
+    manifest: FetchManifest | None = None,
 ) -> list[VersionInfo]:
     """High-level helper: filtered, grouped, manifest-skipped VersionInfo list."""
     if sitemap is None:
@@ -233,9 +232,9 @@ def discover_version_pages(
 
 
 def discover_saas_urls(
-    sitemap: Optional[SitemapIndex],
+    sitemap: SitemapIndex | None,
     product_id: str,
-    manifest: Optional[FetchManifest] = None,
+    manifest: FetchManifest | None = None,
 ) -> tuple[list[str], list[str]]:
     """Return (known_urls, addressed_urls) for a single-version SaaS product.
 

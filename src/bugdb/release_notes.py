@@ -25,11 +25,15 @@ def get_release_notes() -> ReleaseNotes:
                     # Cross-reference features
                     ReleaseChange(
                         type=ChangeType.FEATURE,
-                        description="Fix Available Cross-Reference for Known Issues to find Fixed Release",
+                        description=(
+                            "Fix Available Cross-Reference for Known Issues to find Fixed Release"
+                        ),
                     ),
                     ReleaseChange(
                         type=ChangeType.FEATURE,
-                        description="Other Issues Affected - Find other releases affected by the issue",
+                        description=(
+                            "Other Issues Affected - Find other releases affected by the issue"
+                        ),
                     ),
                     # Core products
                     ReleaseChange(

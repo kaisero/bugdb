@@ -1,7 +1,7 @@
 """Transport protocol for fetching release-notes pages."""
 
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Protocol
 
 
 @dataclass(frozen=True)
@@ -16,7 +16,7 @@ class FetchedPage:
     url: str
     status_code: int
     html: str
-    lastmod: Optional[str] = None
+    lastmod: str | None = None
 
 
 class Transport(Protocol):

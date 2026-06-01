@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from typing import Optional
 
 from bugdb.models import Product, ProductVersion
 
@@ -84,15 +83,16 @@ class RemoteBrowserIsolationCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Remote Browser Isolation release notes.
 
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Remote Browser Isolation...")
+        logger.info("Crawling Remote Browser Isolation...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
         failed_fetches: list[FailedFetch] = []
 
         known_urls, _ = discover_saas_urls(
@@ -110,31 +110,35 @@ class RemoteBrowserIsolationCrawler(BaseCrawler):
                     if table.find_parent("table"):
                         continue
                     known_issues.extend(self._parse_issues_table(table))
-                self._log(f"  Found {len(known_issues)} known issues")
+                logger.info(f"  Found {len(known_issues)} known issues")
             except Exception as e:
-                self._log(f"  Error fetching known issues: {e}")
-                failed_fetches.append(FailedFetch(
-                    url=known_issues_url,
-                    error=str(e),
-                    product=self.product_id,
-                    issue_type="known",
-                ))
+                logger.error(f"  Error fetching known issues: {e}")
+                failed_fetches.append(
+                    FailedFetch(
+                        url=known_issues_url,
+                        error=str(e),
+                        product=self.product_id,
+                        issue_type="known",
+                    )
+                )
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         known_issues = self._deduplicate_issues(known_issues)
 
         versions = []
         if known_issues:
-            versions.append(ProductVersion(
-                version="SaaS",
-                known_issues=known_issues,
-                addressed_issues=[],
-            ))
+            versions.append(
+                ProductVersion(
+                    version="SaaS",
+                    known_issues=known_issues,
+                    addressed_issues=[],
+                )
+            )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(
@@ -165,12 +169,16 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
-        """Crawl AI Runtime Security release notes."""
-        self._log("Crawling AI Runtime Security...")
-        failed_fetches: list[FailedFetch] = []
+        """Crawl AI Runtime Security release notes.
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        logger.info("Crawling AI Runtime Security...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
 
         known_urls, addressed_urls = discover_saas_urls(
             self._sitemap, self.product_id, manifest=self._manifest
@@ -185,9 +193,7 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
         )
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         known_issues = self._deduplicate_issues(known_issues)
@@ -195,11 +201,15 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
 
         versions = []
         if known_issues or addressed_issues:
-            versions.append(ProductVersion(
-                version="SaaS",
-                known_issues=known_issues,
-                addressed_issues=addressed_issues,
-            ))
+            versions.append(
+                ProductVersion(
+                    version="SaaS",
+                    known_issues=known_issues,
+                    addressed_issues=addressed_issues,
+                )
+            )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(
@@ -223,15 +233,16 @@ class StrataLoggingServiceCrawler(BaseCrawler):
 
     async def crawl(
         self,
-        major_versions: Optional[list[str]] = None,
-        skip_versions: Optional[set[str]] = None,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
     ) -> CrawlResult:
         """Crawl Strata Logging Service release notes.
 
         Returns:
             CrawlResult with Product and any failed fetches.
         """
-        self._log("Crawling Strata Logging Service...")
+        logger.info("Crawling Strata Logging Service...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
 
         default_known = "/strata-logging-service/release-notes/known-issues"
         default_addressed = "/strata-logging-service/release-notes/addressed-issues"
@@ -248,9 +259,7 @@ class StrataLoggingServiceCrawler(BaseCrawler):
         )
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
         known_issues = self._deduplicate_issues(known_issues)
@@ -258,11 +267,15 @@ class StrataLoggingServiceCrawler(BaseCrawler):
 
         versions = []
         if known_issues or addressed_issues:
-            versions.append(ProductVersion(
-                version="SaaS",
-                known_issues=known_issues,
-                addressed_issues=addressed_issues,
-            ))
+            versions.append(
+                ProductVersion(
+                    version="SaaS",
+                    known_issues=known_issues,
+                    addressed_issues=addressed_issues,
+                )
+            )
+
+        self._advance_task(f"{self.product_name}: done")
 
         return CrawlResult(
             product=Product(

@@ -1,3 +1,20 @@
 """BugDB - Palo Alto Networks Bug Database Viewer."""
 
-__version__ = "1.0.0"
+from pathlib import Path
+
+
+def _read_version() -> str:
+    """Read version from VERSION file."""
+    version_file = Path(__file__).parent.parent.parent / "VERSION"
+    if version_file.exists():
+        return version_file.read_text().strip()
+    # Fallback for installed package
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        return version("bugdb")
+    except PackageNotFoundError:
+        return "0.0.0"
+
+
+__version__ = _read_version()

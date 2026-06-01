@@ -10,13 +10,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
 
 class ManifestEntry(BaseModel):
-    lastmod: Optional[str] = None
+    lastmod: str | None = None
 
 
 class FetchManifest(BaseModel):
@@ -35,7 +34,7 @@ class FetchManifest(BaseModel):
             encoding="utf-8",
         )
 
-    def should_skip(self, url: str, lastmod: Optional[str]) -> bool:
+    def should_skip(self, url: str, lastmod: str | None) -> bool:
         """Return True iff this URL's content is known unchanged.
 
         We require both a stored lastmod and a current lastmod, and they
@@ -48,5 +47,5 @@ class FetchManifest(BaseModel):
             return False
         return prev.lastmod == lastmod
 
-    def record(self, url: str, lastmod: Optional[str]) -> None:
+    def record(self, url: str, lastmod: str | None) -> None:
         self.entries[url] = ManifestEntry(lastmod=lastmod)

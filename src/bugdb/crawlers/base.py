@@ -1,24 +1,29 @@
 """Base crawler class with shared functionality."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
-from typing import Optional
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Page, Browser
+from playwright.async_api import Browser, Page, async_playwright
 
 from bugdb.fetch_manifest import FetchManifest
 from bugdb.models import Issue, ProductVersion
 from bugdb.sitemap import SitemapIndex
 from bugdb.transport.base import Transport
 
-from .models import FailedFetch, VersionCrawlResult, VersionInfo, CrawlResult
+from .models import FailedFetch, VersionCrawlResult, VersionInfo
+
+if TYPE_CHECKING:
+    from bugdb.discovery_cache import DiscoveryCache
+    from bugdb.progress import ProgressReporter, TaskHandle
 from .utils import (
     BASE_URL,
-    CORTEX_BASE_URL,
-    configure_logging,
     extract_affected_components,
     extract_bug_id_and_fix_info,
     extract_cell_text_with_tables,
@@ -47,15 +52,17 @@ class BaseCrawler:
     def __init__(
         self,
         *,
-        transport: Optional[Transport] = None,
-        sitemap: Optional[SitemapIndex] = None,
-        manifest: Optional[FetchManifest] = None,
+        transport: Transport | None = None,
+        sitemap: SitemapIndex | None = None,
+        manifest: FetchManifest | None = None,
         headless: bool = True,
-        verbose: bool = False,
         debug: bool = False,
         max_concurrency: int = 3,
         max_retries: int = 3,
         retry_delay: float = 2.0,
+        discovery_cache: DiscoveryCache | None = None,
+        reporter: ProgressReporter | None = None,
+        task: TaskHandle | None = None,
     ):
         """Initialize the crawler.
 
@@ -66,39 +73,74 @@ class BaseCrawler:
 
         Args:
             transport: Optional Transport implementation (httpx, etc.). If
-                None, Playwright is used.
+                None, the legacy Playwright path is used.
+            sitemap: Optional pre-loaded SitemapIndex used by sitemap-driven
+                discovery paths in product crawlers. Ignored by the legacy
+                path.
+            manifest: Optional FetchManifest used to skip URLs whose
+                sitemap ``lastmod`` is older than the last successful fetch.
+                Ignored by the legacy path.
             headless: Whether to run browser in headless mode (legacy path).
-            verbose: Whether to print progress messages.
-            debug: Whether to enable debug logging (more detailed than verbose).
+            debug: Whether to enable debug logging. The actual handler
+                attachment (stderr stream handler) is owned by the CLI's
+                ``configure_fetch_logging`` context manager; this flag
+                is retained on the instance for crawler code that wants
+                to branch on verbosity without going through the logger.
             max_concurrency: Maximum number of concurrent page fetches.
             max_retries: Maximum number of retry attempts for failed requests.
             retry_delay: Base delay between retries in seconds (exponential backoff).
+            discovery_cache: Optional persistent cache for URL patterns and
+                discovered version infos, shared across crawlers by the CLI.
+                If ``None``, the crawler runs without cache (always probes
+                from scratch). Backwards-compatible for direct instantiation
+                in tests.
+            reporter: Optional progress reporter. When provided together
+                with a ``task`` handle, the crawler emits one
+                ``update(advance=1)`` event per completed version,
+                letting the CLI render a live bar. Default ``None`` is
+                a zero-overhead no-op so existing callers stay
+                unchanged.
+            task: Optional progress task handle (opaque to the
+                crawler) that pairs with ``reporter``. The CLI
+                pre-creates one task per product before calling the
+                wrapper so the bar exists even while version discovery
+                is still running; ``_set_task_total`` later fills in
+                the total once discovery resolves.
         """
         self._transport = transport
         self._sitemap = sitemap
         self._manifest = manifest
         self.headless = headless
-        self.verbose = verbose
         self.debug = debug
         self.max_concurrency = max_concurrency
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self._discovery_cache = discovery_cache
+        self._reporter: ProgressReporter | None = reporter
+        self._task: TaskHandle | None = task
         self._playwright = None
-        self._browser: Optional[Browser] = None
-        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._browser: Browser | None = None
+        self._semaphore: asyncio.Semaphore | None = None
 
         # Global backoff state - shared across all concurrent fetches
         self._global_backoff_until: float = 0.0
-        self._backoff_lock: Optional[asyncio.Lock] = None
+        self._backoff_lock: asyncio.Lock | None = None
 
-        # Configure logging if debug is enabled
-        if debug:
-            configure_logging(debug=True)
+    def _needs_browser(self) -> bool:
+        """Return True iff this crawler will actually use Playwright.
+
+        Default: only when no httpx Transport was injected. Subclasses
+        that have an alternative API client (e.g. CortexXDRCrawler with
+        a FluidTopics khub client) override this to also return False
+        when their alternative client is present, so Playwright isn't
+        launched on machines that don't have its browser binaries.
+        """
+        return self._transport is None
 
     async def __aenter__(self):
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
         self._backoff_lock = asyncio.Lock()
-        if self._transport is None:
+        if self._needs_browser():
             logger.debug("Starting Playwright browser (headless=%s)", self.headless)
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
@@ -108,7 +150,7 @@ class BaseCrawler:
         else:
             logger.debug(
                 "Transport %s active, max_concurrency=%d",
-                type(self._transport).__name__,
+                type(self._transport).__name__ if self._transport else "<alt-client>",
                 self.max_concurrency,
             )
         return self
@@ -117,11 +159,12 @@ class BaseCrawler:
         # An injected transport is owned by the caller (typically the CLI),
         # which reuses one transport across many crawler runs. Closing it
         # here would break every subsequent product fetched in the same run.
-        if self._transport is not None:
-            logger.debug(
-                "Transport %s lifecycle owned by caller; not closing",
-                type(self._transport).__name__,
-            )
+        if not self._needs_browser():
+            if self._transport is not None:
+                logger.debug(
+                    "Transport %s lifecycle owned by caller; not closing",
+                    type(self._transport).__name__,
+                )
             return
         logger.debug("Closing browser and Playwright")
         if self._browser:
@@ -130,11 +173,128 @@ class BaseCrawler:
             await self._playwright.stop()
 
     def _log(self, message: str) -> None:
-        """Print a log message if verbose mode is enabled."""
-        if self.verbose:
-            print(message)
-        # Also log at info level for debug mode
+        """Forward a progress message to the module logger.
+
+        Branch-era product crawlers call ``self._log(...)`` for human-readable
+        progress; main's fetch_logging pipeline routes ``logger.info`` to
+        either stderr or a file. Keeping this shim avoids touching every
+        product crawler.
+        """
         logger.info(message)
+
+    def _set_task_total(self, total: int, description: str | None = None) -> None:
+        """Tell the progress reporter how many versions this crawl is
+        about to process.
+
+        Called by each product crawler's ``crawl()`` method after
+        :meth:`_resolve_version_infos` returns, so the CLI's per-product
+        bar can swap from a spinner to a determinate ``0/N`` bar. No-op
+        when no reporter/task pair is attached.
+        """
+        if self._reporter is not None and self._task is not None:
+            self._reporter.update(self._task, total=total, description=description)
+
+    def _advance_task(self, description: str | None = None, advance: int = 1) -> None:
+        """Advance the progress reporter's task counter.
+
+        Used by product crawlers that don't go through
+        :meth:`_crawl_versions_parallel` (e.g. plugins, Cortex XDR,
+        SaaS services with custom inline fetch loops) so the same
+        per-version "one bar tick per completed version" semantics
+        apply regardless of the fetch strategy. No-op when no
+        reporter/task pair is attached.
+        """
+        if self._reporter is not None and self._task is not None:
+            self._reporter.update(self._task, advance=advance, description=description)
+
+    async def _resolve_version_infos(
+        self,
+        discover_majors_fn: Callable[[], Awaitable[list[str]]],
+        discover_pages_fn: Callable[[str], Awaitable[list[VersionInfo]]],
+        explicit_majors: list[str] | None,
+        skip_versions: set[str] | None = None,
+    ) -> dict[str, list[VersionInfo]]:
+        """Return ``{major: [VersionInfo, ...]}`` using the cache when fresh.
+
+        Centralises the "which versions do we need to crawl" decision so
+        every product crawler gets the same cache-aware behaviour without
+        each one rolling its own logic.
+
+        Three paths, in order of preference:
+
+        1. **Explicit majors.** If the caller passes ``explicit_majors``
+           (i.e. ``bugdb fetch panos --version 12-1``), we bypass the cache
+           entirely and call ``discover_pages_fn`` for each named major.
+           The user asked for something specific — give it to them fresh.
+
+        2. **Fresh cache.** If ``self._discovery_cache.is_fresh(product_id)``
+           returns True, load the cached ``version_infos`` map and return
+           it filtered by ``skip_versions``. Zero network requests.
+
+        3. **Cold / stale cache.** Call ``discover_majors_fn()`` to learn
+           which majors exist, then ``discover_pages_fn(major)`` for each,
+           write the result to the cache, and return it filtered by
+           ``skip_versions``.
+
+        Args:
+            discover_majors_fn: Typically ``self.discover_versions``. Called
+                only in path 3.
+            discover_pages_fn: Typically ``self.discover_version_pages``.
+                Called in paths 1 and 3.
+            explicit_majors: Caller-supplied major list. Triggers path 1
+                when non-empty; otherwise paths 2/3 apply.
+            skip_versions: Full version strings (e.g. ``{"12.1.5"}``) to
+                drop from the result. Applied after loading/discovering so
+                we never crawl versions we already have.
+
+        Returns:
+            ``{major: [VersionInfo, ...]}`` ready to feed into
+            ``_crawl_versions_parallel``. Empty lists are filtered out by
+            callers so the caller can still log "no versions to crawl".
+        """
+        skip_versions = skip_versions or set()
+
+        # Path 1: caller asked for specific majors. Always go to network.
+        if explicit_majors:
+            result: dict[str, list[VersionInfo]] = {}
+            for major in explicit_majors:
+                version_infos = await discover_pages_fn(major)
+                result[major] = [vi for vi in version_infos if vi.version not in skip_versions]
+            return result
+
+        # Path 2: fresh cache hit — skip discovery entirely. Bypass the
+        # cache when a sitemap is loaded: the sitemap is cheap to parse,
+        # and the manifest's per-URL ``lastmod`` filter must be re-applied
+        # on every run. Reusing cached VersionInfos here would skip the
+        # manifest gate and refetch URLs that haven't moved upstream.
+        if (
+            self._sitemap is None
+            and self._discovery_cache is not None
+            and self._discovery_cache.is_fresh(self.product_id)
+        ):
+            cached = self._discovery_cache.get_version_infos(self.product_id)
+            if cached is not None:
+                logger.debug(
+                    "%s discovery cache hit (%d majors)",
+                    self.product_id,
+                    len(cached),
+                )
+                return {
+                    major: [vi for vi in version_infos if vi.version not in skip_versions]
+                    for major, version_infos in cached.items()
+                }
+
+        # Path 3: cold or stale — discover fresh, write to cache.
+        majors = await discover_majors_fn()
+        fresh: dict[str, list[VersionInfo]] = {}
+        for major in majors:
+            fresh[major] = await discover_pages_fn(major)
+        if self._discovery_cache is not None:
+            self._discovery_cache.put_version_infos(self.product_id, fresh)
+        return {
+            major: [vi for vi in version_infos if vi.version not in skip_versions]
+            for major, version_infos in fresh.items()
+        }
 
     def _is_connection_refused_error(self, error: Exception) -> bool:
         """Check if an error is a connection refused error.
@@ -163,12 +323,7 @@ class BaseCrawler:
             now = time.monotonic()
             if self._global_backoff_until > now:
                 wait_time = self._global_backoff_until - now
-                self._log(
-                    f"  [Backoff] Waiting {wait_time:.1f}s for network recovery..."
-                )
-                logger.info(
-                    "Global backoff active, waiting %.1f seconds", wait_time
-                )
+                logger.info("[Backoff] Waiting %.1fs for network recovery...", wait_time)
 
         # Wait outside the lock so other tasks can also check and wait
         now = time.monotonic()
@@ -189,12 +344,8 @@ class BaseCrawler:
             # Only extend if this is a new/later backoff
             if new_backoff_until > self._global_backoff_until:
                 self._global_backoff_until = new_backoff_until
-                self._log(
-                    f"  [Backoff] Connection refused - all fetches paused for "
-                    f"{self.GLOBAL_BACKOFF_DURATION:.0f}s"
-                )
                 logger.warning(
-                    "Connection refused detected, triggering global backoff for %.0f seconds",
+                    "[Backoff] Connection refused - all fetches paused for %.0fs",
                     self.GLOBAL_BACKOFF_DURATION,
                 )
 
@@ -202,9 +353,7 @@ class BaseCrawler:
         """Create a new browser page."""
         return await self._browser.new_page()
 
-    async def _fetch_page(
-        self, page: Page, url: str, wait_time: int = 3000
-    ) -> BeautifulSoup:
+    async def _fetch_page(self, page: Page, url: str, wait_time: int = 3000) -> BeautifulSoup:
         """Fetch a page and return parsed HTML.
 
         Args:
@@ -233,7 +382,7 @@ class BaseCrawler:
 
     async def _fetch_via_transport(self, url: str) -> BeautifulSoup:
         """Fetch via the injected Transport with retry + global backoff."""
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         full_url = url if url.startswith("http") else urljoin(BASE_URL, url)
         for attempt in range(self.max_retries):
             await self._wait_for_global_backoff()
@@ -256,9 +405,7 @@ class BaseCrawler:
                         return BeautifulSoup(page.html, "lxml")
                     if page.status_code in (404, 410):
                         raise RuntimeError(f"HTTP {page.status_code} for {url}")
-                    last_error = RuntimeError(
-                        f"HTTP {page.status_code} for {url}"
-                    )
+                    last_error = RuntimeError(f"HTTP {page.status_code} for {url}")
                     logger.warning(
                         "transport returned %s for %s (attempt %d/%d)",
                         page.status_code,
@@ -271,9 +418,7 @@ class BaseCrawler:
         assert last_error is not None
         raise last_error
 
-    async def _fetch_via_browser(
-        self, url: str, wait_time: int = 3000
-    ) -> BeautifulSoup:
+    async def _fetch_via_browser(self, url: str, wait_time: int = 3000) -> BeautifulSoup:
         """Fetch a page via Playwright with retry logic and backoff.
 
         Creates a new page, fetches the URL, and closes the page.
@@ -291,7 +436,7 @@ class BaseCrawler:
         Raises:
             Exception: If all retry attempts fail.
         """
-        last_error = None
+        last_error: Exception | None = None
 
         for attempt in range(self.max_retries):
             # Wait for global backoff if another thread triggered it
@@ -300,8 +445,9 @@ class BaseCrawler:
             logger.debug("Acquiring semaphore for: %s (attempt %d)", url, attempt + 1)
             async with self._semaphore:
                 logger.debug("Semaphore acquired, creating new page for: %s", url)
-                page = await self._new_page()
+                page: Page | None = None
                 try:
+                    page = await self._new_page()
                     result = await self._fetch_page(page, url, wait_time)
                     logger.debug("Successfully fetched: %s", url)
                     return result
@@ -314,21 +460,28 @@ class BaseCrawler:
 
                     logger.warning(
                         "Fetch failed for %s (attempt %d/%d): %s",
-                        url, attempt + 1, self.max_retries, e
-                    )
-                    self._log(
-                        f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}"
+                        url,
+                        attempt + 1,
+                        self.max_retries,
+                        e,
                     )
                 finally:
-                    await page.close()
+                    if page is not None:
+                        await page.close()
 
             # Exponential backoff before retry (in addition to global backoff)
             if attempt < self.max_retries - 1:
-                delay = self.retry_delay * (2 ** attempt)
+                delay = self.retry_delay * (2**attempt)
                 logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
                 await asyncio.sleep(delay)
 
-        # All retries failed
+        # All retries failed. last_error can only be None if max_retries == 0
+        # (the loop body never ran); guard to surface a useful error rather
+        # than `TypeError: exceptions must derive from BaseException`.
+        if last_error is None:
+            raise RuntimeError(
+                f"No fetch attempts were made for {url} (max_retries={self.max_retries})"
+            )
         raise last_error
 
     async def _fetch_cortex_page_with_semaphore(
@@ -350,7 +503,7 @@ class BaseCrawler:
         Raises:
             Exception: If all retry attempts fail.
         """
-        last_error = None
+        last_error: Exception | None = None
 
         for attempt in range(self.max_retries):
             await self._wait_for_global_backoff()
@@ -358,8 +511,9 @@ class BaseCrawler:
             logger.debug("Acquiring semaphore for Cortex page: %s (attempt %d)", url, attempt + 1)
             async with self._semaphore:
                 logger.debug("Semaphore acquired, creating new page for: %s", url)
-                page = await self._new_page()
+                page: Page | None = None
                 try:
+                    page = await self._new_page()
                     result = await self._fetch_cortex_page(page, url, wait_time)
                     logger.debug("Successfully fetched Cortex page: %s", url)
                     return result
@@ -371,19 +525,25 @@ class BaseCrawler:
 
                     logger.warning(
                         "Fetch failed for %s (attempt %d/%d): %s",
-                        url, attempt + 1, self.max_retries, e
-                    )
-                    self._log(
-                        f"  Retry {attempt + 1}/{self.max_retries} for {url}: {e}"
+                        url,
+                        attempt + 1,
+                        self.max_retries,
+                        e,
                     )
                 finally:
-                    await page.close()
+                    if page is not None:
+                        await page.close()
 
             if attempt < self.max_retries - 1:
-                delay = self.retry_delay * (2 ** attempt)
+                delay = self.retry_delay * (2**attempt)
                 logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
                 await asyncio.sleep(delay)
 
+        # All retries failed. See _fetch_page_with_semaphore for rationale.
+        if last_error is None:
+            raise RuntimeError(
+                f"No fetch attempts were made for {url} (max_retries={self.max_retries})"
+            )
         raise last_error
 
     async def _fetch_cortex_page(
@@ -433,10 +593,10 @@ class BaseCrawler:
         <html>
         <body>
         <div class="content">
-        {''.join(elements_html)}
+        {"".join(elements_html)}
         </div>
         <div class="links">
-        {''.join(links_html)}
+        {"".join(links_html)}
         </div>
         </body>
         </html>
@@ -456,7 +616,7 @@ class BaseCrawler:
         """
         return version_sort_key(version)
 
-    def _extract_version_from_text(self, text: str) -> Optional[str]:
+    def _extract_version_from_text(self, text: str) -> str | None:
         """Extract version number from text.
 
         Args:
@@ -476,7 +636,7 @@ class BaseCrawler:
             return version
         return None
 
-    def _extract_version_from_url(self, url: str) -> Optional[str]:
+    def _extract_version_from_url(self, url: str) -> str | None:
         """Extract version number from URL.
 
         Args:
@@ -555,8 +715,7 @@ class BaseCrawler:
             logger.debug("No issue column found in table, skipping")
             return issues
 
-        logger.debug("Found issue column at index %d, description at index %s",
-                     issue_col, desc_col)
+        logger.debug("Found issue column at index %d, description at index %s", issue_col, desc_col)
 
         # Parse rows (only direct children, not nested table rows)
         # If there's a tbody, use rows from there (header is in thead)
@@ -577,7 +736,10 @@ class BaseCrawler:
 
         for row in rows:
             # Skip rows that belong to nested tables
-            if row.find_parent("table") != table and row.find_parent("tbody", recursive=False) is None:
+            if (
+                row.find_parent("table") != table
+                and row.find_parent("tbody", recursive=False) is None
+            ):
                 continue
 
             cells = row.find_all(["td", "th"], recursive=False)
@@ -590,7 +752,8 @@ class BaseCrawler:
                 extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
 
-            # Extract bug ID and fix info (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
+            # Extract bug ID and fix info
+            # (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
             bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
 
             # Validate bug_id format (e.g., GPC-12345, PAN-12345)
@@ -607,9 +770,13 @@ class BaseCrawler:
             # Extract affected components from description start (e.g., "(NGFW Clusters)")
             description, affected_components = extract_affected_components(description)
 
-            logger.debug("Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
-                        bug_id, fix_info is not None, workaround is not None,
-                        affected_components is not None)
+            logger.debug(
+                "Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
+                bug_id,
+                fix_info is not None,
+                workaround is not None,
+                affected_components is not None,
+            )
             issues.append(
                 Issue(
                     bug_id=bug_id,
@@ -623,9 +790,7 @@ class BaseCrawler:
         logger.debug("Parsed %d issues from table", len(issues))
         return issues
 
-    def _parse_issues_table_with_feature(
-        self, table, feature: Optional[str] = None
-    ) -> list[Issue]:
+    def _parse_issues_table_with_feature(self, table, feature: str | None = None) -> list[Issue]:
         """Parse issues from a table, adding feature as affected_component.
 
         Args:
@@ -688,9 +853,7 @@ class BaseCrawler:
 
             raw_bug_id = cells[issue_col].get_text(strip=True)
             raw_description = (
-                extract_cell_text_with_tables(cells[desc_col])
-                if desc_col is not None
-                else ""
+                extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
 
             # Extract bug ID and fix info
@@ -713,7 +876,7 @@ class BaseCrawler:
             if feature:
                 if affected_components:
                     # Prepend feature to existing components
-                    affected_components = [feature] + affected_components
+                    affected_components = [feature, *affected_components]
                 else:
                     affected_components = [feature]
 
@@ -783,7 +946,7 @@ class BaseCrawler:
                     # Extract workaround text after the bold element
                     workaround_parts = []
                     for sibling in b_elem.next_siblings:
-                        if hasattr(sibling, 'get_text'):
+                        if hasattr(sibling, "get_text"):
                             workaround_parts.append(sibling.get_text(strip=True))
                         elif isinstance(sibling, str):
                             workaround_parts.append(sibling.strip())
@@ -797,12 +960,18 @@ class BaseCrawler:
                 tt_elem = p_elem.find("tt")
                 if tt_elem:
                     tt_text = normalize_text(tt_elem)
-                    if "this issue is addressed" in tt_text.lower() or "this issue is fixed" in tt_text.lower():
+                    if (
+                        "this issue is addressed" in tt_text.lower()
+                        or "this issue is fixed" in tt_text.lower()
+                    ):
                         fix_info_text = tt_text
                         continue
 
                 # Check plain text for fix info
-                if "this issue is addressed" in p_text.lower() or "this issue is fixed" in p_text.lower():
+                if (
+                    "this issue is addressed" in p_text.lower()
+                    or "this issue is fixed" in p_text.lower()
+                ):
                     fix_info_text = p_text
                     continue
 
@@ -812,7 +981,7 @@ class BaseCrawler:
                     component_match = re.match(r"^\(\s*([^)]+?)\s*\)\s*", p_text)
                     if component_match:
                         affected_components = [component_match.group(1).strip()]
-                        remaining = p_text[component_match.end():].strip()
+                        remaining = p_text[component_match.end() :].strip()
                         if remaining:
                             description_parts.append(remaining)
                         continue
@@ -828,10 +997,10 @@ class BaseCrawler:
             desc_prefix_match = re.match(
                 r"^Description\s+of\s+" + re.escape(bug_id) + r"[\s:.\-]*",
                 desc_cleaned,
-                re.IGNORECASE
+                re.IGNORECASE,
             )
             if desc_prefix_match:
-                desc_cleaned = desc_cleaned[desc_prefix_match.end():].strip()
+                desc_cleaned = desc_cleaned[desc_prefix_match.end() :].strip()
 
             # Skip empty descriptions
             if not desc_cleaned:
@@ -860,39 +1029,51 @@ class BaseCrawler:
     async def _parse_issues_page(self, url: str) -> list[Issue]:
         """Parse issues from a known/addressed issues page.
 
+        Propagates exceptions from fetch and parse layers to its callers.
+        Historically this method swallowed all exceptions and returned an
+        empty list, which caused two downstream correctness bugs:
+          - `_crawl_version`'s `asyncio.gather(..., return_exceptions=True)`
+            dispatcher never saw failures, so its `FailedFetch` branch was
+            dead code and errors were silently lost.
+          - `_retry_failed_fetches_sequentially` always reported "success"
+            even when the retry hit the same parse error, because the
+            exception was swallowed here too.
+        Both were reported in the v1.0.2 architecture review. Propagating
+        the error wakes up the correct handling in both callers.
+
         Args:
             url: URL of the issues page.
 
         Returns:
             List of Issue objects.
+
+        Raises:
+            Exception: If fetch or parse fails. Callers are expected to
+                catch via ``asyncio.gather(..., return_exceptions=True)``
+                or a local try/except and record a ``FailedFetch``.
         """
-        issues = []
         logger.debug("Parsing issues page: %s", url)
 
-        try:
-            soup = await self._fetch_page_with_semaphore(url)
+        soup = await self._fetch_page_with_semaphore(url)
 
-            # Find tables with issue data (only top-level, not nested tables)
-            tables = soup.find_all("table")
-            logger.debug("Found %d tables on page: %s", len(tables), url)
+        # Find tables with issue data (only top-level, not nested tables)
+        tables = soup.find_all("table")
+        logger.debug("Found %d tables on page: %s", len(tables), url)
 
-            for table in tables:
-                # Skip nested tables (tables inside another table's cell)
-                if table.find_parent("table"):
-                    logger.debug("Skipping nested table")
-                    continue
+        issues: list[Issue] = []
+        for table in tables:
+            # Skip nested tables (tables inside another table's cell)
+            if table.find_parent("table"):
+                logger.debug("Skipping nested table")
+                continue
 
-                # Reuse _parse_issues_table for actual parsing
-                table_issues = self._parse_issues_table(table)
-                issues.extend(table_issues)
+            # Reuse _parse_issues_table for actual parsing
+            table_issues = self._parse_issues_table(table)
+            issues.extend(table_issues)
 
-            # If no issues found in tables, try div.topic format (used by plugins)
-            if not issues:
-                issues = self._parse_topic_format_issues(soup)
-
-        except Exception as e:
-            logger.error("Error parsing %s: %s", url, e)
-            self._log(f"Error parsing {url}: {e}")
+        # If no issues found in tables, try div.topic format (used by plugins)
+        if not issues:
+            issues = self._parse_topic_format_issues(soup)
 
         logger.debug("Parsed %d issues from page: %s", len(issues), url)
         return issues
@@ -957,13 +1138,15 @@ class BaseCrawler:
         # Process results
         for i, result in enumerate(results):
             if isinstance(result, Exception):
-                failed_fetches.append(FailedFetch(
-                    url=all_urls[i],
-                    error=str(result),
-                    product=product_name,
-                    version=version_info.version,
-                    issue_type=url_types[i],
-                ))
+                failed_fetches.append(
+                    FailedFetch(
+                        url=all_urls[i],
+                        error=str(result),
+                        product=product_name,
+                        version=version_info.version,
+                        issue_type=url_types[i],
+                    )
+                )
                 continue
             if url_types[i] == "known":
                 known_issues.extend(result)
@@ -984,9 +1167,20 @@ class BaseCrawler:
         )
 
     async def _crawl_versions_parallel(
-        self, version_infos: list[VersionInfo], product_name: str = ""
+        self,
+        version_infos: list[VersionInfo],
+        product_name: str = "",
     ) -> tuple[list[ProductVersion], list[FailedFetch]]:
         """Crawl multiple versions in parallel.
+
+        When ``self._reporter`` and ``self._task`` are both set (the CLI
+        wired up progress reporting), each completed version — success
+        *or* failure — advances the bar by one and updates the
+        description with the finishing version. The bar advances in
+        completion order even though ``asyncio.gather`` still waits for
+        the whole batch: the ``finally`` block inside ``_one`` runs as
+        soon as its own coroutine resolves, giving users per-version
+        feedback without reordering the result list.
 
         Args:
             version_infos: List of version information objects.
@@ -995,7 +1189,26 @@ class BaseCrawler:
         Returns:
             Tuple of (list of ProductVersion objects, list of FailedFetch objects).
         """
-        tasks = [self._crawl_version(vi, product_name) for vi in version_infos]
+        reporter = self._reporter
+        task = self._task
+        # Prefer the class-level ``product_name`` for reporter labels
+        # ("PAN-OS: 12.1.5 done") — it's always the human-readable
+        # product display name. Fall back to the product_id passed
+        # in for error tracking if a subclass doesn't set one.
+        display_name = getattr(self, "product_name", "") or product_name
+
+        async def _one(vi: VersionInfo) -> VersionCrawlResult:
+            try:
+                return await self._crawl_version(vi, product_name)
+            finally:
+                if reporter is not None and task is not None:
+                    if display_name:
+                        label = f"{display_name}: {vi.version} done"
+                    else:
+                        label = f"{vi.version} done"
+                    reporter.update(task, advance=1, description=label)
+
+        tasks = [_one(vi) for vi in version_infos]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         product_versions = []
@@ -1005,23 +1218,27 @@ class BaseCrawler:
             if isinstance(result, Exception):
                 # Entire version crawl failed - track all URLs as failed
                 vi = version_infos[i]
-                self._log(f"    Error crawling {vi.version}: {result}")
+                logger.error("Error crawling %s: %s", vi.version, result)
                 for url in vi.known_issues_urls:
-                    all_failed_fetches.append(FailedFetch(
-                        url=url,
-                        error=str(result),
-                        product=product_name,
-                        version=vi.version,
-                        issue_type="known",
-                    ))
+                    all_failed_fetches.append(
+                        FailedFetch(
+                            url=url,
+                            error=str(result),
+                            product=product_name,
+                            version=vi.version,
+                            issue_type="known",
+                        )
+                    )
                 for url in vi.addressed_issues_urls:
-                    all_failed_fetches.append(FailedFetch(
-                        url=url,
-                        error=str(result),
-                        product=product_name,
-                        version=vi.version,
-                        issue_type="addressed",
-                    ))
+                    all_failed_fetches.append(
+                        FailedFetch(
+                            url=url,
+                            error=str(result),
+                            product=product_name,
+                            version=vi.version,
+                            issue_type="addressed",
+                        )
+                    )
                 continue
 
             # Collect failed fetches from successful version crawl
@@ -1030,9 +1247,11 @@ class BaseCrawler:
             pv = result.product_version
             if pv.known_issues or pv.addressed_issues:
                 product_versions.append(pv)
-                self._log(
-                    f"    {pv.version}: {len(pv.known_issues)} known, "
-                    f"{len(pv.addressed_issues)} addressed"
+                logger.info(
+                    "%s: %d known, %d addressed",
+                    pv.version,
+                    len(pv.known_issues),
+                    len(pv.addressed_issues),
                 )
 
         return product_versions, all_failed_fetches
@@ -1054,7 +1273,7 @@ class BaseCrawler:
         if not failed_fetches:
             return [], []
 
-        self._log(f"  Retrying {len(failed_fetches)} failed fetches sequentially...")
+        logger.info("Retrying %d failed fetches sequentially...", len(failed_fetches))
 
         recovered_issues = []
         still_failed = []
@@ -1065,34 +1284,32 @@ class BaseCrawler:
 
             for attempt in range(max_retries):
                 try:
-                    self._log(
-                        f"    Retry {attempt + 1}/{max_retries} for {failed.url}"
-                    )
+                    logger.info("Retry %d/%d for %s", attempt + 1, max_retries, failed.url)
                     issues = await self._parse_issues_page(failed.url)
                     recovered_issues.extend(issues)
-                    self._log(
-                        f"    Recovered {len(issues)} issues from {failed.url}"
-                    )
+                    logger.info("Recovered %d issues from %s", len(issues), failed.url)
                     success = True
                     break
                 except Exception as e:
                     last_error = str(e)
                     if attempt < max_retries - 1:
-                        delay = self.retry_delay * (2 ** attempt)
+                        delay = self.retry_delay * (2**attempt)
                         await asyncio.sleep(delay)
 
             if not success:
-                still_failed.append(FailedFetch(
-                    url=failed.url,
-                    error=last_error,
-                    product=failed.product,
-                    version=failed.version,
-                    issue_type=failed.issue_type,
-                ))
+                still_failed.append(
+                    FailedFetch(
+                        url=failed.url,
+                        error=last_error,
+                        product=failed.product,
+                        version=failed.version,
+                        issue_type=failed.issue_type,
+                    )
+                )
 
         if still_failed:
-            self._log(f"  {len(still_failed)} fetches still failed after retries")
+            logger.warning("%d fetches still failed after retries", len(still_failed))
         else:
-            self._log(f"  All failed fetches recovered successfully")
+            logger.info("All failed fetches recovered successfully")
 
         return recovered_issues, still_failed
