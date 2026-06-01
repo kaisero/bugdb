@@ -1,0 +1,155 @@
+"""Sitemap-driven URL discovery for bugdb.
+
+The Palo Alto Networks documentation portals expose a `/sitemap.xml` with
+every release-notes URL and a `<lastmod>` timestamp. Parsing the sitemap
+once per run is dramatically cheaper than the JS-rendered version-index
+crawl the legacy code does, and it also gives us a free incremental gate:
+skip URLs whose `<lastmod>` matches the manifest entry from the last run.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from dataclasses import dataclass, field
+from typing import Iterable, Optional
+
+from lxml import etree
+
+logger = logging.getLogger(__name__)
+
+# Map of product_id -> URL path substrings; an entry whose URL contains
+# *any* substring belongs to that product. Mirrors `PRODUCT_CRAWLERS` keys
+# in `bugdb.crawlers.registry`.
+_PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
+    "panos": ("/pan-os/",),
+    "globalprotect": ("/globalprotect/",),
+    "prisma-access": ("/prisma-access/",),
+    "prisma-access-agent": (
+        "/gp-app-for-prisma-access/",
+        "/prisma-access-agent/",
+        "/prisma-access-app/",
+    ),
+    "prisma-sdwan": ("/prisma-sd-wan/",),
+    "cloud-ngfw-azure": ("/cloud-ngfw/azure/",),
+    "cloud-ngfw-aws": ("/cloud-ngfw/aws/",),
+    "remote-browser-isolation": ("/remote-browser-isolation/",),
+    "ai-runtime-security": ("/ai-runtime-security/",),
+    "strata-logging-service": ("/strata-logging-service/",),
+    "device-security": ("/iot-security/", "/device-security/"),
+    "adem": ("/autonomous-dem/",),
+    "scm": ("/strata-cloud-manager/",),
+    "sdwan-plugin": ("/panorama/plugins/sd-wan/", "/plugins/sd-wan-plugin/"),
+    "vm-series-plugin": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/vm-series-plugin",
+    ),
+    "plugin-aws": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-aws",
+    ),
+    "plugin-azure": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-azure",
+    ),
+    "plugin-gcp": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-gcp",
+    ),
+    "plugin-vmware-nsx": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-nsx",
+    ),
+    "plugin-vmware-vcenter": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-vmware-vcenter",
+    ),
+    "plugin-kubernetes": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-kubernetes",
+    ),
+    "plugin-cisco-aci": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-cisco-aci",
+    ),
+    "plugin-cisco-trustsec": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-cisco-trustsec",
+    ),
+    "plugin-ztp": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/zero-touch-provisioning-ztp-plugin",
+    ),
+    "plugin-clustering": (
+        "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-clustering",
+    ),
+}
+
+_ISSUE_MARKERS = (
+    "known-issues",
+    "addressed-issues",
+    "known-and-addressed",
+    "fixed-issues",
+    "known-issue",
+    "addressed-issue",
+)
+
+# Major version pattern as it appears in URLs, e.g. "/11-2/" or "/6-2/".
+_MAJOR_VERSION_RE = re.compile(r"/(\d+-\d+)(?:[/-]|$)")
+
+
+@dataclass(frozen=True)
+class SitemapEntry:
+    """One `<url>` from the sitemap, with derived fields."""
+
+    url: str
+    lastmod: Optional[str]
+    product_id: Optional[str]
+    major_version: Optional[str]
+    is_issue_page: bool
+
+
+@dataclass
+class SitemapIndex:
+    """In-memory index of a sitemap.xml document."""
+
+    _entries: list[SitemapEntry] = field(default_factory=list)
+
+    @classmethod
+    def from_xml(cls, xml: str) -> "SitemapIndex":
+        root = etree.fromstring(xml.encode("utf-8"))
+        ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
+        entries: list[SitemapEntry] = []
+        for url_el in root.findall("s:url", ns):
+            loc = url_el.findtext("s:loc", default="", namespaces=ns).strip()
+            if not loc:
+                continue
+            lastmod = url_el.findtext("s:lastmod", default=None, namespaces=ns)
+            entries.append(_classify(loc, lastmod))
+        logger.debug("parsed sitemap: %d entries", len(entries))
+        return cls(_entries=entries)
+
+    def all_entries(self) -> list[SitemapEntry]:
+        return list(self._entries)
+
+    def issue_urls(self) -> Iterable[SitemapEntry]:
+        return (e for e in self._entries if e.is_issue_page)
+
+    def for_product(self, product_id: str) -> Iterable[SitemapEntry]:
+        return (
+            e
+            for e in self._entries
+            if e.is_issue_page and e.product_id == product_id
+        )
+
+
+def _classify(url: str, lastmod: Optional[str]) -> SitemapEntry:
+    lower = url.lower()
+    product_id: Optional[str] = None
+    # Prefer the most-specific prefix match (longest).
+    best_len = 0
+    for pid, prefixes in _PRODUCT_PREFIXES.items():
+        for p in prefixes:
+            if p.lower() in lower and len(p) > best_len:
+                product_id = pid
+                best_len = len(p)
+    is_issue_page = any(m in lower for m in _ISSUE_MARKERS)
+    m = _MAJOR_VERSION_RE.search(url)
+    major_version = m.group(1) if m else None
+    return SitemapEntry(
+        url=url,
+        lastmod=lastmod.strip() if isinstance(lastmod, str) else lastmod,
+        product_id=product_id,
+        major_version=major_version,
+        is_issue_page=is_issue_page,
+    )
