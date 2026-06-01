@@ -114,9 +114,14 @@ class BaseCrawler:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        # An injected transport is owned by the caller (typically the CLI),
+        # which reuses one transport across many crawler runs. Closing it
+        # here would break every subsequent product fetched in the same run.
         if self._transport is not None:
-            logger.debug("Closing transport %s", type(self._transport).__name__)
-            await self._transport.aclose()
+            logger.debug(
+                "Transport %s lifecycle owned by caller; not closing",
+                type(self._transport).__name__,
+            )
             return
         logger.debug("Closing browser and Playwright")
         if self._browser:

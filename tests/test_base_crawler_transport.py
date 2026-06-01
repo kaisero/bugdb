@@ -36,7 +36,22 @@ async def test_aenter_skips_playwright_when_transport_injected():
         assert c._browser is None
         assert c._playwright is None
         assert c._semaphore is not None
-    assert stub.closed is True
+    # Caller (CLI) owns transport lifecycle — BaseCrawler must NOT close an
+    # injected transport, otherwise a transport shared across multiple
+    # crawlers in one run is dead after the first product finishes.
+    assert stub.closed is False
+
+
+@pytest.mark.asyncio
+async def test_injected_transport_survives_multiple_crawler_lifecycles():
+    """Regression: one shared transport must outlive every crawler.__aexit__."""
+    stub = _StubTransport(FetchedPage(url="", status_code=200, html="<html></html>"))
+    # Simulate the CLI loop: build one transport, use it across multiple crawlers.
+    for _ in range(3):
+        async with BaseCrawler(transport=stub, max_concurrency=1) as c:
+            await c._fetch_page_with_semaphore("https://example.com/x")
+    assert stub.closed is False
+    assert len(stub.calls) == 3
 
 
 @pytest.mark.asyncio
