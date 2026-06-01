@@ -5,9 +5,7 @@ import logging
 import re
 from typing import Optional
 
-from bugdb.fetch_manifest import FetchManifest
 from bugdb.models import Product
-from bugdb.sitemap import SitemapIndex
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, VersionInfo
@@ -24,17 +22,6 @@ class PANOSCrawler(BaseCrawler):
 
     product_id = "panos"
     product_name = "PAN-OS"
-
-    def __init__(
-        self,
-        *args,
-        sitemap: Optional[SitemapIndex] = None,
-        manifest: Optional[FetchManifest] = None,
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-        self._sitemap = sitemap
-        self._manifest = manifest
 
     def discover_versions_from_sitemap(self) -> list[str]:
         """Return major versions present in the sitemap, newest first."""

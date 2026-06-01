@@ -9,7 +9,9 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright, Page, Browser
 
+from bugdb.fetch_manifest import FetchManifest
 from bugdb.models import Issue, ProductVersion
+from bugdb.sitemap import SitemapIndex
 from bugdb.transport.base import Transport
 
 from .models import FailedFetch, VersionCrawlResult, VersionInfo, CrawlResult
@@ -46,6 +48,8 @@ class BaseCrawler:
         self,
         *,
         transport: Optional[Transport] = None,
+        sitemap: Optional[SitemapIndex] = None,
+        manifest: Optional[FetchManifest] = None,
         headless: bool = True,
         verbose: bool = False,
         debug: bool = False,
@@ -71,6 +75,8 @@ class BaseCrawler:
             retry_delay: Base delay between retries in seconds (exponential backoff).
         """
         self._transport = transport
+        self._sitemap = sitemap
+        self._manifest = manifest
         self.headless = headless
         self.verbose = verbose
         self.debug = debug

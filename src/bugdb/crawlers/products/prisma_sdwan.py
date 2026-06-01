@@ -9,6 +9,10 @@ from bugdb.models import Issue, Product, ProductVersion
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, VersionInfo
+from ..sitemap_discovery import (
+    discover_major_versions,
+    discover_version_pages,
+)
 from ..utils import (
     extract_affected_components,
     extract_bug_id_and_fix_info,
@@ -25,6 +29,19 @@ class PrismaSDWANCrawler(BaseCrawler):
 
     product_id = "prisma-sdwan"
     product_name = "Prisma SD-WAN"
+
+    def discover_versions_from_sitemap(self) -> list[str]:
+        return discover_major_versions(self._sitemap, self.product_id)
+
+    def discover_version_pages_from_sitemap(
+        self, major_version: str
+    ) -> list[VersionInfo]:
+        return discover_version_pages(
+            self._sitemap,
+            self.product_id,
+            major_version=major_version,
+            manifest=self._manifest,
+        )
 
     async def discover_versions(self) -> list[str]:
         """Discover available Prisma SD-WAN major versions.
@@ -147,10 +164,17 @@ class PrismaSDWANCrawler(BaseCrawler):
         """
         skip_versions = skip_versions or set()
         all_failed_fetches: list[FailedFetch] = []
+        use_sitemap = self._sitemap is not None
 
         if major_versions is None:
-            self._log("Discovering available Prisma SD-WAN versions...")
-            major_versions = await self.discover_versions()
+            if use_sitemap:
+                self._log(
+                    "Discovering available Prisma SD-WAN versions from sitemap..."
+                )
+                major_versions = self.discover_versions_from_sitemap()
+            else:
+                self._log("Discovering available Prisma SD-WAN versions...")
+                major_versions = await self.discover_versions()
             self._log(f"Found versions: {', '.join(major_versions)}")
 
         all_product_versions = []
@@ -159,7 +183,10 @@ class PrismaSDWANCrawler(BaseCrawler):
             version_str = major_version.replace("-", ".")
             self._log(f"Crawling Prisma SD-WAN {version_str}...")
 
-            version_infos = await self.discover_version_pages(major_version)
+            if use_sitemap:
+                version_infos = self.discover_version_pages_from_sitemap(major_version)
+            else:
+                version_infos = await self.discover_version_pages(major_version)
             version_infos = [
                 vi for vi in version_infos if vi.version not in skip_versions
             ]
