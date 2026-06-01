@@ -95,6 +95,10 @@ class PluginCrawler(BaseCrawler):
     def __init__(
         self,
         config: PluginConfig,
+        *,
+        transport=None,
+        sitemap=None,
+        manifest=None,
         headless: bool = True,
         verbose: bool = False,
         debug: bool = False,
@@ -102,18 +106,11 @@ class PluginCrawler(BaseCrawler):
         max_retries: int = 3,
         retry_delay: float = 2.0,
     ):
-        """Initialize the plugin crawler.
-
-        Args:
-            config: Plugin configuration.
-            headless: Whether to run browser in headless mode.
-            verbose: Whether to print progress messages.
-            debug: Whether to enable debug logging.
-            max_concurrency: Maximum number of concurrent page fetches.
-            max_retries: Maximum number of retry attempts.
-            retry_delay: Base delay between retries.
-        """
+        """Initialize the plugin crawler."""
         super().__init__(
+            transport=transport,
+            sitemap=sitemap,
+            manifest=manifest,
             headless=headless,
             verbose=verbose,
             debug=debug,

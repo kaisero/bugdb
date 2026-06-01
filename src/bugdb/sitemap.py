@@ -31,8 +31,13 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
         "/prisma-access-app/",
     ),
     "prisma-sdwan": ("/prisma-sd-wan/",),
-    "cloud-ngfw-azure": ("/cloud-ngfw/azure/",),
-    "cloud-ngfw-aws": ("/cloud-ngfw/aws/",),
+    # The docs site has been migrated from /cloud-ngfw/azure/* paths to
+    # /cloud-ngfw-azure/* (dash, not slash). The sitemap still lists the
+    # old paths but they 301-redirect — and the redirect for the
+    # addressed-issues URL points at "What's New", which has no bug
+    # tables. So we deliberately match ONLY the new paths.
+    "cloud-ngfw-azure": ("/cloud-ngfw-azure/",),
+    "cloud-ngfw-aws": ("/cloud-ngfw-aws/",),
     "remote-browser-isolation": ("/remote-browser-isolation/",),
     "ai-runtime-security": ("/ai-runtime-security/",),
     "strata-logging-service": ("/strata-logging-service/",),

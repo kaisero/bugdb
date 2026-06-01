@@ -342,34 +342,12 @@ def fetch(
 
     from bugdb.crawler import (
         FailedFetch,
-        crawl_adem,
-        crawl_ai_runtime_security,
-        crawl_cloud_ngfw_aws,
-        crawl_cloud_ngfw_azure,
-        crawl_cortex_xdr,
-        crawl_device_security,
-        crawl_globalprotect,
-        crawl_panos,
-        crawl_plugin_aws,
-        crawl_plugin_azure,
-        crawl_plugin_cisco_aci,
-        crawl_plugin_cisco_trustsec,
-        crawl_plugin_clustering,
-        crawl_plugin_gcp,
-        crawl_plugin_kubernetes,
-        crawl_plugin_vmware_nsx,
-        crawl_plugin_vmware_vcenter,
-        crawl_plugin_ztp,
-        crawl_prisma_access,
-        crawl_prisma_access_agent,
-        crawl_prisma_sdwan,
-        crawl_remote_browser_isolation,
-        crawl_scm,
-        crawl_sdwan_plugin,
-        crawl_strata_logging_service,
-        crawl_vm_series_plugin,
         get_existing_versions,
         merge_databases,
+    )
+    from bugdb.crawlers.registry import (
+        PRODUCT_CRAWLERS,
+        dispatch_async,
     )
     from bugdb.fetch_manifest import FetchManifest
     from bugdb.models import BugDatabase, Metadata
@@ -419,45 +397,20 @@ def fetch(
         )
         raise typer.Exit(1)
 
-    # Define supported products and their crawlers
-    supported_products = {
-        "adem": crawl_adem,
-        "ai-runtime-security": crawl_ai_runtime_security,
-        "cloud-ngfw-aws": crawl_cloud_ngfw_aws,
-        "cloud-ngfw-azure": crawl_cloud_ngfw_azure,
-        "cortex-xdr": crawl_cortex_xdr,
-        "device-security": crawl_device_security,
-        "globalprotect": crawl_globalprotect,
-        "panos": crawl_panos,
-        "plugin-aws": crawl_plugin_aws,
-        "plugin-azure": crawl_plugin_azure,
-        "plugin-cisco-aci": crawl_plugin_cisco_aci,
-        "plugin-cisco-trustsec": crawl_plugin_cisco_trustsec,
-        "plugin-clustering": crawl_plugin_clustering,
-        "plugin-gcp": crawl_plugin_gcp,
-        "plugin-kubernetes": crawl_plugin_kubernetes,
-        "plugin-vmware-nsx": crawl_plugin_vmware_nsx,
-        "plugin-vmware-vcenter": crawl_plugin_vmware_vcenter,
-        "plugin-ztp": crawl_plugin_ztp,
-        "prisma-access": crawl_prisma_access,
-        "prisma-access-agent": crawl_prisma_access_agent,
-        "prisma-sdwan": crawl_prisma_sdwan,
-        "remote-browser-isolation": crawl_remote_browser_isolation,
-        "scm": crawl_scm,
-        "sdwan-plugin": crawl_sdwan_plugin,
-        "strata-logging-service": crawl_strata_logging_service,
-        "vm-series-plugin": crawl_vm_series_plugin,
-    }
+    # Dispatch keyed by product_id; uses the registry's async helpers so we
+    # run every product inside ONE event loop and the shared transport stays
+    # bound to that loop. See registry.dispatch_async for details.
+    supported_products = sorted(PRODUCT_CRAWLERS.keys())
 
     # Determine which products to fetch
     if product is None:
-        products_to_fetch = list(supported_products.keys())
+        products_to_fetch = list(supported_products)
         product_display = "all products"
     else:
         if product.lower() not in supported_products:
             console.print(
                 f"[red]Error:[/red] Unsupported product '{product}'. "
-                f"Supported: {', '.join(supported_products.keys())}"
+                f"Supported: {', '.join(supported_products)}"
             )
             raise typer.Exit(1)
         products_to_fetch = [product.lower()]
@@ -508,12 +461,13 @@ def fetch(
         all_products = []
         failed_fetches: list[FailedFetch] = []
 
-        # Shared transports — one per host.
+        # Shared transports — one per host.  Built INSIDE the event loop
+        # that will use them so their httpx.AsyncClient and asyncio
+        # primitives belong to that loop.
         docs_transport = None if use_browser else HttpxDocsTransport(concurrency=15)
         fluidtopics = None if use_browser else FluidTopicsTransport(concurrency=10)
         try:
             for prod_name in products_to_fetch:
-                crawler_func = supported_products[prod_name]
                 skip_versions = existing_versions.get(prod_name, set())
                 console.print(
                     f"[dim]Fetching {prod_name}"
@@ -537,10 +491,10 @@ def fetch(
                     kwargs["sitemap"] = sitemap_index
                     kwargs["manifest"] = manifest_obj
 
-                # Each sync wrapper currently calls asyncio.run() internally.
-                # Run them in a worker thread so we don't nest event loops.
-                result = await asyncio.to_thread(
-                    crawler_func, major_versions, **kwargs
+                # Await the async helper directly — single event loop,
+                # shared httpx client stays valid across products.
+                result = await dispatch_async(
+                    prod_name, major_versions, **kwargs
                 )
                 all_products.extend(result.database.products)
                 failed_fetches.extend(result.failed_fetches)

@@ -65,6 +65,44 @@ def get_crawler_class(product_id: str):
     return PRODUCT_CRAWLERS[product_id]
 
 
+# Map product_id → async helper. Used by the CLI to dispatch crawls in a
+# SINGLE event loop, so a shared httpx.AsyncClient (Transport) stays bound
+# to one loop. Going through `asyncio.run` per product inside
+# `asyncio.to_thread` would create a new loop each time and tear down the
+# httpx connection pool between products.
+def _build_async_dispatch() -> dict:
+    return {
+        "globalprotect": _crawl_globalprotect_async,
+        "panos": _crawl_panos_async,
+        "prisma-access": _crawl_prisma_access_async,
+        "prisma-access-agent": _crawl_prisma_access_agent_async,
+        "prisma-sdwan": _crawl_prisma_sdwan_async,
+        "cloud-ngfw-azure": _crawl_cloud_ngfw_azure_async,
+        "cloud-ngfw-aws": _crawl_cloud_ngfw_aws_async,
+        "remote-browser-isolation": _crawl_remote_browser_isolation_async,
+        "ai-runtime-security": _crawl_ai_runtime_security_async,
+        "strata-logging-service": _crawl_strata_logging_service_async,
+        "device-security": _crawl_device_security_async,
+        "adem": _crawl_adem_async,
+        "scm": _crawl_scm_async,
+        "sdwan-plugin": _crawl_sdwan_plugin_async,
+        "cortex-xdr": _crawl_cortex_xdr_async,
+    }
+
+
+async def dispatch_async(product_id: str, *args, **kwargs) -> FetchResult:
+    """Run the async helper for `product_id` in the current event loop.
+
+    For plugins, delegates to `_crawl_plugin_async(plugin_id, ...)`.
+    """
+    dispatch = _build_async_dispatch()
+    if product_id in dispatch:
+        return await dispatch[product_id](*args, **kwargs)
+    if product_id in PLUGIN_CONFIGS:
+        return await _crawl_plugin_async(product_id, *args, **kwargs)
+    raise KeyError(f"Unknown product id: {product_id}")
+
+
 # ==============================================================================
 # Async wrapper functions for each product
 # ==============================================================================

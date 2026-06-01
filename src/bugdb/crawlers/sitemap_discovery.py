@@ -135,3 +135,40 @@ def discover_version_pages(
     ]
     entries = filter_unchanged(entries, manifest)
     return group_into_version_infos(entries)
+
+
+def discover_saas_urls(
+    sitemap: Optional[SitemapIndex],
+    product_id: str,
+    manifest: Optional[FetchManifest] = None,
+) -> tuple[list[str], list[str]]:
+    """Return (known_urls, addressed_urls) for a single-version SaaS product.
+
+    Used by crawlers like AI Runtime Security, Cloud NGFW, RBI, and SLS that
+    have no major-version concept — they simply have a small fixed set of
+    known/addressed issue pages on the docs portal.
+
+    URLs are returned as relative paths (no `https://docs.paloaltonetworks.com`
+    prefix and no `.html` suffix) so they slot directly into existing
+    `_parse_issues_page` calls.
+    """
+    if sitemap is None:
+        return [], []
+    entries = filter_unchanged(list(sitemap.for_product(product_id)), manifest)
+    known: list[str] = []
+    addressed: list[str] = []
+    for e in entries:
+        lower = e.url.lower()
+        path = to_relative_path(e.url)
+        if "known-and-addressed" in lower:
+            if path not in known:
+                known.append(path)
+            if path not in addressed:
+                addressed.append(path)
+        elif "known" in lower and "addressed" not in lower:
+            if path not in known:
+                known.append(path)
+        elif "addressed" in lower or "fixed" in lower:
+            if path not in addressed:
+                addressed.append(path)
+    return known, addressed
