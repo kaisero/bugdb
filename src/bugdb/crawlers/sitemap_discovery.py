@@ -114,7 +114,14 @@ def filter_unchanged(
 def group_into_version_infos(
     entries: list[SitemapEntry],
 ) -> list[VersionInfo]:
-    """Group sitemap entries by extracted dotted version into VersionInfo objects."""
+    """Group sitemap entries by extracted dotted version into VersionInfo objects.
+
+    A "known-and-addressed" landing URL is added to both buckets, but only
+    as a fallback: if a more-specific known-issues / addressed-issues
+    sibling exists for the same version, the landing is dropped from that
+    bucket. This avoids the ~300 wasted fetches per full PAN-OS crawl
+    where the landing page itself carries no issue tables.
+    """
     by_version: dict[str, VersionInfo] = {}
     for entry in entries:
         ver = extract_dotted_version(entry.url)
@@ -128,27 +135,67 @@ def group_into_version_infos(
                 addressed_issues_urls=[],
             ),
         )
-        lower = entry.url.lower()
+        # IMPORTANT: classify by the LAST URL segment, not the whole URL.
+        # PAN-OS subpages have ancestor segments containing
+        # "known-and-addressed" but their own slug is just "known-issues"
+        # or "addressed-issues".
+        seg = _last_segment(entry.url)
         path = to_relative_path(entry.url)
-        if "known-and-addressed" in lower:
+        if "known-and-addressed" in seg:
             if path not in vi.known_issues_urls:
                 vi.known_issues_urls.append(path)
             if path not in vi.addressed_issues_urls:
                 vi.addressed_issues_urls.append(path)
-        elif "known" in lower and "addressed" not in lower:
+        elif "known" in seg and "addressed" not in seg:
             if path not in vi.known_issues_urls:
                 vi.known_issues_urls.append(path)
-        elif "addressed" in lower and "known" not in lower:
+        elif "addressed" in seg and "known" not in seg:
             if path not in vi.addressed_issues_urls:
                 vi.addressed_issues_urls.append(path)
-        elif "fixed" in lower:
+        elif "fixed" in seg:
             if path not in vi.addressed_issues_urls:
                 vi.addressed_issues_urls.append(path)
+
+    # Drop landing URLs when a sibling subpage exists. The landing has
+    # "known-and-addressed" in its last path segment; subpages have
+    # "known-issues" or "addressed-issues" only (no "and").
+    for vi in by_version.values():
+        if any(
+            _is_specific_known_subpage(u) for u in vi.known_issues_urls
+        ):
+            vi.known_issues_urls = [
+                u for u in vi.known_issues_urls if not _is_landing(u)
+            ]
+        if any(
+            _is_specific_addressed_subpage(u) for u in vi.addressed_issues_urls
+        ):
+            vi.addressed_issues_urls = [
+                u for u in vi.addressed_issues_urls if not _is_landing(u)
+            ]
+
     return sorted(
         by_version.values(),
         key=lambda v: version_sort_key(v.version),
         reverse=True,
     )
+
+
+def _last_segment(url: str) -> str:
+    return url.rsplit("/", 1)[-1].lower()
+
+
+def _is_landing(url: str) -> bool:
+    return "known-and-addressed" in _last_segment(url)
+
+
+def _is_specific_known_subpage(url: str) -> bool:
+    seg = _last_segment(url)
+    return "known-issues" in seg and "addressed" not in seg
+
+
+def _is_specific_addressed_subpage(url: str) -> bool:
+    seg = _last_segment(url)
+    return "addressed-issues" in seg and "known" not in seg
 
 
 def discover_major_versions(
