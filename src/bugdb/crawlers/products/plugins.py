@@ -11,6 +11,7 @@ from bugdb.models import Product, ProductVersion
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, PluginConfig, VersionInfo
+from ..sitemap_discovery import discover_version_pages
 
 if TYPE_CHECKING:
     from bugdb.discovery_cache import DiscoveryCache
@@ -104,6 +105,10 @@ class PluginCrawler(BaseCrawler):
     def __init__(
         self,
         config: PluginConfig,
+        *,
+        transport=None,
+        sitemap=None,
+        manifest=None,
         headless: bool = True,
         debug: bool = False,
         max_concurrency: int = 3,
@@ -122,6 +127,9 @@ class PluginCrawler(BaseCrawler):
             max_concurrency: Maximum number of concurrent page fetches.
             max_retries: Maximum number of retry attempts.
             retry_delay: Base delay between retries.
+            transport: Optional Transport (httpx, etc.).
+            sitemap: Optional pre-loaded SitemapIndex.
+            manifest: Optional FetchManifest for incremental skipping.
             discovery_cache: Optional persistent discovery cache shared
                 across crawlers by the CLI. Forwarded to
                 ``BaseCrawler.__init__`` unchanged.
@@ -131,6 +139,9 @@ class PluginCrawler(BaseCrawler):
                 ``BaseCrawler.__init__`` unchanged.
         """
         super().__init__(
+            transport=transport,
+            sitemap=sitemap,
+            manifest=manifest,
             headless=headless,
             debug=debug,
             max_concurrency=max_concurrency,
@@ -256,6 +267,17 @@ class PluginCrawler(BaseCrawler):
         logger.debug("Discovered %d %s versions", len(sorted_versions), self.config.product_name)
         return sorted_versions
 
+    def discover_versions_from_sitemap(self) -> list[VersionInfo]:
+        """Build VersionInfo entries from the sitemap for this plugin.
+
+        Skips URLs whose lastmod matches the manifest entry.
+        """
+        return discover_version_pages(
+            self._sitemap,
+            self.config.product_id,
+            manifest=self._manifest,
+        )
+
     async def crawl(
         self,
         major_versions: list[str] | None = None,
@@ -273,8 +295,12 @@ class PluginCrawler(BaseCrawler):
         skip_versions = skip_versions or set()
         failed_fetches: list[FailedFetch] = []
 
-        logger.info(f"Discovering available {self.config.product_name} versions...")
-        discovered_versions = await self.discover_versions()
+        if self._sitemap is not None:
+            logger.info(f"Discovering {self.config.product_name} versions from sitemap...")
+            discovered_versions = self.discover_versions_from_sitemap()
+        else:
+            logger.info(f"Discovering available {self.config.product_name} versions...")
+            discovered_versions = await self.discover_versions()
 
         if major_versions is not None:
             major_version_prefixes = [mv.replace("-", ".") for mv in major_versions]

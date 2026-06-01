@@ -5,7 +5,173 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.4] - 2026-06-02
+
+### Added
+- **httpx-based Transport layer.** New `Transport` protocol +
+  `FetchedPage` dataclass in `src/bugdb/transport/` lets `BaseCrawler`
+  take an injected fetcher instead of always launching Playwright.
+  `HttpxDocsTransport` handles the public docs site over HTTP/2 with
+  shared connection reuse; `FluidTopicsTransport` talks to the Cortex
+  khub JSON API. `BaseCrawler.__init__` gains `transport=` and the
+  fetch path forks via `_fetch_page_with_semaphore` →
+  `_fetch_via_transport` / `_fetch_via_browser`. The Playwright path
+  is preserved as a fallback (`--use-browser`).
+- **Sitemap-driven URL discovery.** New `SitemapIndex` in
+  `src/bugdb/sitemap.py` parses
+  `https://docs.paloaltonetworks.com/sitemap.xml` once at the start of
+  a fetch, classifies every URL by product prefix (`_PRODUCT_PREFIXES`),
+  and exposes `for_product(product_id)` plus a per-entry
+  `major_version` derived by `extract_dotted_version` (dashed,
+  run-together, 2-dashed major-minor path-segment fallbacks). Replaces
+  per-product JS-rendered version probing for PAN-OS, GlobalProtect,
+  Prisma Access, Prisma Access Agent, Prisma SD-WAN, Device Security,
+  Panorama plugins, and the SaaS family (AIRS, RBI, Cloud NGFW
+  AWS/Azure, SLS). New shared helpers in
+  `src/bugdb/crawlers/sitemap_discovery.py`
+  (`discover_major_versions`, `discover_version_pages`,
+  `discover_saas_urls`, `group_into_version_infos`,
+  `filter_unchanged`).
+- **Fetch manifest for incremental skipping.**
+  `src/bugdb/fetch_manifest.py` introduces `FetchManifest`, a JSON
+  sidecar (default: `<output>.manifest.json`) that records each URL's
+  last-seen sitemap `<lastmod>`. On subsequent runs,
+  `FetchManifest.should_skip(url, lastmod)` drops URLs whose
+  upstream timestamp hasn't moved — sitemap is the gate, manifest is
+  the memory. Honoured by every sitemap-driven discovery path.
+- **FluidTopics-based Cortex XDR crawl.** `CortexXDRCrawler` now
+  dispatches via `_crawl_via_fluidtopics` when a `fluidtopics` client
+  is injected, walking the khub `/api/khub/maps` and
+  `/api/khub/topics` endpoints to extract release-notes per agent
+  version. The legacy shadow-DOM Playwright path remains as
+  `_legacy_crawl` for offline-debug parity. Eliminates the
+  Playwright launch on Cortex on CI runners and dev machines without
+  a Chromium binary.
+- **New `bugdb fetch` flags.**
+  - `--manifest PATH` — explicit manifest file location (default:
+    `<output>.manifest.json`).
+  - `--no-manifest` — disable manifest read/write entirely; forces a
+    full fetch of every URL even when sitemap timestamps match.
+  - `--use-browser` — opt out of the httpx + FluidTopics path and use
+    the legacy Playwright fetch for every product. Useful when the
+    sitemap is unreachable or for debugging upstream parser changes
+    that need a real browser.
+- **`scripts/parity_check.py`** — compare two `bugdb.json` snapshots
+  and fail when the new run regresses against the baseline. Defaults
+  to exact parity (`--min-ratio 1.0`); supports per-product version
+  counts and known/addressed issue counts. Used as a guard rail when
+  switching from the Playwright path to the httpx + sitemap path.
+- **`BaseCrawler._needs_browser()` hook.** Returns `True` iff the
+  crawler will actually use Playwright. Default checks `self._transport
+  is None`. `CortexXDRCrawler` overrides it to also return False when
+  `self._fluidtopics` is set, so the FluidTopics path doesn't try to
+  launch a browser that isn't needed (and on most CI runners, isn't
+  installed).
+
+### Changed
+- **Shared httpx client across all products in one event loop.** The
+  CLI dispatches every product crawl through `dispatch_async` inside
+  a single `asyncio.run(_run_all())`, so one `HttpxDocsTransport` and
+  one `FluidTopicsTransport` are constructed inside that loop and
+  reused for every product. Previously each product spun up and tore
+  down its own `asyncio.run`, orphaning the httpx connection pool
+  between products and losing all of HTTP/2's connection-reuse value.
+  Tests that mock `PRODUCT_WRAPPERS` via `patch.dict` still work — a
+  frozen `_ORIGINAL_PRODUCT_WRAPPERS` snapshot lets `dispatch_async`
+  detect a patched wrapper and route through `asyncio.to_thread`
+  instead.
+- **SaaS crawlers (AIRS, RBI, Cloud NGFW AWS+Azure, SLS) now
+  discover URLs from the sitemap.** The previous hardcoded paths
+  under `/cloud-ngfw/{aws,azure}/release-notes/` 301-redirect; the
+  addressed-issues redirect lands on a "What's New" page with no bug
+  table, so the legacy code was silently fetching the wrong content.
+  Corrected prefixes (`/cloud-ngfw-aws/`, `/cloud-ngfw-azure/`) plus
+  sitemap-first discovery via `discover_saas_urls` recovers the real
+  pages.
+- **GlobalProtect sitemap prefix narrowed to `/globalprotect/release-notes/`.**
+  The sitemap lists both the canonical `/globalprotect/release-notes/...`
+  pages (200 OK) and a stale parallel `/globalprotect/<v>/globalprotect-app-release-notes/...`
+  layout (301-redirects). The old `/globalprotect/` prefix matched both
+  forms, so a GlobalProtect fetch ate ~500 HTTP requests (200 OK
+  responses plus ~300 redirects) instead of the ~92 it should — and
+  the stale form redirected to the same canonical content anyway,
+  contributing zero new data while inflating the `failed_fetches`
+  retry queue when a redirect happened to 404.
+- **Device Security switched to `/iot/release-notes/`** with
+  year-based slug bucketing (`-in-YYYY`). The legacy
+  `/iot/iot-security-release-notes` index 404s on the current docs
+  site, so the previous crawl returned 0 versions. Sitemap-driven
+  discovery now pairs known/addressed URLs per year, tolerating a
+  year that has only one of them (no false failed-fetch).
+
+### Fixed
+- **PAN-OS sitemap landing-page double-counting.** Every PAN-OS minor
+  version appears in the sitemap as three URLs: a landing page
+  (`/.../pan-os-X-Y-Z-known-and-addressed-issues`) plus dedicated
+  known-issues and addressed-issues subpages. `group_into_version_infos`
+  was matching the issue-type keyword anywhere in the URL and adding
+  the landing page to both the known and addressed bucket — which
+  caused PAN-OS counts to look like `known == addressed` (inflated)
+  while also wasting ~300 GETs per crawl re-fetching landing pages
+  that have zero `<table>` elements. Fix classifies by the final URL
+  segment, then drops the landing from a bucket when a specific
+  sibling exists for the same version.
+- **Prisma Access sitemap fallback.** Prisma Access URLs encode
+  major.minor as a 2-digit path segment (`/prisma-access/release-notes/4-0/...`)
+  — neither the dashed-triple nor the run-together regex in
+  `extract_dotted_version` matched, so all 71 sitemap URLs were
+  silently dropped. Added a last-resort `/(\d+)-(\d+)/` path-segment
+  fallback that resolves `4-0` → `4.0.0` without false-positiving on
+  run-together slugs like `aws-plugin-534` (still goes through the
+  triple regex first). Recovers 9 versions, 752 known + 603 addressed
+  issues.
+- **Prisma Access Agent version discovery + consolidated addressed
+  index.** Version is encoded inside the slug
+  (`prisma-access-agent-26-2-1-known-issues`), not as a path segment,
+  so the generic `_MAJOR_VERSION_RE` returned None. Override
+  `discover_versions_from_sitemap` /
+  `discover_version_pages_from_sitemap` to derive majors from
+  `extract_dotted_version` output; new
+  `_VERSION_TWO_DASHED_BEFORE_MARKER_RE` catches 2-dashed versions
+  right before a known/addressed/fixed marker (`agent-26-2-known-issues`
+  → `26.2.0`). Separately, the new docs layout consolidates ALL
+  addressed-issues onto one `/prisma-access-agent-addressed-issues`
+  index page with `<h2>`-grouped tables (one section per agent
+  version) instead of per-version pages; new
+  `_find_addressed_index_url` + `_parse_addressed_index_by_version`
+  fetch it once and merge each `<h2>`/`<table>` pair into the
+  matching version. Recovers 19 versions, 65 known + 31 addressed
+  issues.
+- **Panorama plugin version extraction + sitemap prefixes.**
+  `extract_dotted_version` only handled the dashed `5-2-2` form; the
+  Azure, Cisco ACI / TrustSec, GCP, and Kubernetes URL slugs use the
+  run-together `522` form (`azure-plugin-522`). Added a fallback
+  `(?<!\d)(\d)(\d)(\d)(?!\d)` regex that captures these without
+  matching arbitrary 3-digit IDs. Separately, the sitemap prefixes
+  for `plugin-vmware-nsx` (was `panorama-plugin-for-nsx`, real:
+  `panorama-plugin-for-vmware-nsx`) and `plugin-ztp` (was
+  `zero-touch-provisioning-ztp-plugin`, real:
+  `panorama-plugin-for-zero-touch-provisioning`) were wrong, dropping
+  most plugin URLs. End-to-end: 7 of 11 plugins went from 0 versions
+  to fully populated (NSX 0 → 25 versions, Azure 0 → 20, vm-series
+  18 → 65).
+- **Sitemap-driven discovery now honours the manifest even when the
+  discovery cache is fresh.** `BaseCrawler._resolve_version_infos`'s
+  cache-hit path returned cached `VersionInfo` lists wholesale,
+  bypassing the manifest's per-URL `lastmod` filter — so on a warm
+  run, URLs that hadn't moved upstream were re-fetched anyway. Fixed
+  by gating Path 2 (cache hit) on `self._sitemap is None`: when the
+  sitemap is loaded, discovery always re-runs through
+  `discover_version_pages_from_sitemap` (which is essentially free —
+  parse the in-memory XML and apply the manifest filter), so
+  incremental fetches actually skip unchanged URLs.
+- **`BaseCrawler.__aexit__` no longer closes an injected Transport.**
+  The CLI builds one `HttpxDocsTransport` and one `FluidTopicsTransport`
+  for the whole run; closing them inside a per-product `__aexit__`
+  broke every subsequent product fetched in the same run (the second
+  product hit a closed `httpx.AsyncClient`). The transport's
+  lifecycle is now owned by the caller; only the locally-launched
+  Playwright instance is closed.
 
 ## [1.0.3] - 2026-04-11
 

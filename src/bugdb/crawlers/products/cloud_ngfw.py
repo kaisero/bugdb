@@ -1,12 +1,13 @@
 """Cloud NGFW crawlers implementation (Azure and AWS)."""
 
-import asyncio
 import logging
 
 from bugdb.models import Product, ProductVersion
 
 from ..base import BaseCrawler
-from ..models import CrawlResult, FailedFetch
+from ..models import CrawlResult
+from ..sitemap_discovery import discover_saas_urls
+from .saas import _fetch_saas_pages
 
 logger = logging.getLogger(__name__)
 
@@ -36,58 +37,24 @@ class CloudNGFWAzureCrawler(BaseCrawler):
         """
         logger.info("Crawling Cloud NGFW for Azure...")
         self._set_task_total(1, f"{self.product_name}: fetching")
-        failed_fetches: list[FailedFetch] = []
 
-        known_issues_url = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
-        addressed_issues_url = (
-            "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
+        # Fallbacks used only when no sitemap is injected. The current
+        # docs paths under /cloud-ngfw-azure/* (the old /cloud-ngfw/azure/*
+        # paths return 301s; the addressed-issues redirect goes to a
+        # "What's New" page that has no bug table).
+        default_known = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
+        default_addressed = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
+        known_urls, addressed_urls = discover_saas_urls(
+            self._sitemap, self.product_id, manifest=self._manifest
         )
+        if not known_urls:
+            known_urls = [default_known]
+        if not addressed_urls:
+            addressed_urls = [default_addressed]
 
-        # Fetch both pages in parallel
-        fetch_tasks = [
-            self._fetch_page_with_semaphore(known_issues_url),
-            self._fetch_page_with_semaphore(addressed_issues_url),
-        ]
-        results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
-
-        known_issues = []
-        addressed_issues = []
-
-        # Parse known issues
-        if not isinstance(results[0], Exception):
-            for table in results[0].find_all("table"):
-                if table.find_parent("table"):
-                    continue
-                known_issues.extend(self._parse_issues_table(table))
-            logger.info(f"  Found {len(known_issues)} known issues")
-        else:
-            logger.error(f"Error fetching known issues: {results[0]}")
-            failed_fetches.append(
-                FailedFetch(
-                    url=known_issues_url,
-                    error=str(results[0]),
-                    product=self.product_id,
-                    issue_type="known",
-                )
-            )
-
-        # Parse addressed issues
-        if not isinstance(results[1], Exception):
-            for table in results[1].find_all("table"):
-                if table.find_parent("table"):
-                    continue
-                addressed_issues.extend(self._parse_issues_table(table))
-            logger.info(f"  Found {len(addressed_issues)} addressed issues")
-        else:
-            logger.error(f"Error fetching addressed issues: {results[1]}")
-            failed_fetches.append(
-                FailedFetch(
-                    url=addressed_issues_url,
-                    error=str(results[1]),
-                    product=self.product_id,
-                    issue_type="addressed",
-                )
-            )
+        known_issues, addressed_issues, failed_fetches = await _fetch_saas_pages(
+            self, known_urls, addressed_urls
+        )
 
         # Retry failed fetches
         if failed_fetches:
@@ -146,29 +113,15 @@ class CloudNGFWAWSCrawler(BaseCrawler):
         """
         logger.info("Crawling Cloud NGFW for AWS...")
         self._set_task_total(1, f"{self.product_name}: fetching")
-        failed_fetches: list[FailedFetch] = []
 
-        known_issues_url = "/cloud-ngfw-aws/release-notes/cloud-ngfw-for-aws-known-issues"
+        default_known = "/cloud-ngfw-aws/release-notes/cloud-ngfw-for-aws-known-issues"
+        known_urls, _ = discover_saas_urls(self._sitemap, self.product_id, manifest=self._manifest)
+        if not known_urls:
+            known_urls = [default_known]
 
-        known_issues = []
-
-        try:
-            soup = await self._fetch_page_with_semaphore(known_issues_url)
-            for table in soup.find_all("table"):
-                if table.find_parent("table"):
-                    continue
-                known_issues.extend(self._parse_issues_table(table))
-            logger.info(f"  Found {len(known_issues)} known issues")
-        except Exception as e:
-            logger.error(f"Error fetching known issues: {e}")
-            failed_fetches.append(
-                FailedFetch(
-                    url=known_issues_url,
-                    error=str(e),
-                    product=self.product_id,
-                    issue_type="known",
-                )
-            )
+        known_issues, _addressed_unused, failed_fetches = await _fetch_saas_pages(
+            self, known_urls, []
+        )
 
         # Retry failed fetches
         if failed_fetches:

@@ -7,6 +7,10 @@ from bugdb.models import Product
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, VersionInfo
+from ..sitemap_discovery import (
+    discover_major_versions,
+    discover_version_pages,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +20,17 @@ class PrismaSDWANCrawler(BaseCrawler):
 
     product_id = "prisma-sdwan"
     product_name = "Prisma SD-WAN"
+
+    def discover_versions_from_sitemap(self) -> list[str]:
+        return discover_major_versions(self._sitemap, self.product_id)
+
+    def discover_version_pages_from_sitemap(self, major_version: str) -> list[VersionInfo]:
+        return discover_version_pages(
+            self._sitemap,
+            self.product_id,
+            major_version=major_version,
+            manifest=self._manifest,
+        )
 
     async def discover_versions(self) -> list[str]:
         """Discover available Prisma SD-WAN major versions.
@@ -155,16 +170,36 @@ class PrismaSDWANCrawler(BaseCrawler):
         """
         skip_versions = skip_versions or set()
         all_failed_fetches: list[FailedFetch] = []
+        use_sitemap = self._sitemap is not None
 
         # Cache-aware discovery — see BaseCrawler._resolve_version_infos.
         if major_versions is None:
-            logger.info("Discovering available Prisma SD-WAN versions...")
-        vi_by_major = await self._resolve_version_infos(
-            discover_majors_fn=self.discover_versions,
-            discover_pages_fn=self.discover_version_pages,
-            explicit_majors=major_versions,
-            skip_versions=skip_versions,
-        )
+            if use_sitemap:
+                logger.info("Discovering available Prisma SD-WAN versions from sitemap...")
+            else:
+                logger.info("Discovering available Prisma SD-WAN versions...")
+
+        if use_sitemap:
+
+            async def _discover_majors() -> list[str]:
+                return self.discover_versions_from_sitemap()
+
+            async def _discover_pages(major: str) -> list:
+                return self.discover_version_pages_from_sitemap(major)
+
+            vi_by_major = await self._resolve_version_infos(
+                discover_majors_fn=_discover_majors,
+                discover_pages_fn=_discover_pages,
+                explicit_majors=major_versions,
+                skip_versions=skip_versions,
+            )
+        else:
+            vi_by_major = await self._resolve_version_infos(
+                discover_majors_fn=self.discover_versions,
+                discover_pages_fn=self.discover_version_pages,
+                explicit_majors=major_versions,
+                skip_versions=skip_versions,
+            )
         if major_versions is None:
             logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
 

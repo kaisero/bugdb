@@ -1,0 +1,29 @@
+[
+  {
+    "title": "Cortex XDR Agent 9.1 Release Information",
+    "id": "t-9-1",
+    "contentApiEndpoint": "/api/khub/maps/abc123/topics/t-9-1/content",
+    "readerUrl": "/r/Cortex-XDR/Cortex-XDR-Agent-Release-Notes/Cortex-XDR-Agent-9.1-Release-Information",
+    "breadcrumb": ["Cortex XDR Agent 9.1 Release Information"],
+    "metadata": [
+      {"key": "Version", "label": "Version", "values": ["9.1"]},
+      {"key": "publicationDate", "label": "Last date published", "values": ["2026-05-12"]}
+    ]
+  },
+  {
+    "title": "Addressed issues in Cortex XDR agent 9.1.1",
+    "id": "t-9-1-1-addr",
+    "contentApiEndpoint": "/api/khub/maps/abc123/topics/t-9-1-1-addr/content",
+    "readerUrl": "/r/Cortex-XDR/Cortex-XDR-Agent-Release-Notes/Addressed-issues-in-Cortex-XDR-agent-9.1.1",
+    "breadcrumb": ["..."],
+    "metadata": [{"key": "Version", "label": "Version", "values": ["9.1.1"]}]
+  },
+  {
+    "title": "Cortex XDR agent known limitations",
+    "id": "t-9-1-known",
+    "contentApiEndpoint": "/api/khub/maps/abc123/topics/t-9-1-known/content",
+    "readerUrl": "/r/Cortex-XDR/Cortex-XDR-Agent-Release-Notes/Cortex-XDR-agent-known-limitations",
+    "breadcrumb": ["..."],
+    "metadata": [{"key": "Version", "label": "Version", "values": ["9.1"]}]
+  }
+]

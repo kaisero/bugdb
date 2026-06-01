@@ -281,7 +281,7 @@ def fetch(
         bool,
         typer.Option(
             "--headless/--no-headless",
-            help="Run browser in headless mode.",
+            help="Run browser in headless mode (legacy --use-browser path only).",
         ),
     ] = True,
     debug: Annotated[
@@ -344,9 +344,33 @@ def fetch(
             ),
         ),
     ] = None,
+    manifest: Annotated[
+        Path | None,
+        typer.Option(
+            "--manifest",
+            help="Path to the fetch manifest JSON (default: <output>.manifest.json).",
+        ),
+    ] = None,
+    no_manifest: Annotated[
+        bool,
+        typer.Option(
+            "--no-manifest",
+            help="Disable manifest read/write (forces a full fetch for every URL).",
+        ),
+    ] = False,
+    use_browser: Annotated[
+        bool,
+        typer.Option(
+            "--use-browser",
+            help="Use the legacy Playwright path instead of httpx + FluidTopics.",
+        ),
+    ] = False,
 ) -> None:
     """Fetch bug data from Palo Alto Networks release notes website."""
+    import asyncio
     from datetime import UTC, datetime
+
+    import httpx
 
     from bugdb.crawlers import (
         PRODUCT_WRAPPERS,
@@ -355,11 +379,15 @@ def fetch(
         merge_databases,
     )
     from bugdb.discovery_cache import DiscoveryCache
+    from bugdb.fetch_manifest import FetchManifest
     from bugdb.models import (
         BugDatabase,
         FetchReport,
         Metadata,
     )
+    from bugdb.sitemap import SitemapIndex
+    from bugdb.transport.fluidtopics_transport import FluidTopicsTransport
+    from bugdb.transport.httpx_transport import HttpxDocsTransport
 
     # Resolve the --log-file flag. ``None`` disables file logging.
     # The literal sentinel ``"auto"`` means "next to the bug
@@ -418,6 +446,9 @@ def fetch(
     # Supported products are derived from PRODUCT_WRAPPERS, which is the
     # single source of truth in bugdb.crawlers.registry. Drift between this
     # CLI and the registry is prevented by tests/unit/test_registry.py.
+    # Per-product dispatch goes through registry.dispatch_async so that
+    # every crawler runs inside a SINGLE event loop and the shared httpx
+    # Transport stays bound to that loop.
     supported_products = PRODUCT_WRAPPERS
 
     # Handle retry mode
@@ -488,7 +519,7 @@ def fetch(
         if product.lower() not in supported_products:
             console.print(
                 f"[red]Error:[/red] Unsupported product '{product}'. "
-                f"Supported: {', '.join(supported_products.keys())}"
+                f"Supported: {', '.join(supported_products)}"
             )
             raise typer.Exit(1)
         products_to_fetch = [product.lower()]
@@ -504,17 +535,38 @@ def fetch(
             version_display = ", ".join(v.replace("-", ".") for v in major_versions)
 
     console.print(f"[bold]Fetching {product_display} ({version_display})...[/bold]")
-    console.print("[dim]This may take a while as we need to load multiple pages.[/dim]\n")
 
     all_failed_fetches: list[FailedFetch] = []
 
-    # Lookup table for human-readable display names — used purely for
-    # the progress bar's initial "discovering versions" label before
-    # the crawler itself swaps in its own product_name via
+    # ----- Build shared sitemap + manifest ---------------------------------
+    manifest_path = manifest or output.with_suffix(".manifest.json")
+    manifest_obj = FetchManifest() if no_manifest else FetchManifest.load(manifest_path)
+
+    sitemap_index: SitemapIndex | None = None
+    if not use_browser:
+        sitemap_url = "https://docs.paloaltonetworks.com/sitemap.xml"
+        console.print(f"[dim]Loading sitemap from {sitemap_url}...[/dim]")
+        try:
+            with httpx.Client(http2=True, follow_redirects=True, timeout=30.0) as c:
+                resp = c.get(sitemap_url)
+                resp.raise_for_status()
+                sitemap_index = SitemapIndex.from_xml(resp.text)
+            n_issue = sum(1 for _ in sitemap_index.issue_urls())
+            console.print(f"[dim]Sitemap loaded ({n_issue} issue URLs).[/dim]")
+        except Exception as e:
+            console.print(
+                f"[yellow]Warning:[/yellow] failed to load sitemap "
+                f"({e}); falling back to legacy discovery."
+            )
+            sitemap_index = None
+
+    # Lookup table for human-readable display names — used for the
+    # progress bar's initial "discovering versions" label before the
+    # crawler itself swaps in its own product_name via
     # _set_task_total(). Falls back to the product id if the lookup
     # misses (e.g. for future products added to the registry but not
     # to the class hierarchy).
-    from bugdb.crawlers.registry import PRODUCT_CRAWLERS
+    from bugdb.crawlers.registry import PRODUCT_CRAWLERS, dispatch_async
 
     def _display_name(pid: str) -> str:
         cls = PRODUCT_CRAWLERS.get(pid)
@@ -541,50 +593,72 @@ def fetch(
                 total=len(products_to_fetch),
             )
 
-            all_products = []
+            all_products: list = []
 
-            # Per-product crawl loop: a failure in one product should be
-            # surfaced with the product name, not masked as a generic
-            # "Error" on exit. Narrow the except so we know WHICH product
-            # blew up and can report it specifically.
-            for prod_name in products_to_fetch:
-                crawler_func = supported_products[prod_name]
-                display_name = _display_name(prod_name)
+            async def _run_all() -> None:
+                """Run every product crawl in ONE event loop.
 
-                # Get skip_versions for this product (if in incremental mode)
-                skip_versions = existing_versions.get(prod_name, set())
-                if skip_versions:
-                    sub_description = (
-                        f"{display_name}: discovering "
-                        f"(skipping {len(skip_versions)} existing versions)"
-                    )
-                else:
-                    sub_description = f"{display_name}: discovering versions"
-                sub_task = reporter.add_task(
-                    sub_description,
-                    total=None,
-                    parent=outer_task,
-                )
-
+                Single asyncio.run keeps the shared httpx Transport bound
+                to one loop across products — recreating it per product
+                would tear down the connection pool between fetches and
+                lose half the value of httpx+http2 reuse.
+                """
+                # Shared transports — one per host. Built INSIDE the
+                # event loop that will use them so their httpx.AsyncClient
+                # and asyncio primitives belong to that loop.
+                docs_transport = None if use_browser else HttpxDocsTransport(concurrency=15)
+                fluidtopics = None if use_browser else FluidTopicsTransport(concurrency=10)
                 try:
-                    result = crawler_func(
-                        major_versions,
-                        headless=headless,
-                        debug=debug,
-                        skip_versions=skip_versions,
-                        discovery_cache=discovery_cache,
-                        reporter=reporter,
-                        task=sub_task,
-                    )
-                except Exception as e:
-                    reporter.complete(sub_task)
-                    _fetch_logger.error("Error fetching %s: %s", prod_name, e)
-                    console.print(f"[red]Error fetching {prod_name}:[/red] {e}")
-                    raise typer.Exit(1) from e
-                reporter.complete(sub_task)
-                reporter.update(outer_task, advance=1)
-                all_products.extend(result.database.products)
-                all_failed_fetches.extend(result.failed_fetches)
+                    for prod_name in products_to_fetch:
+                        display_name = _display_name(prod_name)
+                        skip_versions = existing_versions.get(prod_name, set())
+                        if skip_versions:
+                            sub_description = (
+                                f"{display_name}: discovering "
+                                f"(skipping {len(skip_versions)} existing versions)"
+                            )
+                        else:
+                            sub_description = f"{display_name}: discovering versions"
+                        sub_task = reporter.add_task(
+                            sub_description,
+                            total=None,
+                            parent=outer_task,
+                        )
+
+                        kwargs: dict = dict(
+                            headless=headless,
+                            debug=debug,
+                            skip_versions=skip_versions,
+                            discovery_cache=discovery_cache,
+                            reporter=reporter,
+                            task=sub_task,
+                        )
+                        if not use_browser:
+                            if prod_name == "cortex-xdr":
+                                kwargs["fluidtopics"] = fluidtopics
+                            else:
+                                kwargs["transport"] = docs_transport
+                            kwargs["sitemap"] = sitemap_index
+                            kwargs["manifest"] = manifest_obj
+
+                        try:
+                            result = await dispatch_async(prod_name, major_versions, **kwargs)
+                        except Exception as e:
+                            reporter.complete(sub_task)
+                            _fetch_logger.error("Error fetching %s: %s", prod_name, e)
+                            console.print(f"[red]Error fetching {prod_name}:[/red] {e}")
+                            raise typer.Exit(1) from e
+                        reporter.complete(sub_task)
+                        reporter.update(outer_task, advance=1)
+                        all_products.extend(result.database.products)
+                        all_failed_fetches.extend(result.failed_fetches)
+                finally:
+                    if docs_transport is not None:
+                        await docs_transport.aclose()
+                    if fluidtopics is not None:
+                        await fluidtopics.aclose()
+
+            asyncio.run(_run_all())
 
             # Flush the discovery cache after all crawlers have populated it,
             # so the next run can start warm. A cache-write failure must
@@ -597,6 +671,12 @@ def fetch(
                     f"[yellow]Warning:[/yellow] could not persist discovery cache "
                     f"({cache_err}); next run will start cold."
                 )
+
+            # Persist sitemap lastmod into the manifest for URLs we still keep.
+            if not no_manifest and sitemap_index is not None:
+                for entry in sitemap_index.issue_urls():
+                    manifest_obj.record(entry.url, entry.lastmod)
+                manifest_obj.save(manifest_path)
 
             # Create combined database
             database = BugDatabase(

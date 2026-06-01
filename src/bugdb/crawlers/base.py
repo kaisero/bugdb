@@ -12,7 +12,10 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 from playwright.async_api import Browser, Page, async_playwright
 
+from bugdb.fetch_manifest import FetchManifest
 from bugdb.models import Issue, ProductVersion
+from bugdb.sitemap import SitemapIndex
+from bugdb.transport.base import Transport
 
 from .models import FailedFetch, VersionCrawlResult, VersionInfo
 
@@ -48,6 +51,10 @@ class BaseCrawler:
 
     def __init__(
         self,
+        *,
+        transport: Transport | None = None,
+        sitemap: SitemapIndex | None = None,
+        manifest: FetchManifest | None = None,
         headless: bool = True,
         debug: bool = False,
         max_concurrency: int = 3,
@@ -59,8 +66,21 @@ class BaseCrawler:
     ):
         """Initialize the crawler.
 
+        When `transport` is provided, page fetches use it and no Playwright
+        browser is launched. When `transport` is None the legacy Playwright
+        path is used (kept so the existing test fixtures and the
+        `--use-browser` CLI flag continue to work).
+
         Args:
-            headless: Whether to run browser in headless mode.
+            transport: Optional Transport implementation (httpx, etc.). If
+                None, the legacy Playwright path is used.
+            sitemap: Optional pre-loaded SitemapIndex used by sitemap-driven
+                discovery paths in product crawlers. Ignored by the legacy
+                path.
+            manifest: Optional FetchManifest used to skip URLs whose
+                sitemap ``lastmod`` is older than the last successful fetch.
+                Ignored by the legacy path.
+            headless: Whether to run browser in headless mode (legacy path).
             debug: Whether to enable debug logging. The actual handler
                 attachment (stderr stream handler) is owned by the CLI's
                 ``configure_fetch_logging`` context manager; this flag
@@ -87,6 +107,9 @@ class BaseCrawler:
                 is still running; ``_set_task_total`` later fills in
                 the total once discovery resolves.
         """
+        self._transport = transport
+        self._sitemap = sitemap
+        self._manifest = manifest
         self.headless = headless
         self.debug = debug
         self.max_concurrency = max_concurrency
@@ -103,21 +126,59 @@ class BaseCrawler:
         self._global_backoff_until: float = 0.0
         self._backoff_lock: asyncio.Lock | None = None
 
+    def _needs_browser(self) -> bool:
+        """Return True iff this crawler will actually use Playwright.
+
+        Default: only when no httpx Transport was injected. Subclasses
+        that have an alternative API client (e.g. CortexXDRCrawler with
+        a FluidTopics khub client) override this to also return False
+        when their alternative client is present, so Playwright isn't
+        launched on machines that don't have its browser binaries.
+        """
+        return self._transport is None
+
     async def __aenter__(self):
-        logger.debug("Starting Playwright browser (headless=%s)", self.headless)
-        self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=self.headless)
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
         self._backoff_lock = asyncio.Lock()
-        logger.debug("Browser started, max_concurrency=%d", self.max_concurrency)
+        if self._needs_browser():
+            logger.debug("Starting Playwright browser (headless=%s)", self.headless)
+            self._playwright = await async_playwright().start()
+            self._browser = await self._playwright.chromium.launch(headless=self.headless)
+            logger.debug("Browser started, max_concurrency=%d", self.max_concurrency)
+        else:
+            logger.debug(
+                "Transport %s active, max_concurrency=%d",
+                type(self._transport).__name__ if self._transport else "<alt-client>",
+                self.max_concurrency,
+            )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        # An injected transport is owned by the caller (typically the CLI),
+        # which reuses one transport across many crawler runs. Closing it
+        # here would break every subsequent product fetched in the same run.
+        if not self._needs_browser():
+            if self._transport is not None:
+                logger.debug(
+                    "Transport %s lifecycle owned by caller; not closing",
+                    type(self._transport).__name__,
+                )
+            return
         logger.debug("Closing browser and Playwright")
         if self._browser:
             await self._browser.close()
         if self._playwright:
             await self._playwright.stop()
+
+    def _log(self, message: str) -> None:
+        """Forward a progress message to the module logger.
+
+        Branch-era product crawlers call ``self._log(...)`` for human-readable
+        progress; main's fetch_logging pipeline routes ``logger.info`` to
+        either stderr or a file. Keeping this shim avoids touching every
+        product crawler.
+        """
+        logger.info(message)
 
     def _set_task_total(self, total: int, description: str | None = None) -> None:
         """Tell the progress reporter how many versions this crawl is
@@ -199,8 +260,16 @@ class BaseCrawler:
                 result[major] = [vi for vi in version_infos if vi.version not in skip_versions]
             return result
 
-        # Path 2: fresh cache hit — skip discovery entirely.
-        if self._discovery_cache is not None and self._discovery_cache.is_fresh(self.product_id):
+        # Path 2: fresh cache hit — skip discovery entirely. Bypass the
+        # cache when a sitemap is loaded: the sitemap is cheap to parse,
+        # and the manifest's per-URL ``lastmod`` filter must be re-applied
+        # on every run. Reusing cached VersionInfos here would skip the
+        # manifest gate and refetch URLs that haven't moved upstream.
+        if (
+            self._sitemap is None
+            and self._discovery_cache is not None
+            and self._discovery_cache.is_fresh(self.product_id)
+        ):
             cached = self._discovery_cache.get_version_infos(self.product_id)
             if cached is not None:
                 logger.debug(
@@ -302,7 +371,51 @@ class BaseCrawler:
         return BeautifulSoup(content, "lxml")
 
     async def _fetch_page_with_semaphore(self, url: str, wait_time: int = 3000) -> BeautifulSoup:
-        """Fetch a page with concurrency control and retry logic.
+        """Fetch a page using the injected transport, or fall back to Playwright."""
+        if self._transport is not None:
+            return await self._fetch_via_transport(url)
+        return await self._fetch_via_browser(url, wait_time)
+
+    async def _fetch_via_transport(self, url: str) -> BeautifulSoup:
+        """Fetch via the injected Transport with retry + global backoff."""
+        last_error: Exception | None = None
+        full_url = url if url.startswith("http") else urljoin(BASE_URL, url)
+        for attempt in range(self.max_retries):
+            await self._wait_for_global_backoff()
+            async with self._semaphore:
+                try:
+                    page = await self._transport.fetch(full_url)
+                except Exception as e:
+                    last_error = e
+                    if self._is_connection_refused_error(e):
+                        await self._trigger_global_backoff()
+                    logger.warning(
+                        "transport fetch failed for %s (attempt %d/%d): %s",
+                        url,
+                        attempt + 1,
+                        self.max_retries,
+                        e,
+                    )
+                else:
+                    if page.status_code == 200:
+                        return BeautifulSoup(page.html, "lxml")
+                    if page.status_code in (404, 410):
+                        raise RuntimeError(f"HTTP {page.status_code} for {url}")
+                    last_error = RuntimeError(f"HTTP {page.status_code} for {url}")
+                    logger.warning(
+                        "transport returned %s for %s (attempt %d/%d)",
+                        page.status_code,
+                        url,
+                        attempt + 1,
+                        self.max_retries,
+                    )
+            if attempt < self.max_retries - 1:
+                await asyncio.sleep(self.retry_delay * (2**attempt))
+        assert last_error is not None
+        raise last_error
+
+    async def _fetch_via_browser(self, url: str, wait_time: int = 3000) -> BeautifulSoup:
+        """Fetch a page via Playwright with retry logic and backoff.
 
         Creates a new page, fetches the URL, and closes the page.
         Uses semaphore to limit concurrent requests.
@@ -548,6 +661,12 @@ class BaseCrawler:
         Returns:
             List of Issue objects.
         """
+        # AEM emits <table>...<tbody><div style="display:inline"><tr>...; browsers
+        # foster-parent the div out, lxml does not. Unwrap defensively here so the
+        # rest of the parser can rely on direct tbody>tr nesting.
+        for d in table.select('div[style*="display: inline"], div[style*="display:inline"]'):
+            d.unwrap()
+
         issues = []
 
         # Check if this is an issues table by looking at headers
@@ -675,6 +794,11 @@ class BaseCrawler:
         Returns:
             List of Issue objects.
         """
+        # AEM inline-div quirk - unwrap so direct nesting works (see
+        # _parse_issues_table for rationale).
+        for d in table.select('div[style*="display: inline"], div[style*="display:inline"]'):
+            d.unwrap()
+
         issues = []
 
         # Get headers

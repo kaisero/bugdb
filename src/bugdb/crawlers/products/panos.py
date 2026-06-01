@@ -7,6 +7,10 @@ from bugdb.models import Product
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, VersionInfo
+from ..sitemap_discovery import (
+    discover_major_versions,
+    discover_version_pages,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +35,22 @@ class PANOSCrawler(BaseCrawler):
         # page. Populated by discover_versions() and reused by
         # discover_version_pages() so the probe only happens once.
         self._base_url_for_version: dict[str, str] = {}
+
+    def discover_versions_from_sitemap(self) -> list[str]:
+        """Return major versions present in the sitemap, newest first."""
+        return discover_major_versions(self._sitemap, self.product_id)
+
+    def discover_version_pages_from_sitemap(self, major_version: str) -> list[VersionInfo]:
+        """Build VersionInfo entries from sitemap URLs for one major version.
+
+        Skips URLs whose sitemap lastmod matches the manifest entry.
+        """
+        return discover_version_pages(
+            self._sitemap,
+            self.product_id,
+            major_version=major_version,
+            manifest=self._manifest,
+        )
 
     async def _probe_landing_url(self, url: str) -> bool:
         """Return True if the given URL renders a real PAN-OS page (not 404)."""
@@ -214,16 +234,37 @@ class PANOSCrawler(BaseCrawler):
         skip_versions = skip_versions or set()
         all_failed_fetches: list[FailedFetch] = []
 
-        # Resolve the (major -> [VersionInfo]) map via the cache-aware
-        # helper. On a warm incremental run this is a zero-network call.
+        # Prefer sitemap-driven discovery when available; falls back to the
+        # JS-rendered probe (current legacy behavior).
+        use_sitemap = self._sitemap is not None
+
         if major_versions is None:
-            logger.info("Discovering available PAN-OS versions...")
-        vi_by_major = await self._resolve_version_infos(
-            discover_majors_fn=self.discover_versions,
-            discover_pages_fn=self.discover_version_pages,
-            explicit_majors=major_versions,
-            skip_versions=skip_versions,
-        )
+            if use_sitemap:
+                logger.info("Discovering available PAN-OS versions from sitemap...")
+            else:
+                logger.info("Discovering available PAN-OS versions...")
+
+        if use_sitemap:
+
+            async def _discover_majors() -> list[str]:
+                return self.discover_versions_from_sitemap()
+
+            async def _discover_pages(major: str) -> list:
+                return self.discover_version_pages_from_sitemap(major)
+
+            vi_by_major = await self._resolve_version_infos(
+                discover_majors_fn=_discover_majors,
+                discover_pages_fn=_discover_pages,
+                explicit_majors=major_versions,
+                skip_versions=skip_versions,
+            )
+        else:
+            vi_by_major = await self._resolve_version_infos(
+                discover_majors_fn=self.discover_versions,
+                discover_pages_fn=self.discover_version_pages,
+                explicit_majors=major_versions,
+                skip_versions=skip_versions,
+            )
         if major_versions is None:
             logger.info("Found versions: %s", ", ".join(vi_by_major.keys()))
 
