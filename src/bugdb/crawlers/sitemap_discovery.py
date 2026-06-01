@@ -25,6 +25,12 @@ _VERSION_TRIPLE_RE = re.compile(r"(\d+)-(\d+)-(\d+)(?:-([a-zA-Z0-9]+))?")
 # digits on both sides only — a leading or trailing dash is fine (the
 # slug shape is "-NNN/" or "-NNN-").
 _VERSION_RUN_TOGETHER_RE = re.compile(r"(?<!\d)(\d)(\d)(\d)(?!\d)")
+# 2-dashed version as a path segment (e.g. "/prisma-access/.../4-0/...").
+# Used as a last-resort fallback for products whose URLs encode only
+# major-minor (Prisma Access, Prisma Access Agent). Anchored on `/`
+# boundaries so it doesn't match arbitrary `\d-\d` substrings inside
+# slug names like `aws-plugin-534`.
+_VERSION_TWO_DASHED_RE = re.compile(r"/(\d+)-(\d+)/")
 # Page-type tokens we must NOT treat as a version suffix.
 _NON_VERSION_SUFFIXES = {"known", "addressed", "issues", "and"}
 
@@ -58,6 +64,13 @@ def extract_dotted_version(url: str) -> Optional[str]:
     if matches:
         m = matches[-1]
         return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+    # Last resort: 2-dashed major-minor as a path segment. Used by Prisma
+    # Access and Prisma Access Agent (e.g. ".../release-notes/4-0/...").
+    # Returned as X.Y.0 since there's no patch component on the wire.
+    matches = list(_VERSION_TWO_DASHED_RE.finditer(url))
+    if matches:
+        m = matches[-1]
+        return f"{m.group(1)}.{m.group(2)}.0"
     return None
 
 
