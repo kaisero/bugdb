@@ -285,7 +285,7 @@ def fetch(
         bool,
         typer.Option(
             "--headless/--no-headless",
-            help="Run browser in headless mode.",
+            help="Run browser in headless mode (legacy --use-browser path only).",
         ),
     ] = True,
     debug: Annotated[
@@ -296,9 +296,49 @@ def fetch(
             help="Enable debug logging for detailed crawler output.",
         ),
     ] = False,
+    no_progress: Annotated[
+        bool,
+        typer.Option(
+            "--no-progress",
+            help="Disable Rich progress spinner (recommended for CI logs).",
+        ),
+    ] = False,
+    log: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--log",
+            "-l",
+            help="Write crawler logs to this file (in addition to stderr).",
+        ),
+    ] = None,
+    manifest: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--manifest",
+            help="Path to the fetch manifest JSON (default: <output>.manifest.json).",
+        ),
+    ] = None,
+    no_manifest: Annotated[
+        bool,
+        typer.Option(
+            "--no-manifest",
+            help="Disable manifest read/write (forces a full fetch for every URL).",
+        ),
+    ] = False,
+    use_browser: Annotated[
+        bool,
+        typer.Option(
+            "--use-browser",
+            help="Use the legacy Playwright path instead of httpx + FluidTopics.",
+        ),
+    ] = False,
 ) -> None:
     """Fetch bug data from Palo Alto Networks release notes website."""
+    import asyncio
+    import logging
     from datetime import datetime, timezone
+
+    import httpx
 
     from bugdb.crawler import (
         FailedFetch,
@@ -331,7 +371,23 @@ def fetch(
         get_existing_versions,
         merge_databases,
     )
+    from bugdb.fetch_manifest import FetchManifest
     from bugdb.models import BugDatabase, Metadata
+    from bugdb.sitemap import SitemapIndex
+    from bugdb.transport.fluidtopics_transport import FluidTopicsTransport
+    from bugdb.transport.httpx_transport import HttpxDocsTransport
+
+    # ----- Logging setup ----------------------------------------------------
+    log_handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if log is not None:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log_handlers.append(logging.FileHandler(log, encoding="utf-8"))
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        handlers=log_handlers,
+        force=True,
+    )
 
     # Handle incremental mode
     existing_database: Optional[BugDatabase] = None
@@ -416,74 +472,132 @@ def fetch(
         version_display = ", ".join(v.replace("-", ".") for v in major_versions)
 
     console.print(f"[bold]Fetching {product_display} ({version_display})...[/bold]")
-    console.print("[dim]This may take a while as we need to load multiple pages.[/dim]\n")
+    if not no_progress:
+        console.print(
+            "[dim]This may take a while as we need to load multiple pages.[/dim]\n"
+        )
 
     all_failed_fetches: list[FailedFetch] = []
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Launching browser and crawling pages...", total=None)
+    # ----- Build shared transports/sitemap/manifest -------------------------
+    manifest_path = manifest or output.with_suffix(".manifest.json")
+    if no_manifest:
+        manifest_obj = FetchManifest()
+    else:
+        manifest_obj = FetchManifest.load(manifest_path)
 
+    sitemap_index: Optional[SitemapIndex] = None
+    if not use_browser:
+        sitemap_url = "https://docs.paloaltonetworks.com/sitemap.xml"
+        console.print(f"[dim]Loading sitemap from {sitemap_url}...[/dim]")
         try:
-            all_products = []
+            with httpx.Client(http2=True, follow_redirects=True, timeout=30.0) as c:
+                resp = c.get(sitemap_url)
+                resp.raise_for_status()
+                sitemap_index = SitemapIndex.from_xml(resp.text)
+            n_issue = sum(1 for _ in sitemap_index.issue_urls())
+            console.print(f"[dim]Sitemap loaded ({n_issue} issue URLs).[/dim]")
+        except Exception as e:
+            console.print(
+                f"[yellow]Warning:[/yellow] failed to load sitemap "
+                f"({e}); falling back to legacy discovery."
+            )
+            sitemap_index = None
 
+    async def _run_all() -> tuple[list, list[FailedFetch]]:
+        all_products = []
+        failed_fetches: list[FailedFetch] = []
+
+        # Shared transports — one per host.
+        docs_transport = None if use_browser else HttpxDocsTransport(concurrency=15)
+        fluidtopics = None if use_browser else FluidTopicsTransport(concurrency=10)
+        try:
             for prod_name in products_to_fetch:
-                progress.update(task, description=f"Fetching {prod_name}...")
                 crawler_func = supported_products[prod_name]
-
-                # Get skip_versions for this product (if in incremental mode)
                 skip_versions = existing_versions.get(prod_name, set())
-                if skip_versions:
-                    progress.update(
-                        task,
-                        description=f"Fetching {prod_name} (skipping {len(skip_versions)} existing versions)..."
+                console.print(
+                    f"[dim]Fetching {prod_name}"
+                    + (
+                        f" (skipping {len(skip_versions)} existing versions)"
+                        if skip_versions
+                        else ""
                     )
-
-                result = crawler_func(
-                    major_versions,
+                    + "...[/dim]"
+                )
+                kwargs: dict = dict(
                     headless=headless,
                     debug=debug,
                     skip_versions=skip_versions,
                 )
-                all_products.extend(result.database.products)
-                all_failed_fetches.extend(result.failed_fetches)
+                if not use_browser:
+                    if prod_name == "cortex-xdr":
+                        kwargs["fluidtopics"] = fluidtopics
+                    else:
+                        kwargs["transport"] = docs_transport
+                    kwargs["sitemap"] = sitemap_index
+                    kwargs["manifest"] = manifest_obj
 
-            # Create combined database
-            database = BugDatabase(
-                metadata=Metadata(
-                    generated_at=datetime.now(timezone.utc),
-                    version="1.0.0",
-                    source="Palo Alto Networks Release Notes",
-                ),
-                products=all_products,
+                # Each sync wrapper currently calls asyncio.run() internally.
+                # Run them in a worker thread so we don't nest event loops.
+                result = await asyncio.to_thread(
+                    crawler_func, major_versions, **kwargs
+                )
+                all_products.extend(result.database.products)
+                failed_fetches.extend(result.failed_fetches)
+        finally:
+            if docs_transport is not None:
+                await docs_transport.aclose()
+            if fluidtopics is not None:
+                await fluidtopics.aclose()
+        return all_products, failed_fetches
+
+    def _do_fetch_block() -> "BugDatabase":
+        all_products, failed_fetches = asyncio.run(_run_all())
+        all_failed_fetches.extend(failed_fetches)
+
+        database = BugDatabase(
+            metadata=Metadata(
+                generated_at=datetime.now(timezone.utc),
+                version="1.0.0",
+                source="Palo Alto Networks Release Notes",
+            ),
+            products=all_products,
+        )
+
+        if existing_database is not None:
+            database = merge_databases(existing_database, database)
+
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(
+                database.model_dump(mode="json"),
+                f,
+                indent=2,
+                default=str,
             )
 
-            # Merge with existing database if in incremental mode
-            if existing_database is not None:
-                progress.update(task, description="Merging with existing data...")
-                database = merge_databases(existing_database, database)
+        # Persist sitemap lastmod into the manifest for URLs we still keep.
+        if not no_manifest and sitemap_index is not None:
+            for entry in sitemap_index.issue_urls():
+                manifest_obj.record(entry.url, entry.lastmod)
+            manifest_obj.save(manifest_path)
 
-            progress.update(task, description="Writing JSON file...")
+        return database
 
-            # Create output directory if needed
-            output.parent.mkdir(parents=True, exist_ok=True)
-
-            # Write JSON file
-            with open(output, "w", encoding="utf-8") as f:
-                json.dump(
-                    database.model_dump(mode="json"),
-                    f,
-                    indent=2,
-                    default=str,
-                )
-
-        except Exception as e:
-            progress.stop()
-            console.print(f"[red]Error:[/red] {e}")
-            raise typer.Exit(1)
+    try:
+        if no_progress:
+            database = _do_fetch_block()
+        else:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                progress.add_task("Crawling release-notes pages...", total=None)
+                database = _do_fetch_block()
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(1)
 
     # Count issues
     total_versions = sum(len(p.versions) for p in database.products)
