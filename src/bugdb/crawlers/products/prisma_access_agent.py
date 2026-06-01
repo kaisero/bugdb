@@ -5,13 +5,16 @@ import logging
 import re
 from typing import Optional
 
-from bugdb.models import Product
+from bugdb.models import Issue, Product, ProductVersion
 
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, VersionInfo
 from ..sitemap_discovery import (
     discover_major_versions,
     discover_version_pages,
+    extract_dotted_version,
+    filter_unchanged,
+    group_into_version_infos,
 )
 
 logger = logging.getLogger(__name__)
@@ -24,17 +27,91 @@ class PrismaAccessAgentCrawler(BaseCrawler):
     product_name = "Prisma Access Agent"
 
     def discover_versions_from_sitemap(self) -> list[str]:
-        return discover_major_versions(self._sitemap, self.product_id)
+        """Derive 'major-minor' from each URL's extracted version.
+
+        Prisma Access Agent encodes the version inside the slug
+        (e.g. 'prisma-access-agent-26-2-1-known-issues') rather than as
+        a `/X-Y/` path segment, so the generic discover_major_versions
+        helper (which reads SitemapEntry.major_version) returns the
+        empty list. We re-derive majors from the extract_dotted_version
+        output instead.
+        """
+        if self._sitemap is None:
+            return []
+        majors: set[str] = set()
+        for entry in self._sitemap.for_product(self.product_id):
+            ver = extract_dotted_version(entry.url)
+            if not ver:
+                continue
+            parts = ver.split(".")
+            if len(parts) >= 2:
+                majors.add(f"{parts[0]}-{parts[1]}")
+        return sorted(
+            majors, key=lambda v: [int(x) for x in v.split("-")], reverse=True
+        )
 
     def discover_version_pages_from_sitemap(
         self, major_version: str
     ) -> list[VersionInfo]:
-        return discover_version_pages(
-            self._sitemap,
-            self.product_id,
-            major_version=major_version,
-            manifest=self._manifest,
-        )
+        """Group sitemap URLs by extracted dotted version, filtered to one major."""
+        if self._sitemap is None:
+            return []
+        major_prefix = major_version.replace("-", ".") + "."
+        entries = []
+        for entry in self._sitemap.for_product(self.product_id):
+            ver = extract_dotted_version(entry.url)
+            if ver and (ver + ".").startswith(major_prefix):
+                entries.append(entry)
+        entries = filter_unchanged(entries, self._manifest)
+        return group_into_version_infos(entries)
+
+    def _find_addressed_index_url(self) -> Optional[str]:
+        """Find the single 'all addressed issues' index URL in the sitemap.
+
+        The new docs layout consolidates addressed issues onto one page
+        instead of per-version pages, with `<h2>` headings separating
+        each version's table.
+        """
+        if self._sitemap is None:
+            return None
+        for entry in self._sitemap.for_product(self.product_id):
+            lower = entry.url.lower()
+            if "addressed-issues" not in lower:
+                continue
+            # The index page has no version in its slug; per-version
+            # variants would. Filter to URLs where extract_dotted_version
+            # returns None (i.e., the bare index).
+            if extract_dotted_version(entry.url) is None:
+                return entry.url.replace(
+                    "https://docs.paloaltonetworks.com", ""
+                )
+        return None
+
+    def _parse_addressed_index_by_version(
+        self, soup
+    ) -> dict[str, list[Issue]]:
+        """Walk h2/table pairs in the addressed-issues index page.
+
+        Each `<h2>` carries a label like "Issues Addressed in Prisma Access
+        Agent 26.2"; the following `<table>` is the bug table for that
+        version. Returns dict[version_string, list[Issue]].
+        """
+        result: dict[str, list[Issue]] = {}
+        version_re = re.compile(r"Prisma Access Agent\s+(\d+\.\d+(?:\.\d+)?)")
+        current_version: Optional[str] = None
+        for element in soup.find_all(["h2", "h3", "table"]):
+            if element.name in ("h2", "h3"):
+                m = version_re.search(element.get_text())
+                current_version = m.group(1) if m else None
+                continue
+            if element.name != "table" or current_version is None:
+                continue
+            if element.find_parent("table"):
+                continue
+            issues = self._parse_issues_table(element)
+            if issues:
+                result.setdefault(current_version, []).extend(issues)
+        return result
 
     async def discover_versions(self) -> list[str]:
         """Discover available Prisma Access Agent major versions.
@@ -192,6 +269,52 @@ class PrismaAccessAgentCrawler(BaseCrawler):
 
             all_product_versions.extend(product_versions)
             all_failed_fetches.extend(failed_fetches)
+
+        # In the new docs layout, addressed issues for ALL Prisma Access
+        # Agent versions live on a single index page with H2-grouped tables.
+        # Fetch it once and merge each section into the matching version.
+        if use_sitemap:
+            addressed_index_url = self._find_addressed_index_url()
+            if addressed_index_url is not None:
+                try:
+                    soup = await self._fetch_page_with_semaphore(
+                        addressed_index_url
+                    )
+                    by_version = self._parse_addressed_index_by_version(soup)
+                    self._log(
+                        f"  Addressed-issues index produced "
+                        f"{sum(len(v) for v in by_version.values())} issues "
+                        f"across {len(by_version)} versions"
+                    )
+                    # Merge into existing ProductVersion entries by version
+                    # match. Versions seen ONLY on the index page get
+                    # synthesised as new ProductVersion entries.
+                    by_existing = {pv.version: pv for pv in all_product_versions}
+                    for ver, issues in by_version.items():
+                        pv = by_existing.get(ver)
+                        if pv is None:
+                            pv = ProductVersion(
+                                version=ver,
+                                known_issues=[],
+                                addressed_issues=[],
+                            )
+                            all_product_versions.append(pv)
+                            by_existing[ver] = pv
+                        pv.addressed_issues = self._deduplicate_issues(
+                            list(pv.addressed_issues) + issues
+                        )
+                except Exception as e:
+                    self._log(
+                        f"  Error fetching addressed-issues index: {e}"
+                    )
+                    all_failed_fetches.append(
+                        FailedFetch(
+                            url=addressed_index_url,
+                            error=str(e),
+                            product=self.product_id,
+                            issue_type="addressed",
+                        )
+                    )
 
         if all_failed_fetches:
             recovered, still_failed = await self._retry_failed_fetches_sequentially(

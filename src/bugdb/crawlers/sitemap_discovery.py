@@ -31,6 +31,14 @@ _VERSION_RUN_TOGETHER_RE = re.compile(r"(?<!\d)(\d)(\d)(\d)(?!\d)")
 # boundaries so it doesn't match arbitrary `\d-\d` substrings inside
 # slug names like `aws-plugin-534`.
 _VERSION_TWO_DASHED_RE = re.compile(r"/(\d+)-(\d+)/")
+# 2-dashed version immediately before a known/addressed/fixed issue
+# marker, e.g. "prisma-access-agent-26-2-known-issues" → 26.2.
+# Stricter than the path-segment regex so we don't false-positive on
+# AWS plugin URLs like ".../aws-plugin-5-3-4/.../addressed-issues" —
+# the triple regex catches those first.
+_VERSION_TWO_DASHED_BEFORE_MARKER_RE = re.compile(
+    r"(?<![\d])(\d+)-(\d+)-(?:known|addressed|fixed)-issues?\b"
+)
 # Page-type tokens we must NOT treat as a version suffix.
 _NON_VERSION_SUFFIXES = {"known", "addressed", "issues", "and"}
 
@@ -64,12 +72,17 @@ def extract_dotted_version(url: str) -> Optional[str]:
     if matches:
         m = matches[-1]
         return f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
-    # Last resort: 2-dashed major-minor as a path segment. Used by Prisma
-    # Access and Prisma Access Agent (e.g. ".../release-notes/4-0/...").
-    # Returned as X.Y.0 since there's no patch component on the wire.
+    # 2-dashed major-minor as a path segment. Used by Prisma Access
+    # (e.g. ".../release-notes/4-0/..."). Returned as X.Y.0 since there's
+    # no patch component on the wire.
     matches = list(_VERSION_TWO_DASHED_RE.finditer(url))
     if matches:
         m = matches[-1]
+        return f"{m.group(1)}.{m.group(2)}.0"
+    # 2-dashed major-minor immediately before an issue marker, used by
+    # Prisma Access Agent slugs like "prisma-access-agent-26-2-known-issues".
+    m = _VERSION_TWO_DASHED_BEFORE_MARKER_RE.search(url)
+    if m:
         return f"{m.group(1)}.{m.group(2)}.0"
     return None
 
