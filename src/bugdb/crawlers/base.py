@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright, Page, Browser
 
 from bugdb.models import Issue, ProductVersion
+from bugdb.transport.base import Transport
 
 from .models import FailedFetch, VersionCrawlResult, VersionInfo, CrawlResult
 from .utils import (
@@ -43,6 +44,8 @@ class BaseCrawler:
 
     def __init__(
         self,
+        *,
+        transport: Optional[Transport] = None,
         headless: bool = True,
         verbose: bool = False,
         debug: bool = False,
@@ -52,14 +55,22 @@ class BaseCrawler:
     ):
         """Initialize the crawler.
 
+        When `transport` is provided, page fetches use it and no Playwright
+        browser is launched. When `transport` is None the legacy Playwright
+        path is used (kept so the existing test fixtures and the
+        `--use-browser` CLI flag continue to work).
+
         Args:
-            headless: Whether to run browser in headless mode.
+            transport: Optional Transport implementation (httpx, etc.). If
+                None, Playwright is used.
+            headless: Whether to run browser in headless mode (legacy path).
             verbose: Whether to print progress messages.
             debug: Whether to enable debug logging (more detailed than verbose).
             max_concurrency: Maximum number of concurrent page fetches.
             max_retries: Maximum number of retry attempts for failed requests.
             retry_delay: Base delay between retries in seconds (exponential backoff).
         """
+        self._transport = transport
         self.headless = headless
         self.verbose = verbose
         self.debug = debug
@@ -79,15 +90,28 @@ class BaseCrawler:
             configure_logging(debug=True)
 
     async def __aenter__(self):
-        logger.debug("Starting Playwright browser (headless=%s)", self.headless)
-        self._playwright = await async_playwright().start()
-        self._browser = await self._playwright.chromium.launch(headless=self.headless)
         self._semaphore = asyncio.Semaphore(self.max_concurrency)
         self._backoff_lock = asyncio.Lock()
-        logger.debug("Browser started, max_concurrency=%d", self.max_concurrency)
+        if self._transport is None:
+            logger.debug("Starting Playwright browser (headless=%s)", self.headless)
+            self._playwright = await async_playwright().start()
+            self._browser = await self._playwright.chromium.launch(
+                headless=self.headless
+            )
+            logger.debug("Browser started, max_concurrency=%d", self.max_concurrency)
+        else:
+            logger.debug(
+                "Transport %s active, max_concurrency=%d",
+                type(self._transport).__name__,
+                self.max_concurrency,
+            )
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self._transport is not None:
+            logger.debug("Closing transport %s", type(self._transport).__name__)
+            await self._transport.aclose()
+            return
         logger.debug("Closing browser and Playwright")
         if self._browser:
             await self._browser.close()
@@ -191,7 +215,55 @@ class BaseCrawler:
     async def _fetch_page_with_semaphore(
         self, url: str, wait_time: int = 3000
     ) -> BeautifulSoup:
-        """Fetch a page with concurrency control and retry logic.
+        """Fetch a page using the injected transport, or fall back to Playwright."""
+        if self._transport is not None:
+            return await self._fetch_via_transport(url)
+        return await self._fetch_via_browser(url, wait_time)
+
+    async def _fetch_via_transport(self, url: str) -> BeautifulSoup:
+        """Fetch via the injected Transport with retry + global backoff."""
+        last_error: Optional[Exception] = None
+        full_url = url if url.startswith("http") else urljoin(BASE_URL, url)
+        for attempt in range(self.max_retries):
+            await self._wait_for_global_backoff()
+            async with self._semaphore:
+                try:
+                    page = await self._transport.fetch(full_url)
+                except Exception as e:
+                    last_error = e
+                    if self._is_connection_refused_error(e):
+                        await self._trigger_global_backoff()
+                    logger.warning(
+                        "transport fetch failed for %s (attempt %d/%d): %s",
+                        url,
+                        attempt + 1,
+                        self.max_retries,
+                        e,
+                    )
+                else:
+                    if page.status_code == 200:
+                        return BeautifulSoup(page.html, "lxml")
+                    if page.status_code in (404, 410):
+                        raise RuntimeError(f"HTTP {page.status_code} for {url}")
+                    last_error = RuntimeError(
+                        f"HTTP {page.status_code} for {url}"
+                    )
+                    logger.warning(
+                        "transport returned %s for %s (attempt %d/%d)",
+                        page.status_code,
+                        url,
+                        attempt + 1,
+                        self.max_retries,
+                    )
+            if attempt < self.max_retries - 1:
+                await asyncio.sleep(self.retry_delay * (2**attempt))
+        assert last_error is not None
+        raise last_error
+
+    async def _fetch_via_browser(
+        self, url: str, wait_time: int = 3000
+    ) -> BeautifulSoup:
+        """Fetch a page via Playwright with retry logic and backoff.
 
         Creates a new page, fetches the URL, and closes the page.
         Uses semaphore to limit concurrent requests.
@@ -422,6 +494,14 @@ class BaseCrawler:
         Returns:
             List of Issue objects.
         """
+        # AEM emits <table>...<tbody><div style="display:inline"><tr>...; browsers
+        # foster-parent the div out, lxml does not. Unwrap defensively here so the
+        # rest of the parser can rely on direct tbody>tr nesting.
+        for d in table.select(
+            'div[style*="display: inline"], div[style*="display:inline"]'
+        ):
+            d.unwrap()
+
         issues = []
 
         # Check if this is an issues table by looking at headers
@@ -544,6 +624,13 @@ class BaseCrawler:
         Returns:
             List of Issue objects.
         """
+        # AEM inline-div quirk - unwrap so direct nesting works (see
+        # _parse_issues_table for rationale).
+        for d in table.select(
+            'div[style*="display: inline"], div[style*="display:inline"]'
+        ):
+            d.unwrap()
+
         issues = []
 
         # Get headers
