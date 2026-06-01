@@ -23,7 +23,12 @@ logger = logging.getLogger(__name__)
 # in `bugdb.crawlers.registry`.
 _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
     "panos": ("/pan-os/",),
-    "globalprotect": ("/globalprotect/",),
+    # The sitemap lists BOTH the canonical /globalprotect/release-notes/
+    # layout (~91 URLs, 200 OK) and stale /globalprotect/<ver>/globalprotect-app-release-notes/
+    # URLs (~84, 301-redirect to canonical). Pinning to /release-notes/
+    # means the stale URLs aren't classified as a GlobalProtect entry,
+    # saving ~250 redirected GETs per full fetch.
+    "globalprotect": ("/globalprotect/release-notes/",),
     "prisma-access": ("/prisma-access/",),
     "prisma-access-agent": (
         "/gp-app-for-prisma-access/",
