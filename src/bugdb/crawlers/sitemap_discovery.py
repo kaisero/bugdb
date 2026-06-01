@@ -1,0 +1,137 @@
+"""Shared helpers for sitemap-driven discovery used by product crawlers."""
+
+from __future__ import annotations
+
+import logging
+import re
+from typing import Optional
+
+from bugdb.fetch_manifest import FetchManifest
+from bugdb.sitemap import SitemapEntry, SitemapIndex
+
+from .models import VersionInfo
+from .utils import version_sort_key
+
+logger = logging.getLogger(__name__)
+
+
+# Regex matching a "1.2.3" or "1.2.3-h4" or "1.2.3-c471" version triple
+# in a URL slug.  The legacy code uses several variants; this one is the
+# union: three numeric segments followed by an optional "-<alphanum>".
+_VERSION_TRIPLE_RE = re.compile(r"(\d+)-(\d+)-(\d+)(?:-([a-zA-Z0-9]+))?")
+# Page-type tokens we must NOT treat as a version suffix.
+_NON_VERSION_SUFFIXES = {"known", "addressed", "issues", "and"}
+
+
+def extract_dotted_version(url: str) -> Optional[str]:
+    """Extract a 1.2.3[-suffix] version from a URL with dashed segments.
+
+    E.g. "/.../pan-os-11-2-3-known-issues" → "11.2.3"
+         "/.../globalprotect-app-6-2-8-h9-known-issues" → "6.2.8-h9"
+    """
+    m = _VERSION_TRIPLE_RE.search(url)
+    if not m:
+        return None
+    ver = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+    suffix = m.group(4)
+    if suffix and suffix.lower() not in _NON_VERSION_SUFFIXES:
+        ver += f"-{suffix}"
+    return ver
+
+
+def to_relative_path(url: str, base: str = "https://docs.paloaltonetworks.com") -> str:
+    """Strip the docs base URL and any trailing .html so existing parsers fit."""
+    path = url.removeprefix(base)
+    if path.endswith(".html"):
+        path = path[:-5]
+    return path
+
+
+def filter_unchanged(
+    entries: list[SitemapEntry],
+    manifest: Optional[FetchManifest],
+) -> list[SitemapEntry]:
+    """Drop entries whose <lastmod> matches the manifest (incremental gate)."""
+    if manifest is None:
+        return entries
+    out = []
+    for e in entries:
+        if manifest.should_skip(e.url, e.lastmod):
+            logger.debug("manifest skip: %s", e.url)
+            continue
+        out.append(e)
+    return out
+
+
+def group_into_version_infos(
+    entries: list[SitemapEntry],
+) -> list[VersionInfo]:
+    """Group sitemap entries by extracted dotted version into VersionInfo objects."""
+    by_version: dict[str, VersionInfo] = {}
+    for entry in entries:
+        ver = extract_dotted_version(entry.url)
+        if not ver:
+            continue
+        vi = by_version.setdefault(
+            ver,
+            VersionInfo(
+                version=ver,
+                known_issues_urls=[],
+                addressed_issues_urls=[],
+            ),
+        )
+        lower = entry.url.lower()
+        path = to_relative_path(entry.url)
+        if "known-and-addressed" in lower:
+            if path not in vi.known_issues_urls:
+                vi.known_issues_urls.append(path)
+            if path not in vi.addressed_issues_urls:
+                vi.addressed_issues_urls.append(path)
+        elif "known" in lower and "addressed" not in lower:
+            if path not in vi.known_issues_urls:
+                vi.known_issues_urls.append(path)
+        elif "addressed" in lower and "known" not in lower:
+            if path not in vi.addressed_issues_urls:
+                vi.addressed_issues_urls.append(path)
+        elif "fixed" in lower:
+            if path not in vi.addressed_issues_urls:
+                vi.addressed_issues_urls.append(path)
+    return sorted(
+        by_version.values(),
+        key=lambda v: version_sort_key(v.version),
+        reverse=True,
+    )
+
+
+def discover_major_versions(
+    sitemap: Optional[SitemapIndex], product_id: str
+) -> list[str]:
+    """Distinct `major-minor` strings present in the sitemap for a product, newest first."""
+    if sitemap is None:
+        return []
+    versions = {
+        e.major_version
+        for e in sitemap.for_product(product_id)
+        if e.major_version
+    }
+    return sorted(
+        versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
+    )
+
+
+def discover_version_pages(
+    sitemap: Optional[SitemapIndex],
+    product_id: str,
+    major_version: Optional[str] = None,
+    manifest: Optional[FetchManifest] = None,
+) -> list[VersionInfo]:
+    """High-level helper: filtered, grouped, manifest-skipped VersionInfo list."""
+    if sitemap is None:
+        return []
+    entries = [
+        e
+        for e in sitemap.for_product(product_id)
+        if major_version is None or e.major_version == major_version
+    ]
+    entries = filter_unchanged(entries, manifest)
+    return group_into_version_infos(entries)
