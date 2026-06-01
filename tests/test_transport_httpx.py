@@ -60,9 +60,7 @@ async def test_fetch_retries_on_5xx():
             httpx.Response(200, text="ok"),
         ]
     )
-    async with HttpxDocsTransport(
-        concurrency=2, max_retries=3, retry_base_delay=0.01
-    ) as t:
+    async with HttpxDocsTransport(concurrency=2, max_retries=3, retry_base_delay=0.01) as t:
         page = await t.fetch("https://docs.paloaltonetworks.com/flaky")
     assert page.status_code == 200
     assert route.call_count == 2
@@ -74,9 +72,7 @@ async def test_fetch_gives_up_after_max_retries_on_5xx():
     route = respx.get("https://docs.paloaltonetworks.com/dead").mock(
         return_value=httpx.Response(503, text="busy")
     )
-    async with HttpxDocsTransport(
-        concurrency=2, max_retries=2, retry_base_delay=0.01
-    ) as t:
+    async with HttpxDocsTransport(concurrency=2, max_retries=2, retry_base_delay=0.01) as t:
         page = await t.fetch("https://docs.paloaltonetworks.com/dead")
     assert page.status_code == 503
     assert route.call_count == 2
@@ -88,11 +84,7 @@ def test_fix_inline_div_tables_noop_when_marker_absent():
 
 
 def test_fix_inline_div_tables_unwraps_when_marker_present():
-    html = (
-        "<table><tbody>"
-        '<div style="display: inline;"><tr><td>x</td></tr></div>'
-        "</tbody></table>"
-    )
+    html = '<table><tbody><div style="display: inline;"><tr><td>x</td></tr></div></tbody></table>'
     out = _fix_inline_div_tables(html)
     # After unwrap, no inline-div remains inside the table
     assert 'style="display: inline' not in out.replace(" ", "")

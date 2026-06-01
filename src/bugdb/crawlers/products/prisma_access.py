@@ -24,9 +24,7 @@ class PrismaAccessCrawler(BaseCrawler):
     def discover_versions_from_sitemap(self) -> list[str]:
         return discover_major_versions(self._sitemap, self.product_id)
 
-    def discover_version_pages_from_sitemap(
-        self, major_version: str
-    ) -> list[VersionInfo]:
+    def discover_version_pages_from_sitemap(self, major_version: str) -> list[VersionInfo]:
         return discover_version_pages(
             self._sitemap,
             self.product_id,

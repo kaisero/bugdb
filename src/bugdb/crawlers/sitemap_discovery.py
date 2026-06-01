@@ -148,10 +148,7 @@ def group_into_version_infos(
         elif "known" in seg and "addressed" not in seg:
             if path not in vi.known_issues_urls:
                 vi.known_issues_urls.append(path)
-        elif "addressed" in seg and "known" not in seg:
-            if path not in vi.addressed_issues_urls:
-                vi.addressed_issues_urls.append(path)
-        elif "fixed" in seg:
+        elif ("addressed" in seg and "known" not in seg) or "fixed" in seg:
             if path not in vi.addressed_issues_urls:
                 vi.addressed_issues_urls.append(path)
 
@@ -159,18 +156,10 @@ def group_into_version_infos(
     # "known-and-addressed" in its last path segment; subpages have
     # "known-issues" or "addressed-issues" only (no "and").
     for vi in by_version.values():
-        if any(
-            _is_specific_known_subpage(u) for u in vi.known_issues_urls
-        ):
-            vi.known_issues_urls = [
-                u for u in vi.known_issues_urls if not _is_landing(u)
-            ]
-        if any(
-            _is_specific_addressed_subpage(u) for u in vi.addressed_issues_urls
-        ):
-            vi.addressed_issues_urls = [
-                u for u in vi.addressed_issues_urls if not _is_landing(u)
-            ]
+        if any(_is_specific_known_subpage(u) for u in vi.known_issues_urls):
+            vi.known_issues_urls = [u for u in vi.known_issues_urls if not _is_landing(u)]
+        if any(_is_specific_addressed_subpage(u) for u in vi.addressed_issues_urls):
+            vi.addressed_issues_urls = [u for u in vi.addressed_issues_urls if not _is_landing(u)]
 
     return sorted(
         by_version.values(),
@@ -197,20 +186,12 @@ def _is_specific_addressed_subpage(url: str) -> bool:
     return "addressed-issues" in seg and "known" not in seg
 
 
-def discover_major_versions(
-    sitemap: SitemapIndex | None, product_id: str
-) -> list[str]:
+def discover_major_versions(sitemap: SitemapIndex | None, product_id: str) -> list[str]:
     """Distinct `major-minor` strings present in the sitemap for a product, newest first."""
     if sitemap is None:
         return []
-    versions = {
-        e.major_version
-        for e in sitemap.for_product(product_id)
-        if e.major_version
-    }
-    return sorted(
-        versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True
-    )
+    versions = {e.major_version for e in sitemap.for_product(product_id) if e.major_version}
+    return sorted(versions, key=lambda v: [int(x) for x in v.split("-")], reverse=True)
 
 
 def discover_version_pages(

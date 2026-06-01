@@ -44,9 +44,7 @@ class DeviceSecurityCrawler(BaseCrawler):
                 years.add(m.group(1))
         return sorted(years, reverse=True)
 
-    def discover_year_pages_from_sitemap(
-        self, year: str
-    ) -> tuple[str | None, str | None]:
+    def discover_year_pages_from_sitemap(self, year: str) -> tuple[str | None, str | None]:
         """Return `(known_path, addressed_path)` for a year, either may be None.
 
         Honors the manifest by skipping URLs whose <lastmod> matches.
@@ -59,13 +57,9 @@ class DeviceSecurityCrawler(BaseCrawler):
             m = self._YEAR_SLUG_RE.search(entry.url)
             if not m or m.group(1) != year:
                 continue
-            if self._manifest is not None and self._manifest.should_skip(
-                entry.url, entry.lastmod
-            ):
+            if self._manifest is not None and self._manifest.should_skip(entry.url, entry.lastmod):
                 continue
-            path = entry.url.replace(
-                "https://docs.paloaltonetworks.com", ""
-            )
+            path = entry.url.replace("https://docs.paloaltonetworks.com", "")
             if path.endswith(".html"):
                 path = path[:-5]
             lower = entry.url.lower()
@@ -218,7 +212,7 @@ class DeviceSecurityCrawler(BaseCrawler):
             # "no URL discovered" → treated as "no data, no failure".
             results: list = [None, None]
             slot = {"known": 0, "addressed": 1}
-            for kind, value in zip(url_kinds, raw_results):
+            for kind, value in zip(url_kinds, raw_results, strict=True):
                 results[slot[kind]] = value
 
             # Parse known issues

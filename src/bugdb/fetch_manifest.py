@@ -22,7 +22,7 @@ class FetchManifest(BaseModel):
     entries: dict[str, ManifestEntry] = Field(default_factory=dict)
 
     @classmethod
-    def load(cls, path: Path) -> "FetchManifest":
+    def load(cls, path: Path) -> FetchManifest:
         if not path.exists():
             return cls()
         return cls.model_validate_json(path.read_text(encoding="utf-8"))

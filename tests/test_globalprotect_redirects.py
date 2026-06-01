@@ -14,7 +14,6 @@ so they're skipped entirely.
 
 from bugdb.sitemap import SitemapIndex
 
-
 _SITEMAP = """<?xml version="1.0"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <!-- canonical (200) layout -->

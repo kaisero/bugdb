@@ -7,11 +7,8 @@ is `/iot/release-notes/known-issues/known-issues-in-YYYY` and
 URLs are in the sitemap. The crawler now discovers years from sitemap.
 """
 
-import pytest
-
 from bugdb.crawlers.products.device_security import DeviceSecurityCrawler
 from bugdb.sitemap import SitemapIndex
-
 
 _SITEMAP = """<?xml version="1.0"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">

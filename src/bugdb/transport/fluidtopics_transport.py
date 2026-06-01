@@ -46,7 +46,7 @@ class FluidTopicsTransport:
         )
         self._sem = asyncio.Semaphore(concurrency)
 
-    async def __aenter__(self) -> "FluidTopicsTransport":
+    async def __aenter__(self) -> FluidTopicsTransport:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:
@@ -69,9 +69,7 @@ class FluidTopicsTransport:
         return [m for m in maps if _matches_product(m, product)]
 
     async def list_topics(self, *, map_id: str) -> list[dict]:
-        resp = await self._client.get(
-            f"{CORTEX_BASE}/api/khub/maps/{map_id}/topics"
-        )
+        resp = await self._client.get(f"{CORTEX_BASE}/api/khub/maps/{map_id}/topics")
         resp.raise_for_status()
         return resp.json()
 

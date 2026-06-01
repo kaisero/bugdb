@@ -143,9 +143,7 @@ class BaseCrawler:
         if self._needs_browser():
             logger.debug("Starting Playwright browser (headless=%s)", self.headless)
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(
-                headless=self.headless
-            )
+            self._browser = await self._playwright.chromium.launch(headless=self.headless)
             logger.debug("Browser started, max_concurrency=%d", self.max_concurrency)
         else:
             logger.debug(
@@ -372,9 +370,7 @@ class BaseCrawler:
         logger.debug("Page fetched successfully: %s (%d bytes)", full_url, len(content))
         return BeautifulSoup(content, "lxml")
 
-    async def _fetch_page_with_semaphore(
-        self, url: str, wait_time: int = 3000
-    ) -> BeautifulSoup:
+    async def _fetch_page_with_semaphore(self, url: str, wait_time: int = 3000) -> BeautifulSoup:
         """Fetch a page using the injected transport, or fall back to Playwright."""
         if self._transport is not None:
             return await self._fetch_via_transport(url)
@@ -668,9 +664,7 @@ class BaseCrawler:
         # AEM emits <table>...<tbody><div style="display:inline"><tr>...; browsers
         # foster-parent the div out, lxml does not. Unwrap defensively here so the
         # rest of the parser can rely on direct tbody>tr nesting.
-        for d in table.select(
-            'div[style*="display: inline"], div[style*="display:inline"]'
-        ):
+        for d in table.select('div[style*="display: inline"], div[style*="display:inline"]'):
             d.unwrap()
 
         issues = []
@@ -802,9 +796,7 @@ class BaseCrawler:
         """
         # AEM inline-div quirk - unwrap so direct nesting works (see
         # _parse_issues_table for rationale).
-        for d in table.select(
-            'div[style*="display: inline"], div[style*="display:inline"]'
-        ):
+        for d in table.select('div[style*="display: inline"], div[style*="display:inline"]'):
             d.unwrap()
 
         issues = []

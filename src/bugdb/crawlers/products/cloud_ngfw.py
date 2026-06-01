@@ -1,12 +1,11 @@
 """Cloud NGFW crawlers implementation (Azure and AWS)."""
 
-import asyncio
 import logging
 
 from bugdb.models import Product, ProductVersion
 
 from ..base import BaseCrawler
-from ..models import CrawlResult, FailedFetch
+from ..models import CrawlResult
 from ..sitemap_discovery import discover_saas_urls
 from .saas import _fetch_saas_pages
 
@@ -44,9 +43,7 @@ class CloudNGFWAzureCrawler(BaseCrawler):
         # paths return 301s; the addressed-issues redirect goes to a
         # "What's New" page that has no bug table).
         default_known = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-known-issues"
-        default_addressed = (
-            "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
-        )
+        default_addressed = "/cloud-ngfw-azure/release-notes/cloud-ngfw-for-azure-addressed-issues"
         known_urls, addressed_urls = discover_saas_urls(
             self._sitemap, self.product_id, manifest=self._manifest
         )
@@ -118,9 +115,7 @@ class CloudNGFWAWSCrawler(BaseCrawler):
         self._set_task_total(1, f"{self.product_name}: fetching")
 
         default_known = "/cloud-ngfw-aws/release-notes/cloud-ngfw-for-aws-known-issues"
-        known_urls, _ = discover_saas_urls(
-            self._sitemap, self.product_id, manifest=self._manifest
-        )
+        known_urls, _ = discover_saas_urls(self._sitemap, self.product_id, manifest=self._manifest)
         if not known_urls:
             known_urls = [default_known]
 

@@ -37,9 +37,9 @@ async def test_lists_maps_without_filter_returns_all():
 @pytest.mark.asyncio
 @respx.mock
 async def test_lists_topics_in_a_map():
-    respx.get(
-        "https://docs-cortex.paloaltonetworks.com/api/khub/maps/abc123/topics"
-    ).mock(return_value=httpx.Response(200, text=(FX / "topics.json").read_text()))
+    respx.get("https://docs-cortex.paloaltonetworks.com/api/khub/maps/abc123/topics").mock(
+        return_value=httpx.Response(200, text=(FX / "topics.json").read_text())
+    )
     async with FluidTopicsTransport() as t:
         topics = await t.list_topics(map_id="abc123")
     assert {tp["id"] for tp in topics} == {"t-9-1", "t-9-1-1-addr", "t-9-1-known"}

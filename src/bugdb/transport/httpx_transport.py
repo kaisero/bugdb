@@ -13,9 +13,7 @@ from bugdb.transport.base import FetchedPage
 logger = logging.getLogger(__name__)
 
 _DEFAULT_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (compatible; bugdb/1.0; +https://dependencyhell.net/bugdb)"
-    ),
+    "User-Agent": ("Mozilla/5.0 (compatible; bugdb/1.0; +https://dependencyhell.net/bugdb)"),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9",
 }
 
@@ -55,7 +53,7 @@ class HttpxDocsTransport:
         self._max_retries = max_retries
         self._retry_base_delay = retry_base_delay
 
-    async def __aenter__(self) -> "HttpxDocsTransport":
+    async def __aenter__(self) -> HttpxDocsTransport:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:

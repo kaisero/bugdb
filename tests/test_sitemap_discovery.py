@@ -14,9 +14,7 @@ from bugdb.sitemap import SitemapIndex
 
 def test_extract_dotted_version_handles_plain_triple():
     assert (
-        extract_dotted_version(
-            "https://docs.paloaltonetworks.com/.../pan-os-11-2-3-known-issues"
-        )
+        extract_dotted_version("https://docs.paloaltonetworks.com/.../pan-os-11-2-3-known-issues")
         == "11.2.3"
     )
 
@@ -32,9 +30,7 @@ def test_extract_dotted_version_keeps_hotfix_suffix():
 
 def test_extract_dotted_version_excludes_known_or_addressed_as_suffix():
     # "11-2-3-known-issues" -> "11.2.3", not "11.2.3-known"
-    assert (
-        extract_dotted_version("/pan-os-11-2-3-known-issues") == "11.2.3"
-    )
+    assert extract_dotted_version("/pan-os-11-2-3-known-issues") == "11.2.3"
 
 
 def test_extract_dotted_version_returns_none_when_no_match():
@@ -43,10 +39,7 @@ def test_extract_dotted_version_returns_none_when_no_match():
 
 def test_to_relative_path_strips_docs_base_and_html():
     assert (
-        to_relative_path(
-            "https://docs.paloaltonetworks.com/pan-os/11-2/x.html"
-        )
-        == "/pan-os/11-2/x"
+        to_relative_path("https://docs.paloaltonetworks.com/pan-os/11-2/x.html") == "/pan-os/11-2/x"
     )
 
 

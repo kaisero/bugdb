@@ -108,9 +108,7 @@ async def dispatch_async(product_id: str, *args, **kwargs) -> FetchResult:
     where the shared httpx Transport benefit applies.
     """
     wrapper = PRODUCT_WRAPPERS.get(product_id)
-    if wrapper is not None and wrapper is not _ORIGINAL_PRODUCT_WRAPPERS.get(
-        product_id
-    ):
+    if wrapper is not None and wrapper is not _ORIGINAL_PRODUCT_WRAPPERS.get(product_id):
         return await asyncio.to_thread(wrapper, *args, **kwargs)
     dispatch = _build_async_dispatch()
     if product_id in dispatch:

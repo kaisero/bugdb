@@ -288,7 +288,6 @@ class CortexXDRCrawler(BaseCrawler):
             return await self._crawl_via_fluidtopics(skip_versions)
         return await self._legacy_crawl(major_versions, skip_versions)
 
-
     async def _crawl_via_fluidtopics(
         self,
         skip_versions: set[str] | None = None,
@@ -325,9 +324,7 @@ class CortexXDRCrawler(BaseCrawler):
         self._log(f"  Found {len(rn_maps)} Cortex XDR release-notes maps")
 
         # version → (known_issues, addressed_issues, release_date)
-        versions_data: dict[
-            str, tuple[list[Issue], list[Issue], str | None]
-        ] = {}
+        versions_data: dict[str, tuple[list[Issue], list[Issue], str | None]] = {}
 
         for m in rn_maps:
             map_id = m["id"]
@@ -353,26 +350,21 @@ class CortexXDRCrawler(BaseCrawler):
                 is_addressed = (
                     "addressed" in title_lower or "fixed" in title_lower
                 ) and "issue" in title_lower
-                is_known = (
-                    "known" in title_lower
-                    and ("issue" in title_lower or "limitation" in title_lower)
+                is_known = "known" in title_lower and (
+                    "issue" in title_lower or "limitation" in title_lower
                 )
                 if not (is_addressed or is_known):
                     continue
 
                 # Pull the exact version from metadata or derive from title.
-                ver = _extract_version_from_metadata(
-                    t
-                ) or self._extract_cortex_xdr_version(title)
+                ver = _extract_version_from_metadata(t) or self._extract_cortex_xdr_version(title)
                 if ver is None:
                     continue
                 if ver in skip_versions:
                     continue
 
                 try:
-                    page = await self._fluidtopics.fetch_topic(
-                        map_id=map_id, topic_id=t["id"]
-                    )
+                    page = await self._fluidtopics.fetch_topic(map_id=map_id, topic_id=t["id"])
                 except Exception as exc:
                     failed_fetches.append(
                         FailedFetch(
@@ -401,9 +393,7 @@ class CortexXDRCrawler(BaseCrawler):
                     soup, force_section="known" if is_known else "addressed"
                 )
 
-                kk, aa, date = versions_data.setdefault(
-                    ver, ([], [], _extract_publication_date(t))
-                )
+                kk, aa, date = versions_data.setdefault(ver, ([], [], _extract_publication_date(t)))
                 kk.extend(topic_known)
                 aa.extend(topic_addressed)
 
@@ -421,14 +411,10 @@ class CortexXDRCrawler(BaseCrawler):
             )
 
         if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(
-                failed_fetches
-            )
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
             failed_fetches = still_failed
 
-        product_versions.sort(
-            key=lambda v: self._version_sort_key(v.version), reverse=True
-        )
+        product_versions.sort(key=lambda v: self._version_sort_key(v.version), reverse=True)
 
         return CrawlResult(
             product=Product(
@@ -456,9 +442,7 @@ class CortexXDRCrawler(BaseCrawler):
         for table in soup.find_all("table"):
             if table.find_parent("table"):
                 continue
-            headers = [
-                th.get_text(strip=True).upper() for th in table.find_all("th")
-            ]
+            headers = [th.get_text(strip=True).upper() for th in table.find_all("th")]
             if "FEATURE" in headers:
                 continue
             issue_col = None
@@ -496,7 +480,7 @@ class CortexXDRCrawler(BaseCrawler):
 
                 bug_id = re.sub(r"\([^)]+\)", "", bug_id_text)
                 bug_id = bug_id.split("\n")[0].strip()
-                bug_id = re.sub(r"[‑–—]", "-", bug_id)
+                bug_id = re.sub(r"[‑–—]", "-", bug_id)  # noqa: RUF001
 
                 if not bug_id or not re.match(r"^[A-Z]+-\d+", bug_id):
                     match = re.search(r"([A-Z]+-\d+)", bug_id_cell.get_text())

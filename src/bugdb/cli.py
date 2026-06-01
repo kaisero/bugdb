@@ -368,7 +368,6 @@ def fetch(
 ) -> None:
     """Fetch bug data from Palo Alto Networks release notes website."""
     import asyncio
-
     from datetime import UTC, datetime
 
     import httpx
@@ -541,10 +540,7 @@ def fetch(
 
     # ----- Build shared sitemap + manifest ---------------------------------
     manifest_path = manifest or output.with_suffix(".manifest.json")
-    if no_manifest:
-        manifest_obj = FetchManifest()
-    else:
-        manifest_obj = FetchManifest.load(manifest_path)
+    manifest_obj = FetchManifest() if no_manifest else FetchManifest.load(manifest_path)
 
     sitemap_index: SitemapIndex | None = None
     if not use_browser:
@@ -610,12 +606,8 @@ def fetch(
                 # Shared transports — one per host. Built INSIDE the
                 # event loop that will use them so their httpx.AsyncClient
                 # and asyncio primitives belong to that loop.
-                docs_transport = (
-                    None if use_browser else HttpxDocsTransport(concurrency=15)
-                )
-                fluidtopics = (
-                    None if use_browser else FluidTopicsTransport(concurrency=10)
-                )
+                docs_transport = None if use_browser else HttpxDocsTransport(concurrency=15)
+                fluidtopics = None if use_browser else FluidTopicsTransport(concurrency=10)
                 try:
                     for prod_name in products_to_fetch:
                         display_name = _display_name(prod_name)
@@ -650,17 +642,11 @@ def fetch(
                             kwargs["manifest"] = manifest_obj
 
                         try:
-                            result = await dispatch_async(
-                                prod_name, major_versions, **kwargs
-                            )
+                            result = await dispatch_async(prod_name, major_versions, **kwargs)
                         except Exception as e:
                             reporter.complete(sub_task)
-                            _fetch_logger.error(
-                                "Error fetching %s: %s", prod_name, e
-                            )
-                            console.print(
-                                f"[red]Error fetching {prod_name}:[/red] {e}"
-                            )
+                            _fetch_logger.error("Error fetching %s: %s", prod_name, e)
+                            console.print(f"[red]Error fetching {prod_name}:[/red] {e}")
                             raise typer.Exit(1) from e
                         reporter.complete(sub_task)
                         reporter.update(outer_task, advance=1)

@@ -1,7 +1,5 @@
 """Tests for BaseCrawler's Transport integration."""
 
-import asyncio
-
 import pytest
 from bs4 import BeautifulSoup
 
@@ -147,9 +145,7 @@ def test_parse_issues_table_with_feature_handles_inline_div_quirk():
     """
     soup = BeautifulSoup(html, "lxml")
     c = BaseCrawler.__new__(BaseCrawler)
-    issues = c._parse_issues_table_with_feature(
-        soup.find("table"), feature="Networking"
-    )
+    issues = c._parse_issues_table_with_feature(soup.find("table"), feature="Networking")
     assert len(issues) == 1
     assert issues[0].bug_id == "PAN-42"
     assert issues[0].affected_components == ["Networking"]

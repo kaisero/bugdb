@@ -16,7 +16,6 @@ sibling exists.
 from bugdb.crawlers.sitemap_discovery import group_into_version_infos
 from bugdb.sitemap import SitemapIndex
 
-
 _SITEMAP_PANOS = """<?xml version="1.0"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://docs.paloaltonetworks.com/pan-os/11-2/x/pan-os-11-2-3-known-and-addressed-issues</loc></url>

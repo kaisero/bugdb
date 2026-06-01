@@ -9,8 +9,6 @@ from bugdb.models import Issue, Product, ProductVersion
 from ..base import BaseCrawler
 from ..models import CrawlResult, FailedFetch, VersionInfo
 from ..sitemap_discovery import (
-    discover_major_versions,
-    discover_version_pages,
     extract_dotted_version,
     filter_unchanged,
     group_into_version_infos,
@@ -45,13 +43,9 @@ class PrismaAccessAgentCrawler(BaseCrawler):
             parts = ver.split(".")
             if len(parts) >= 2:
                 majors.add(f"{parts[0]}-{parts[1]}")
-        return sorted(
-            majors, key=lambda v: [int(x) for x in v.split("-")], reverse=True
-        )
+        return sorted(majors, key=lambda v: [int(x) for x in v.split("-")], reverse=True)
 
-    def discover_version_pages_from_sitemap(
-        self, major_version: str
-    ) -> list[VersionInfo]:
+    def discover_version_pages_from_sitemap(self, major_version: str) -> list[VersionInfo]:
         """Group sitemap URLs by extracted dotted version, filtered to one major."""
         if self._sitemap is None:
             return []
@@ -81,14 +75,10 @@ class PrismaAccessAgentCrawler(BaseCrawler):
             # variants would. Filter to URLs where extract_dotted_version
             # returns None (i.e., the bare index).
             if extract_dotted_version(entry.url) is None:
-                return entry.url.replace(
-                    "https://docs.paloaltonetworks.com", ""
-                )
+                return entry.url.replace("https://docs.paloaltonetworks.com", "")
         return None
 
-    def _parse_addressed_index_by_version(
-        self, soup
-    ) -> dict[str, list[Issue]]:
+    def _parse_addressed_index_by_version(self, soup) -> dict[str, list[Issue]]:
         """Walk h2/table pairs in the addressed-issues index page.
 
         Each `<h2>` carries a label like "Issues Addressed in Prisma Access
@@ -250,9 +240,7 @@ class PrismaAccessAgentCrawler(BaseCrawler):
         # Cache-aware discovery — see BaseCrawler._resolve_version_infos.
         if major_versions is None:
             if use_sitemap:
-                logger.info(
-                    "Discovering available Prisma Access Agent versions from sitemap..."
-                )
+                logger.info("Discovering available Prisma Access Agent versions from sitemap...")
             else:
                 logger.info("Discovering available Prisma Access Agent versions...")
 
@@ -312,9 +300,7 @@ class PrismaAccessAgentCrawler(BaseCrawler):
             addressed_index_url = self._find_addressed_index_url()
             if addressed_index_url is not None:
                 try:
-                    soup = await self._fetch_page_with_semaphore(
-                        addressed_index_url
-                    )
+                    soup = await self._fetch_page_with_semaphore(addressed_index_url)
                     by_version = self._parse_addressed_index_by_version(soup)
                     self._log(
                         f"  Addressed-issues index produced "
@@ -339,9 +325,7 @@ class PrismaAccessAgentCrawler(BaseCrawler):
                             list(pv.addressed_issues) + issues
                         )
                 except Exception as e:
-                    self._log(
-                        f"  Error fetching addressed-issues index: {e}"
-                    )
+                    self._log(f"  Error fetching addressed-issues index: {e}")
                     all_failed_fetches.append(
                         FailedFetch(
                             url=addressed_index_url,

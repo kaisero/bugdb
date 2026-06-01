@@ -17,7 +17,6 @@ from bugdb.crawlers.sitemap_discovery import (
 )
 from bugdb.sitemap import SitemapIndex
 
-
 _SITEMAP = """<?xml version="1.0"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://docs.paloaltonetworks.com/prisma-access/release-notes/4-0/prisma-access-about/prisma-access-known-issues</loc></url>

@@ -37,7 +37,7 @@ async def _fetch_saas_pages(
     addressed_issues: list = []
     failed_fetches: list[FailedFetch] = []
 
-    for (kind, url), result in zip(url_kinds, results):
+    for (kind, url), result in zip(url_kinds, results, strict=True):
         if isinstance(result, Exception):
             crawler._log(f"  Error fetching {kind} issues: {result}")
             failed_fetches.append(
@@ -58,6 +58,7 @@ async def _fetch_saas_pages(
             else:
                 addressed_issues.extend(parsed)
     return known_issues, addressed_issues, failed_fetches
+
 
 logger = logging.getLogger(__name__)
 
@@ -95,9 +96,7 @@ class RemoteBrowserIsolationCrawler(BaseCrawler):
         self._set_task_total(1, f"{self.product_name}: fetching")
         failed_fetches: list[FailedFetch] = []
 
-        known_urls, _ = discover_saas_urls(
-            self._sitemap, self.product_id, manifest=self._manifest
-        )
+        known_urls, _ = discover_saas_urls(self._sitemap, self.product_id, manifest=self._manifest)
         if not known_urls:
             known_urls = [self._DEFAULT_KNOWN_ISSUES_URL]
 
@@ -163,9 +162,7 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
     # Fallbacks only used when no sitemap was injected. The legacy
     # `/ai-runtime-security/docs/release-notes/...` path is stale (404).
     _DEFAULT_KNOWN_ISSUES_URL = "/ai-runtime-security/release-notes/known-issues"
-    _DEFAULT_ADDRESSED_ISSUES_URL = (
-        "/ai-runtime-security/release-notes/addressed-issues"
-    )
+    _DEFAULT_ADDRESSED_ISSUES_URL = "/ai-runtime-security/release-notes/addressed-issues"
 
     async def crawl(
         self,

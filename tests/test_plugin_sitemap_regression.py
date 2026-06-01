@@ -20,7 +20,6 @@ from bugdb.crawlers.sitemap_discovery import (
 )
 from bugdb.sitemap import SitemapIndex
 
-
 # Sample of real plugin URLs covering every regression case.
 _SITEMAP = """<?xml version="1.0"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -53,6 +52,7 @@ def _sm() -> SitemapIndex:
 # ============================================================
 # extract_dotted_version: must handle run-together digits
 # ============================================================
+
 
 @pytest.mark.parametrize(
     "url,expected",
@@ -100,6 +100,7 @@ def test_extract_dotted_version_prefers_dashed_form_when_both_present():
 # discover_version_pages: must find every plugin's URLs
 # ============================================================
 
+
 @pytest.mark.parametrize(
     "product_id,expected_version",
     [
@@ -113,12 +114,8 @@ def test_extract_dotted_version_prefers_dashed_form_when_both_present():
         ("sdwan-plugin", "3.4.0"),
     ],
 )
-def test_discover_version_pages_finds_plugin(
-    product_id: str, expected_version: str
-):
+def test_discover_version_pages_finds_plugin(product_id: str, expected_version: str):
     sm = _sm()
     vis = discover_version_pages(sm, product_id)
     versions = {vi.version for vi in vis}
-    assert (
-        expected_version in versions
-    ), f"{product_id}: expected {expected_version} in {versions}"
+    assert expected_version in versions, f"{product_id}: expected {expected_version} in {versions}"

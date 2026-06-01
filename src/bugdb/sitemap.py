@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 from lxml import etree
 
@@ -59,9 +59,7 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
         # paths under /panorama/plugins/sd-wan/ no longer appear.
         "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-sd-wan",
     ),
-    "vm-series-plugin": (
-        "/plugins/vm-series-and-panorama-plugins-release-notes/vm-series-plugin",
-    ),
+    "vm-series-plugin": ("/plugins/vm-series-and-panorama-plugins-release-notes/vm-series-plugin",),
     "plugin-aws": (
         "/plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-aws",
     ),
@@ -129,7 +127,7 @@ class SitemapIndex:
     _entries: list[SitemapEntry] = field(default_factory=list)
 
     @classmethod
-    def from_xml(cls, xml: str) -> "SitemapIndex":
+    def from_xml(cls, xml: str) -> SitemapIndex:
         root = etree.fromstring(xml.encode("utf-8"))
         ns = {"s": "http://www.sitemaps.org/schemas/sitemap/0.9"}
         entries: list[SitemapEntry] = []
@@ -149,11 +147,7 @@ class SitemapIndex:
         return (e for e in self._entries if e.is_issue_page)
 
     def for_product(self, product_id: str) -> Iterable[SitemapEntry]:
-        return (
-            e
-            for e in self._entries
-            if e.is_issue_page and e.product_id == product_id
-        )
+        return (e for e in self._entries if e.is_issue_page and e.product_id == product_id)
 
 
 def _classify(url: str, lastmod: str | None) -> SitemapEntry:

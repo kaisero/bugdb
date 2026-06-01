@@ -4,7 +4,6 @@ from bugdb.crawlers.products.panos import PANOSCrawler
 from bugdb.fetch_manifest import FetchManifest, ManifestEntry
 from bugdb.sitemap import SitemapIndex
 
-
 _XML = """<?xml version="1.0"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://docs.paloaltonetworks.com/pan-os/11-2/pan-os-release-notes/pan-os-11-2-3-known-and-addressed-issues/pan-os-11-2-3-known-issues</loc><lastmod>2026-03-01</lastmod></url>
@@ -44,17 +43,12 @@ def test_discover_version_pages_separates_known_and_addressed():
     c = _crawler(sitemap=SitemapIndex.from_xml(_XML))
     vis = c.discover_version_pages_from_sitemap("11-2")
     by_ver = {vi.version: vi for vi in vis}
+    assert any("pan-os-11-2-3-known-issues" in u for u in by_ver["11.2.3"].known_issues_urls)
     assert any(
-        "pan-os-11-2-3-known-issues" in u for u in by_ver["11.2.3"].known_issues_urls
-    )
-    assert any(
-        "pan-os-11-2-3-addressed-issues" in u
-        for u in by_ver["11.2.3"].addressed_issues_urls
+        "pan-os-11-2-3-addressed-issues" in u for u in by_ver["11.2.3"].addressed_issues_urls
     )
     # 11.2.4 only has a known-issues URL in this fixture
-    assert any(
-        "pan-os-11-2-4-known-issues" in u for u in by_ver["11.2.4"].known_issues_urls
-    )
+    assert any("pan-os-11-2-4-known-issues" in u for u in by_ver["11.2.4"].known_issues_urls)
 
 
 def test_discover_version_pages_skips_urls_when_manifest_matches_lastmod():

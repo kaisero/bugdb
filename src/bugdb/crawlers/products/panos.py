@@ -40,9 +40,7 @@ class PANOSCrawler(BaseCrawler):
         """Return major versions present in the sitemap, newest first."""
         return discover_major_versions(self._sitemap, self.product_id)
 
-    def discover_version_pages_from_sitemap(
-        self, major_version: str
-    ) -> list[VersionInfo]:
+    def discover_version_pages_from_sitemap(self, major_version: str) -> list[VersionInfo]:
         """Build VersionInfo entries from sitemap URLs for one major version.
 
         Skips URLs whose sitemap lastmod matches the manifest entry.

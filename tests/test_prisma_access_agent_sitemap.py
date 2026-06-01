@@ -29,7 +29,6 @@ from bugdb.crawlers.products.prisma_access_agent import (
 from bugdb.crawlers.sitemap_discovery import extract_dotted_version
 from bugdb.sitemap import SitemapIndex
 
-
 _SITEMAP = """<?xml version="1.0"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://docs.paloaltonetworks.com/prisma-access-agent/release-notes/prisma-access-agent-release-information/prisma-access-agent-known-issues</loc></url>
@@ -43,6 +42,7 @@ _SITEMAP = """<?xml version="1.0"?>
 # ============================================================
 # extract_dotted_version must handle 2-dashed-before-marker too
 # ============================================================
+
 
 @pytest.mark.parametrize(
     "url,expected",
@@ -71,6 +71,7 @@ def test_extract_dotted_version(url: str, expected: str):
 # ============================================================
 # Crawler-level: must discover at least 1 version
 # ============================================================
+
 
 def _crawler() -> PrismaAccessAgentCrawler:
     c = PrismaAccessAgentCrawler.__new__(PrismaAccessAgentCrawler)

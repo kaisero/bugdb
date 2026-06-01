@@ -5,7 +5,6 @@ import pytest
 from bugdb.crawlers.products.cortex_xdr import CortexXDRCrawler
 from bugdb.transport.base import FetchedPage
 
-
 _ADDRESSED_HTML = (
     "<div><table>"
     "<thead><tr><th>ISSUE</th><th>DESCRIPTION</th></tr></thead>"
@@ -163,9 +162,7 @@ async def test_crawl_produces_no_versions_when_all_topic_fetches_fail():
         ],
         contents={},
     )
-    crawler = CortexXDRCrawler(
-        fluidtopics=stub, max_retries=1, retry_delay=0.0
-    )
+    crawler = CortexXDRCrawler(fluidtopics=stub, max_retries=1, retry_delay=0.0)
     result = await crawler.crawl()
     # No versions returned when the only topic fetch fails.
     assert result.product.versions == []

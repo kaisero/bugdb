@@ -35,9 +35,7 @@ def _by_bug_id(db: dict) -> dict[tuple[str, str, str], set[str]]:
     for p in db.get("products", []):
         for v in p.get("versions", []):
             for kind in ("known_issues", "addressed_issues"):
-                out[(p["id"], v["version"], kind)] = {
-                    issue["bug_id"] for issue in v.get(kind, [])
-                }
+                out[(p["id"], v["version"], kind)] = {issue["bug_id"] for issue in v.get(kind, [])}
     return out
 
 

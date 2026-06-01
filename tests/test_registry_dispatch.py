@@ -19,7 +19,6 @@ import respx
 from bugdb.crawlers.registry import dispatch_async
 from bugdb.transport.httpx_transport import HttpxDocsTransport
 
-
 _OK_HTML = """<html><body>
 <table>
   <thead><tr><th>Issue ID</th><th>Description</th></tr></thead>
@@ -68,8 +67,7 @@ async def test_dispatch_async_shares_one_transport_across_products():
             )
             # No FailedFetch entries means no fetches errored out.
             assert result.failed_fetches == [], (
-                f"{prod_id}: unexpected failed fetches: "
-                f"{[f.error for f in result.failed_fetches]}"
+                f"{prod_id}: unexpected failed fetches: {[f.error for f in result.failed_fetches]}"
             )
     finally:
         await transport.aclose()
