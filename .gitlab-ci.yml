@@ -9,13 +9,6 @@ variables:
   # the full recommended set on every run.
   DEBIAN_FRONTEND: noninteractive
 
-# YAML anchor: install curl once per job that needs it. Used by
-# `data-baseline-integration`, `update-bugdb`, and `pages` — all of
-# which talk to ``${CI_API_V4_URL}/.../packages/generic/bugdb/...``.
-.install_curl: &install_curl
-  - apt-get update -qq
-  - apt-get install -y --no-install-recommends curl ca-certificates
-
 cache:
   key:
     files:
@@ -98,7 +91,7 @@ test:
 data-baseline-integration:
   stage: integration
   script:
-    - *install_curl
+    - apt-get install -y --no-install-recommends curl ca-certificates
     - uv sync --locked --group test
     # Download bugdb.json from the Package Registry — the file is not
     # committed to the repo (13 MB). The update-bugdb scheduled job
@@ -186,7 +179,7 @@ upstream-canary:
 update-bugdb:
   stage: fetch
   script:
-    - *install_curl
+    - apt-get install -y --no-install-recommends curl ca-certificates
     - uv sync --locked
     - uv run playwright install --with-deps chromium
     # Download existing bugdb.json from Package Registry (if any).
@@ -247,7 +240,7 @@ update-bugdb:
 pages:
   stage: deploy
   script:
-    - *install_curl
+    - apt-get install -y --no-install-recommends curl ca-certificates
     - uv sync --locked
     # Download bugdb.json from the Package Registry. If the scheduled
     # fetch hasn't run yet the curl will fail and the deploy aborts
