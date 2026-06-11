@@ -25,7 +25,10 @@ pytestmark = pytest.mark.data_baseline
 #   12.1.5-h2           - hotfix
 #   6.2.9-linux         - GlobalProtect platform-specific
 #   6.2.8-c223          - GlobalProtect build tag
-VERSION_RE = re.compile(r"^\d+\.\d+(?:\.\d+)?(?:-[a-z][a-z0-9]*)?$")
+#   8.1.25-2            - bare numeric hotfix (upstream slug
+#                         pan-os-8-1-25-2-addressed-issues really does
+#                         omit the "h")
+VERSION_RE = re.compile(r"^\d+\.\d+(?:\.\d+)?(?:-[a-z0-9]+)?$")
 
 # Bug ids look like PREFIX-NUMBER: PAN-300637, GPCLIENTAPP-1234, etc.
 BUG_ID_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")

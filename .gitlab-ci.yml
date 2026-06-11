@@ -32,12 +32,19 @@ cache:
   paths:
     - .uv-cache
 
+# Stage order: `fetch` deliberately precedes `integration`. On scheduled
+# pipelines update-bugdb refreshes the Package Registry artifact FIRST and
+# data-baseline-integration then validates the data that was just fetched.
+# The old order (integration before fetch) had two problems:
+#   - the baseline tests validated the PREVIOUS cycle's data, and
+#   - a failing baseline run skipped the fetch stage entirely, freezing
+#     the registry artifact until the baseline was fixed.
 stages:
   - lint
   - test
+  - fetch
   - integration
   - canary
-  - fetch
   - deploy
 
 # ---------------------------------------------------------------------------
@@ -98,6 +105,11 @@ test:
 #   - loads 13 MB bugdb.json once per session
 #   - parametrizes ~1900 assertions per (product, version) pair
 #   - signal "did the fetch lose data" must not be drowned by parser churn
+#
+# Runs AFTER the `fetch` stage: on scheduled pipelines it downloads the
+# registry artifact that update-bugdb just uploaded, so the assertions
+# apply to the freshest crawl. A red run here flags a data regression
+# but never blocks the next fetch (see the stage-order comment above).
 #
 # Does NOT run on every commit. Triggered by:
 #   - scheduled pipelines (nightly)
@@ -161,6 +173,11 @@ data-baseline-integration:
 # ---------------------------------------------------------------------------
 upstream-canary:
   stage: canary
+  # Empty `needs` detaches the canary from the fetch/integration DAG: it
+  # probes upstream URLs directly and must keep running even when the
+  # fetch or the baseline tier is red — different failure modes deserve
+  # different blast radii.
+  needs: []
   script:
     - uv sync --locked --group test
     - uv run pytest tests/canary/
