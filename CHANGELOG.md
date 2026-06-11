@@ -5,6 +5,39 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-06-11
+
+### Changed
+- **Baseline refreshed against the sitemap/httpx crawler generation.**
+  `tests/baselines/data_baseline.json` is now a fingerprint of the
+  2026-06-02 Package Registry artifact (the first crawl produced by the
+  new sitemap-driven fetch). The April baseline fingerprinted the old
+  Playwright/DOM crawler, whose version keying no longer matches:
+  Prisma Access majors gained a `.0` patch component (`4.0` → `4.0.0`),
+  GlobalProtect combined hotfix/build pages are keyed by build tag
+  (`6.2.8-h2` → `6.2.8-c243`), PAN-OS addressed issues are split into
+  per-hotfix versions instead of aggregated under the base release, and
+  Cortex XDR labels follow the FluidTopics API. Net delta: +1,600
+  versions discovered, ~200 baseline bug ids relocated to more precise
+  version keys, junk artifacts of the old DOM parser dropped
+  (`1.9932.4796-a4d6`, `CPATR-23499Windows`).
+- **PAN-OS 10.0.x accepted as an EOL drop.** Palo Alto delisted the
+  10.0 release notes from `sitemap.xml`; sitemap-driven discovery can
+  no longer see them (the pages themselves still resolve). The 26
+  versions / 199 bug ids are intentionally absent from the refreshed
+  baseline.
+- **`fetch` stage now precedes `integration` in CI.** A red
+  data-baseline run used to skip the scheduled `update-bugdb` job,
+  freezing the registry artifact until the baseline was fixed (this
+  starved refreshes between 2026-06-02 and 2026-06-10). The baseline
+  tier now validates the artifact that was *just* fetched and never
+  blocks the next fetch. `upstream-canary` gets `needs: []` so upstream
+  probing is independent of both.
+- **Version-format invariant accepts bare numeric hotfix suffixes.**
+  Upstream really publishes `pan-os-8-1-25-2-addressed-issues` (no `h`
+  in the slug), so `VERSION_RE` now allows `8.1.25-2` alongside
+  `12.1.5-h2` / `6.2.8-c223` / `6.2.9-linux`.
+
 ## [1.0.4] - 2026-06-02
 
 ### Added
