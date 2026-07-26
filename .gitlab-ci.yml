@@ -261,14 +261,26 @@ update-bugdb:
 # in, and deploys to Pages. No external CDN dependency — the frontend
 # loads assets/bugdb.json from the same origin via a relative path.
 #
-# Fires only when a commit lands on `main` via a push pipeline, which
-# in practice means "after a merge request has been merged into main"
-# (GitLab runs a push-source pipeline on the resulting merge commit).
-# Explicitly branch-gated to "main" rather than $CI_DEFAULT_BRANCH so
-# the behaviour doesn't silently change if the repo's default branch
-# is ever switched. The CI_PIPELINE_SOURCE == "push" guard excludes
-# schedule, web-manual, tag, and merge-request-event pipelines so they
-# cannot accidentally trigger a deploy.
+# Fires on two occasions:
+#
+#   - a commit landing on `main` via a push pipeline, which in practice
+#     means "after a merge request has been merged into main" (GitLab
+#     runs a push-source pipeline on the resulting merge commit). This
+#     ships site/template changes immediately. Explicitly branch-gated
+#     to "main" rather than $CI_DEFAULT_BRANCH so the behaviour doesn't
+#     silently change if the repo's default branch is ever switched.
+#
+#   - a scheduled pipeline, so the site actually picks up the bugdb.json
+#     that update-bugdb uploaded earlier in the same run. Without this
+#     the fetch keeps refreshing the registry while Pages serves whatever
+#     was baked at the last merge — the site froze on the 2026-06-11 build
+#     for six weeks that way.
+#
+# No `needs:` here on purpose. Sitting in the `deploy` stage means the
+# stage order (fetch -> integration -> canary -> deploy) gates the deploy
+# behind data-baseline-integration: a data regression skips the deploy and
+# Pages keeps serving the last known-good build. upstream-canary is
+# allow_failure, so an upstream network flake can't block a publish.
 # ---------------------------------------------------------------------------
 pages:
   stage: deploy
@@ -293,4 +305,10 @@ pages:
     paths:
       - public
   rules:
+    # Merge landed on main — rebuild so site changes ship right away.
     - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE == "push"
+    # Scheduled run — publish the data update-bugdb just fetched.
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    # Manual button, for forcing a redeploy between schedules.
+    - if: $CI_PIPELINE_SOURCE == "web"
+      when: manual
