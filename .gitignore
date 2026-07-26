@@ -42,6 +42,7 @@ htmlcov/
 # Generated files
 dist/
 data/
+assets/
 
 # OS
 .DS_Store
