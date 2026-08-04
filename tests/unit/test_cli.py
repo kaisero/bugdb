@@ -1,6 +1,7 @@
 """Tests for BugDB CLI commands."""
 
 import json
+import re
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
@@ -20,17 +21,27 @@ from bugdb.models import (
 
 runner = CliRunner()
 
+# CSI sequences (colour, bold, cursor moves) as emitted by Rich.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
 
 def _flat(text: str) -> str:
-    """Collapse whitespace in Rich-rendered output for substring matching.
+    """Normalise Rich-rendered output for substring matching.
 
-    Rich wraps long paths at the CliRunner's terminal width (default 80),
-    which can split asserted substrings like "not found" across a newline
-    ("not \\nfound"). This helper normalises all whitespace to single
-    spaces so assertions are robust to tmpdir path length and terminal
-    width changes.
+    Two things get in the way of a plain ``in`` assertion:
+
+    - Rich wraps long paths at the CliRunner's terminal width (default
+      80), which can split asserted substrings like "not found" across a
+      newline ("not \\nfound").
+    - When colour is forced, Rich interleaves escape sequences *inside*
+      words, so "--progress" is rendered as "-\\x1b[0m\\x1b[1;36m-progress".
+      GitHub Actions runners set ``FORCE_COLOR``, which triggers exactly
+      this even though the CliRunner's stream is not a TTY.
+
+    Stripping escapes and collapsing whitespace makes assertions robust
+    to tmpdir path length, terminal width, and colour settings alike.
     """
-    return " ".join(text.split())
+    return " ".join(_ANSI_RE.sub("", text).split())
 
 
 def _write_minimal_bugdb_file(path) -> None:
