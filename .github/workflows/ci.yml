@@ -1,0 +1,88 @@
+name: CI
+
+# Fast feedback tier: lint + unit/crawler tests.
+#
+# Mirrors the GitLab `lint` and `test` stages, including their trigger
+# rules: every push to `develop` and every pull request. Pushes to `main`
+# are deliberately not covered — commits land there by merging an already
+# tested PR, and `main` pushes instead trigger the Pages deploy.
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Split out from `test` so lint-only changes get feedback in seconds
+  # without waiting on the Playwright browser download. Uses only the
+  # `dev` dependency group.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked --group dev
+
+      # `--output-format=github` emits ::error:: annotations, which render
+      # inline on the PR diff — the GitHub equivalent of the codequality
+      # report the GitLab job uploaded.
+      - name: ruff check
+        run: uv run ruff check --output-format=github .
+
+      - name: ruff format --check
+        run: uv run ruff format --check .
+
+  # Fast tier: unit + crawler tests.
+  #
+  # The `playwright install --with-deps chromium` step is required even
+  # though most crawler tests use the MockPlaywright fixture from
+  # tests/conftest.py. The root cause: several tests (TestCortexXDRCrawler,
+  # TestADEMCrawler, TestSCMCrawler, TestCloudNGFW*, TestDeviceSecurityCrawler,
+  # TestPluginVersionDiscovery) patch individual fetch methods but enter
+  # the crawler via `async with CortexXDRCrawler()`, which triggers
+  # BaseCrawler.__aenter__ -> async_playwright().start() -> chromium.launch().
+  # Until __aenter__ is made lazy or those tests are refactored to patch
+  # `async_playwright` at module level, a real Chromium must be installed.
+  # Tracked as roadmap item D3 (mock fixture coverage expansion).
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked --group test
+
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+
+      - name: pytest
+        run: uv run pytest --junitxml=report.xml -v
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: report.xml
+          retention-days: 30

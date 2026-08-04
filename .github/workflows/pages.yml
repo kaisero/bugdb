@@ -1,0 +1,89 @@
+name: Deploy Pages
+
+# Builds the static site with real data baked in and publishes it to
+# GitHub Pages at https://kaisero.github.io/bugdb/.
+#
+# The frontend loads `assets/bugdb.json` and `assets/release-notes.json`
+# through same-origin *relative* paths, so serving from the /bugdb/
+# project-page subpath needs no rewriting and no CDN.
+#
+# Fires on three occasions:
+#
+#   - a push to `main`, which in practice means "a pull request was
+#     merged". This ships site/template changes immediately.
+#
+#   - a `workflow_call` from the Data refresh workflow, so the site picks
+#     up the bugdb.json that the fetch job just produced. Without this the
+#     fetch would keep refreshing the data while Pages served whatever was
+#     baked at the last merge — the site froze on the 2026-06-11 build for
+#     six weeks that way.
+#
+#   - a manual dispatch, for forcing a redeploy between schedules.
+
+on:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read # download-bugdb-data reads the artifacts API
+  pages: write
+  id-token: write
+
+# Never let two deploys race. `cancel-in-progress: false` so a queued
+# deploy finishes rather than being dropped — losing a deploy means the
+# site silently keeps stale data.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked
+
+      # `required: true` — deploying a site with no bug data would replace
+      # a working site with a permanently loading one. Better to fail here
+      # and leave the last good build serving.
+      - name: Restore bugdb.json
+        uses: ./.github/actions/download-bugdb-data
+        with:
+          required: "true"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Written next to bugdb.json so build-site-cmd auto-discovers it
+      # (see SiteBuilder.build_site in site_builder.py).
+      - name: Generate release notes
+        run: uv run bugdb generate-release-notes -o assets/release-notes.json --force
+
+      - name: Build site
+        run: uv run bugdb build-site-cmd -b assets/bugdb.json -o public
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

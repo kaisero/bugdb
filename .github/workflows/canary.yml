@@ -1,0 +1,48 @@
+name: Upstream canary
+
+# Probes real docs.paloaltonetworks.com URLs to detect when Palo Alto
+# ships a new major version that the crawler's hard-coded candidate list
+# doesn't know about. This is the only tier that catches the PAN-OS 12.1
+# class of bug.
+#
+# On GitLab this lived in its own pipeline stage with `allow_failure: true`
+# so an upstream network flake couldn't block a green data-baseline run
+# from deploying. Here it is a standalone workflow, which gets the same
+# isolation for free — it cannot gate the fetch or the deploy no matter
+# what it does. Because of that it is *not* marked continue-on-error: a
+# red canary is the signal, and it should be visible as a failed run.
+
+on:
+  schedule:
+    # Nightly at 03:00 UTC.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Probe upstream docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked --group test
+
+      - name: pytest (canary)
+        run: uv run pytest tests/canary/ -m canary --junitxml=canary.xml -v
+
+      - name: Upload canary report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-report
+          path: canary.xml
+          retention-days: 30

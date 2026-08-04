@@ -1,0 +1,85 @@
+name: Download bugdb data
+description: >-
+  Restore the most recent `bugdb-data` workflow artifact into
+  assets/bugdb.json.
+
+# This is the GitHub replacement for the GitLab Generic Package Registry
+# entry that used to hold bugdb.json (~10 MB, not committed to the repo).
+#
+# Why the REST API and not `actions/download-artifact`: that action can
+# only see artifacts produced by the *current* run. The Pages deploy also
+# fires on pushes to `main`, where the data was produced by an entirely
+# different (scheduled) run, so the newest repo-wide artifact is what we
+# actually want. Using one lookup for both trigger paths keeps the deploy
+# behaving identically however it was started.
+#
+# Artifacts expire after `retention-days` (90 max). The refresh schedule
+# runs every 3 days, so the newest artifact is normally hours-to-days old
+# — but expiry is why `required: true` callers fail loudly rather than
+# quietly deploying a site with no data.
+
+inputs:
+  required:
+    description: >-
+      When "true", fail the job if no usable artifact exists. When "false",
+      log and continue with no file on disk (first-ever run).
+    required: false
+    default: "false"
+  github-token:
+    description: "Token with `actions: read` on this repository."
+    required: true
+
+outputs:
+  found:
+    description: '"true" when assets/bugdb.json was written.'
+    value: ${{ steps.download.outputs.found }}
+
+runs:
+  using: composite
+  steps:
+    - id: download
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REQUIRED: ${{ inputs.required }}
+      run: |
+        set -euo pipefail
+        mkdir -p assets
+
+        # The `name` filter is server-side; `expired` artifacts still appear
+        # in the listing with their download URL gone, so filter them out
+        # before picking the newest.
+        artifact_id="$(
+          gh api \
+            --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/artifacts" \
+            -f name=bugdb-data \
+            -F per_page=100 \
+            --jq '[.artifacts[] | select(.expired == false)]
+                  | sort_by(.created_at)
+                  | last
+                  | .id // empty'
+        )"
+
+        if [ -z "${artifact_id}" ]; then
+          if [ "${REQUIRED}" = "true" ]; then
+            echo "::error::No unexpired 'bugdb-data' artifact found. Run the 'Data refresh' workflow first." >&2
+            exit 1
+          fi
+          echo "No existing bugdb-data artifact — starting fresh."
+          echo "found=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        echo "Downloading artifact ${artifact_id}"
+        gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" > /tmp/bugdb-data.zip
+        unzip -o -q /tmp/bugdb-data.zip -d assets
+        rm -f /tmp/bugdb-data.zip
+
+        if [ ! -s assets/bugdb.json ]; then
+          echo "::error::Artifact ${artifact_id} did not contain a non-empty bugdb.json." >&2
+          exit 1
+        fi
+
+        echo "Restored assets/bugdb.json ($(du -h assets/bugdb.json | cut -f1))"
+        echo "found=true" >> "$GITHUB_OUTPUT"

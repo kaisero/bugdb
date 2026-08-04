@@ -1,0 +1,145 @@
+name: Data refresh
+
+# Scheduled crawl of all products, followed by data-fidelity validation
+# and a Pages deploy.
+#
+# Job order matters and is deliberate. `fetch` runs BEFORE `integration`
+# so the baseline tests validate the data that was *just* crawled. The
+# reverse order had two problems: the tests validated the previous
+# cycle's data, and a failing baseline run skipped the fetch entirely,
+# freezing the stored artifact until the baseline was fixed.
+#
+# `deploy` needs `integration`, so a data regression skips the deploy and
+# Pages keeps serving the last known-good build.
+#
+# CI minutes budget: ~5-10 min incremental, ~15-20 min full. At every
+# 3 days that's roughly 70 min/month.
+#
+# NOTE: GitHub disables `schedule` triggers on repositories with no
+# activity for 60 days. If the data ever goes stale for weeks, check
+# whether the schedule was auto-disabled before debugging the crawler.
+
+on:
+  schedule:
+    # Every 3 days at 02:00 UTC (days 1, 4, 7, ... of each month).
+    - cron: "0 2 */3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# Serialize refreshes. The Pages deploy resolves "the newest bugdb-data
+# artifact", so two overlapping refreshes could publish the older one.
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+jobs:
+  # Incremental crawl. The first-ever run does a full fetch (no artifact
+  # exists yet -> starts from scratch); later runs restore the previous
+  # bugdb.json and pass --incremental so only new versions are crawled.
+  fetch:
+    name: Fetch bug data
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked
+
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+
+      # `required: false` — a missing artifact is the expected state on
+      # the first run and after a 90-day expiry. `bugdb fetch` falls back
+      # to a full crawl when assets/bugdb.json is absent.
+      - name: Restore previous bugdb.json
+        uses: ./.github/actions/download-bugdb-data
+        with:
+          required: "false"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch
+        run: >-
+          uv run bugdb fetch
+          -o assets/bugdb.json
+          --incremental
+          --no-progress
+          -l assets/bugdb.log
+
+      # This artifact is the data store: it is what the integration job
+      # validates, what the Pages deploy publishes, and what the next
+      # refresh restores as its incremental baseline.
+      - name: Upload bugdb.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: bugdb-data
+          path: assets/bugdb.json
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload fetch log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fetch-log
+          path: assets/bugdb.log
+          retention-days: 7
+          if-no-files-found: warn
+
+  # Heavy tier: data-fidelity tests against the committed baseline.
+  # Deliberately isolated from the fast `test` job in ci.yml:
+  #   - loads a ~10 MB bugdb.json once per session
+  #   - parametrizes ~1900 assertions per (product, version) pair
+  #   - the signal "did the fetch lose data" must not be drowned by
+  #     parser churn
+  #
+  # Downloads the artifact from *this* run rather than going through the
+  # artifacts API, because the point is to validate exactly what the
+  # fetch job above produced.
+  integration:
+    name: Data baseline
+    needs: fetch
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --locked --group test
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bugdb-data
+          path: assets
+
+      - name: pytest (data baseline)
+        run: uv run pytest tests/integration/ -m data_baseline --junitxml=integration.xml -v
+
+      - name: Upload integration report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-report
+          path: integration.xml
+          retention-days: 30
+
+  deploy:
+    name: Publish
+    needs: integration
+    uses: ./.github/workflows/pages.yml
+    permissions:
+      contents: read
+      actions: read
+      pages: write
+      id-token: write
