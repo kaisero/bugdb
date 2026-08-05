@@ -109,6 +109,27 @@
 [data-theme="dark"] select { background-color: var(--d-surface-2); color: var(--d-text); }
 [data-theme="dark"] input::placeholder { color: var(--d-text-4); }
 
+/* ---- autocomplete dropdown ----
+   index.html carries an inline <style> block with hard-coded light colours
+   (background: white, #d1d5db, #FFF7ED, #FFEDD5, #6b7280) for these. They
+   are plain CSS rather than Tailwind utilities, so the overrides above do
+   not reach them. The attribute selector gives these rules a higher
+   specificity than the inline block, so they win regardless of source
+   order. */
+[data-theme="dark"] .autocomplete-dropdown {
+  background: var(--d-surface-2);
+  border-color: var(--d-border);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, .5);
+}
+[data-theme="dark"] .autocomplete-option { color: var(--d-text-2); }
+[data-theme="dark"] .autocomplete-option:hover,
+[data-theme="dark"] .autocomplete-option.highlighted { background-color: rgba(255, 122, 85, .16); }
+[data-theme="dark"] .autocomplete-option.selected {
+  background-color: rgba(255, 122, 85, .26);
+  color: var(--d-text);
+}
+[data-theme="dark"] .autocomplete-no-results { color: var(--d-text-3); }
+
 /* ---- header controls ----
    The header is dark in both themes, so these are styled once against that
    ground and read identically either way.
