@@ -122,3 +122,11 @@ class TestChangeTypeRendering:
     def test_change_list_uses_the_alignment_grid(self, app_js):
         assert "className: 'rn-list'" in app_js
         assert "className: 'contents'" in app_js
+
+
+class TestReleaseNotesData:
+    def test_latest_release_is_the_current_version(self):
+        from bugdb import __version__
+        from bugdb.release_notes import get_release_notes
+
+        assert get_release_notes().releases[0].version == __version__

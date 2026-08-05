@@ -1,6 +1,25 @@
 {
   "releases": [
     {
+      "version": "1.0.7",
+      "date": "2026-08-05",
+      "title": null,
+      "changes": [
+        {
+          "type": "feature",
+          "description": "Dark mode. Follows your system appearance by default; use the switch in the header to override it."
+        },
+        {
+          "type": "improvement",
+          "description": "Release notes now mark each change with an icon and a key, so descriptions line up in a single column."
+        },
+        {
+          "type": "improvement",
+          "description": "Build version and data date moved from the header into this dialog."
+        }
+      ]
+    },
+    {
       "version": "1.0.6",
       "date": "2026-08-05",
       "title": null,
