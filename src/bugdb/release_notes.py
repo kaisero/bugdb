@@ -19,6 +19,32 @@ def get_release_notes() -> ReleaseNotes:
     return ReleaseNotes(
         releases=[
             Release(
+                version="1.0.7",
+                date="2026-08-05",
+                changes=[
+                    ReleaseChange(
+                        type=ChangeType.FEATURE,
+                        description=(
+                            "Dark mode. Follows your system appearance by default; "
+                            "use the switch in the header to override it."
+                        ),
+                    ),
+                    ReleaseChange(
+                        type=ChangeType.IMPROVEMENT,
+                        description=(
+                            "Release notes now mark each change with an icon and a "
+                            "key, so descriptions line up in a single column."
+                        ),
+                    ),
+                    ReleaseChange(
+                        type=ChangeType.IMPROVEMENT,
+                        description=(
+                            "Build version and data date moved from the header into this dialog."
+                        ),
+                    ),
+                ],
+            ),
+            Release(
                 version="1.0.6",
                 date="2026-08-05",
                 changes=[
