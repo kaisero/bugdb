@@ -41,7 +41,20 @@
         X-Frame-Options: SAMEORIGIN by default.
     -->
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+    <!--
+        Resolve the colour theme before first paint. This must stay a
+        separate file: the CSP above is `script-src 'self'`, so an inline
+        script would be blocked and dark-mode users would get a white flash.
+    -->
+    <script src="assets/theme.js"></script>
     <link rel="stylesheet" href="assets/tailwind.css">
+    <!--
+        Dark layer plus the header/modal classes. Loaded after tailwind.css
+        so its overrides win. Never add new classes to tailwind.css — that
+        file is a committed build artifact and there is no Tailwind build
+        step in this repo.
+    -->
+    <link rel="stylesheet" href="assets/theme.css">
     <style>
         .autocomplete-container {
             position: relative;
