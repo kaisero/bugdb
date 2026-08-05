@@ -2,36 +2,7 @@
 
 import json
 
-import pytest
-
-from bugdb.models import BugDatabase, Issue, Product, ProductVersion
 from bugdb.site_builder import SiteBuilder, build_site, build_site_from_database
-
-
-@pytest.fixture
-def sample_database():
-    """Create a sample database for testing."""
-    issue = Issue(
-        bug_id="PAN-12345",
-        description="Test issue description",
-        symptoms="Test symptoms",
-        workaround="Test workaround",
-        affected_components=["Component1"],
-    )
-    version = ProductVersion(
-        version="11.1.0",
-        release_date="2026-03-01",
-        known_issues=[issue],
-        addressed_issues=[],
-    )
-    product = Product(id="pan-os", name="PAN-OS", versions=[version])
-    return BugDatabase(products=[product])
-
-
-@pytest.fixture
-def temp_output_dir(tmp_path):
-    """Create a temporary output directory."""
-    return tmp_path / "dist"
 
 
 class TestSiteBuilder:
@@ -81,6 +52,14 @@ class TestSiteBuilder:
         assert "metadata" in data
         assert len(data["products"]) == 1
         assert data["products"][0]["id"] == "pan-os"
+
+    def test_build_copies_theme_assets(self, sample_database, temp_output_dir):
+        """theme.css and theme.js must ship alongside app.js."""
+        builder = SiteBuilder(temp_output_dir)
+        builder.build(sample_database)
+
+        assert (temp_output_dir / "assets" / "theme.css").is_file()
+        assert (temp_output_dir / "assets" / "theme.js").is_file()
 
     def test_build_copies_app_js(self, sample_database, temp_output_dir):
         """Test that build copies app.js to assets."""
