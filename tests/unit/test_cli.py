@@ -598,6 +598,10 @@ class TestBuildCommand:
 
         assert result.exit_code == 0, result.stdout
         assert "Skipping fetch" in _flat(result.stdout)
+        # Release notes must land beside --bugdb, not in a hard-coded
+        # ./assets/. The old static default made this test overwrite the
+        # repo's own assets/release-notes.json on every run.
+        assert (tmp_path / "release-notes.json").is_file()
         assert "Build Finished" in _flat(result.stdout)
         assert (site_out / "index.html").exists()
         assert (site_out / "assets" / "bugdb.json").exists()

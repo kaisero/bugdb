@@ -869,7 +869,7 @@ def build(
         ),
     ] = Path("assets/bugdb.json"),
     release_notes: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--release-notes",
             "-r",
@@ -879,7 +879,7 @@ def build(
                 "the --bugdb file in the same directory."
             ),
         ),
-    ] = Path("assets/release-notes.json"),
+    ] = None,
     skip_fetch: Annotated[
         bool,
         typer.Option(
@@ -1013,6 +1013,15 @@ def build(
             progress=progress,
             log_file=log_file,
         )
+
+    # Resolve the release-notes path. When not given explicitly it is a
+    # sibling of --bugdb, as the option help promises. It used to fall back
+    # to a hard-coded `assets/release-notes.json` relative to the current
+    # directory, so `bugdb build -b /somewhere/else/bugs.json` silently
+    # wrote release notes into ./assets/ instead of next to the database —
+    # and the test suite quietly overwrote the repo's own copy.
+    if release_notes is None:
+        release_notes = bugdb.with_name("release-notes.json")
 
     # Stage 2: regenerate release-notes.json. Always force — this is
     # the unified build's canonical output, stale content must lose.
