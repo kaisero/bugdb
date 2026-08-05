@@ -5,6 +5,46 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-08-05
+
+### Fixed
+- **PAN-OS 12.1 and 12.2 are discovered again.** Palo Alto moved PAN-OS
+  release notes off `/pan-os/<v>/pan-os-release-notes` onto the shared
+  NGFW book at `/ngfw/release-notes/<v>` starting with 12.1; the legacy
+  path now 404s for 12.x. `_PRODUCT_PREFIXES["panos"]` matched only
+  `/pan-os/`, so all 36 issue URLs under `/ngfw/release-notes/`
+  classified with no product and never reached a crawler. This was a
+  regression: the 12.1 URL move was handled in 1.0.3 for the probe-based
+  discovery path, and the 1.0.4 sitemap rewrite added a second discovery
+  path — made primary — that did not carry the knowledge across.
+  Recovers 17 versions, 317 known and 758 addressed issues.
+- **Release notes no longer lose entries on every deploy.**
+  `release_notes.py` held only 1.0.0 and 1.0.1 while
+  `assets/release-notes.json` had a hand-edited 1.0.3 entry. Since the
+  site build regenerates the JSON from the module, 1.0.3 was dropped
+  from the site on each publish. 1.0.2 through 1.0.5 were never present
+  at all. All are now backfilled, and the module documents itself as the
+  single source of truth.
+- **`bugdb build` honours its documented `--release-notes` default.** The
+  option help promises "a sibling of the --bugdb file in the same
+  directory" but the implementation used a static
+  `assets/release-notes.json` relative to the working directory, so
+  `bugdb build -b /elsewhere/bugs.json` wrote release notes into `./assets/`.
+  This also made the CLI test suite overwrite the repository's own copy on
+  every run.
+
+### Changed
+- **The upstream canary now checks ingestion, not just reachability.** It
+  previously only asserted that a version's landing page returns 200, so
+  PAN-OS 12.1 looked healthy for weeks while producing zero data. New
+  canary tests run the real sitemap classification path against the live
+  sitemap and assert each known major yields issue URLs. PAN-OS 10.0 is
+  recorded as an explicit, documented exclusion (delisted upstream, EOL —
+  see 1.0.5) rather than an untracked blind spot.
+- **`PANOSCrawler.CANDIDATE_VERSIONS` promoted to a class attribute** and
+  `12-2` added. The canary previously kept its own copy of the probe list
+  and asserted against that copy, so the two drifted silently.
+
 ## [1.0.5] - 2026-06-11
 
 ### Changed
