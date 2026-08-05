@@ -22,7 +22,16 @@ logger = logging.getLogger(__name__)
 # *any* substring belongs to that product. Mirrors `PRODUCT_CRAWLERS` keys
 # in `bugdb.crawlers.registry`.
 _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
-    "panos": ("/pan-os/",),
+    # PAN-OS release notes live in two places. Everything up to 11.2 sits
+    # on the legacy `/pan-os/<v>/pan-os-release-notes` path. From 12.1
+    # onward Palo Alto publishes them on the shared NGFW book at
+    # `/ngfw/release-notes/<v>` and the legacy path 404s — so matching
+    # only `/pan-os/` silently dropped every 12.x version.
+    #
+    # Pin to `/ngfw/release-notes/`, not `/ngfw/`: the sitemap carries
+    # ~4700 other NGFW doc URLs (administration, api, networking, ...)
+    # and only the release-notes subtree holds issue pages.
+    "panos": ("/pan-os/", "/ngfw/release-notes/"),
     # The sitemap lists BOTH the canonical /globalprotect/release-notes/
     # layout (~91 URLs, 200 OK) and stale /globalprotect/<ver>/globalprotect-app-release-notes/
     # URLs (~84, 301-redirect to canonical). Pinning to /release-notes/
