@@ -84,3 +84,41 @@ class TestReleaseNotesModal:
         for label in ("Feature", "Enhancement", "Bugfix", "Breaking"):
             assert label in legend
         assert legend.count("rn-legend-item") == 4
+
+
+class TestChangeTypeRendering:
+    """String contracts over the shipped app.js.
+
+    There is no JS test runner in this repo, so these assert on source text.
+    They catch regressions in the labels and marker classes; actual rendering
+    is verified manually (see the plan's verification task).
+    """
+
+    @pytest.fixture
+    def app_js(self, sample_database, temp_output_dir):
+        SiteBuilder(temp_output_dir).build(sample_database)
+        return (temp_output_dir / "assets" / "app.js").read_text(encoding="utf-8")
+
+    def test_labels_are_renamed(self, app_js):
+        assert "return 'Enhancement';" in app_js
+        assert "return 'Bugfix';" in app_js
+        assert "return 'Improvement';" not in app_js
+        assert "return 'Fix';" not in app_js
+
+    def test_stored_type_values_are_unchanged(self, app_js):
+        """Only labels change — renaming the data would break cached JSON."""
+        assert "case 'improvement':" in app_js
+        assert "case 'fix':" in app_js
+
+    def test_marker_is_icon_only(self, app_js):
+        """No text node appended to the marker."""
+        assert "rn-marker" in app_js
+        assert "createTextNode(getChangeTypeLabel" not in app_js
+
+    def test_marker_keeps_an_accessible_name(self, app_js):
+        """Icon-only must still announce its meaning."""
+        assert "aria-label', changeLabel" in app_js
+
+    def test_change_list_uses_the_alignment_grid(self, app_js):
+        assert "className: 'rn-list'" in app_js
+        assert "className: 'contents'" in app_js
