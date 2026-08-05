@@ -30,6 +30,7 @@ pytestmark = pytest.mark.canary
 #
 # Format matches PANOSCrawler.candidate_versions: "<major>-<minor>".
 KNOWN_UPSTREAM_PANOS_MAJORS: set[str] = {
+    "12-2",
     "12-1",
     "11-2",
     "11-1",
@@ -40,13 +41,26 @@ KNOWN_UPSTREAM_PANOS_MAJORS: set[str] = {
     "9-1",
 }
 
+# Majors whose issue pages should be reachable *through sitemap discovery*.
+# Narrower than KNOWN_UPSTREAM_PANOS_MAJORS on purpose:
+#
+#   10-0 — the release-notes landing page still answers 200, and a single
+#          `.../pan-os-10-0-release-information/known-issues` page exists,
+#          but Palo Alto has de-listed every 10.0 issue URL from
+#          sitemap.xml. Since discovery is sitemap-driven, 10.0 yields no
+#          data and has been absent from bugdb.json all along. It is EOL,
+#          so this is accepted rather than fixed — but it is recorded here
+#          instead of silently dropped, so the exclusion is a decision
+#          rather than a blind spot.
+SITEMAP_INGESTED_PANOS_MAJORS: set[str] = KNOWN_UPSTREAM_PANOS_MAJORS - {"10-0"}
+
 # Additional speculative candidates. If any of these suddenly start
 # responding 200, the nightly canary fails loudly and tells us to add
 # them to the crawler.
 SPECULATIVE_UPSTREAM_PANOS_MAJORS: set[str] = {
     "13-0",
     "13-1",
-    "12-2",
+    "12-3",
     "12-0",  # skipped release, but check in case
 }
 
@@ -116,22 +130,68 @@ def test_crawler_candidate_list_matches_known_upstream():
     This is a pure-Python check — no network needed. It runs under the
     canary marker because it's logically part of the upstream sanity.
     """
-    crawler_candidates = {
-        "12-1",
-        "12-0",
-        "11-3",
-        "11-2",
-        "11-1",
-        "11-0",
-        "10-2",
-        "10-1",
-        "10-0",
-        "9-1",
-    }
+    from bugdb.crawlers.products.panos import PANOSCrawler
+
+    # Read the real list rather than a copy — this test used to keep its
+    # own duplicate, which silently drifted out of sync.
+    crawler_candidates = set(PANOSCrawler.CANDIDATE_VERSIONS)
+
     missing_from_crawler = KNOWN_UPSTREAM_PANOS_MAJORS - crawler_candidates
     assert not missing_from_crawler, (
         f"The canary's KNOWN_UPSTREAM_PANOS_MAJORS contains versions that "
         f"PANOSCrawler.candidate_versions doesn't probe: "
         f"{sorted(missing_from_crawler)}. Update src/bugdb/crawlers/"
         f"products/panos.py or fix this test."
+    )
+
+
+# ---------------------------------------------------------------------
+# Reachability is not ingestion.
+#
+# The probes above only assert that a version's landing page answers 200.
+# PAN-OS 12.1 passed them for weeks while the crawl produced zero 12.x
+# versions: the page existed, but `_PRODUCT_PREFIXES["panos"]` matched
+# only `/pan-os/`, so the `/ngfw/release-notes/` URLs classified as
+# product_id=None and discovery never saw them. A green canary plus an
+# empty dataset is exactly the blind spot these tests close — they run
+# the real classification path against the live sitemap.
+# ---------------------------------------------------------------------
+
+
+@pytest.mark.canary
+@pytest.mark.parametrize(
+    "major_version",
+    sorted(SITEMAP_INGESTED_PANOS_MAJORS),
+    ids=lambda v: f"panos-{v}",
+)
+def test_known_panos_major_is_discoverable_from_sitemap(major_version: str, live_sitemap):
+    """Every major we claim to crawl must survive sitemap classification."""
+    from bugdb.crawlers.sitemap_discovery import discover_major_versions
+
+    discovered = discover_major_versions(live_sitemap, "panos")
+    assert major_version in discovered, (
+        f"PAN-OS {major_version} is reachable upstream but does NOT appear in "
+        f"sitemap discovery — the crawl will silently produce zero versions "
+        f"for it. Discovered majors: {discovered}. Most likely the docs moved "
+        f"to a URL prefix that `_PRODUCT_PREFIXES['panos']` in "
+        f"src/bugdb/sitemap.py does not match."
+    )
+
+
+@pytest.mark.canary
+@pytest.mark.parametrize(
+    "major_version",
+    sorted(SITEMAP_INGESTED_PANOS_MAJORS),
+    ids=lambda v: f"panos-{v}",
+)
+def test_known_panos_major_yields_issue_pages(major_version: str, live_sitemap):
+    """Discovery must produce at least one version with real issue URLs."""
+    from bugdb.crawlers.sitemap_discovery import discover_version_pages
+
+    pages = discover_version_pages(live_sitemap, "panos", major_version=major_version)
+    assert pages, f"PAN-OS {major_version} discovered no version pages at all."
+    with_urls = [p for p in pages if p.known_issues_urls or p.addressed_issues_urls]
+    assert with_urls, (
+        f"PAN-OS {major_version} produced {len(pages)} version(s) but none carry "
+        f"known/addressed issue URLs — the page-classification step is dropping them."
     )
