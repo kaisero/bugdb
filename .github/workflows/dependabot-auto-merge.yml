@@ -1,0 +1,66 @@
+name: Dependabot auto-merge
+
+# Turns on GitHub's own auto-merge for a Dependabot pull request. It does not
+# merge anything itself: auto-merge waits for the checks that branch protection
+# on develop marks required, and merges only once they are all green. Remove the
+# required checks and this silently becomes "merge immediately", which is the
+# one failure mode worth knowing about.
+#
+# Patch and minor only. A major bump is where a green suite is least
+# reassuring -- breaking changes tend to surface at runtime rather than in CI --
+# so those stay open for a person. For a grouped update, fetch-metadata reports
+# the highest semver change in the group, so one major in the group holds the
+# whole PR back.
+
+# develop only, and that restriction is load-bearing rather than tidiness. Only
+# develop has required status checks; enabling auto-merge on a pull request
+# against an unprotected branch means auto-merge has nothing to wait for and the
+# merge happens immediately. Scoping the trigger means a Dependabot pull request
+# that lands on any other branch is simply left alone.
+on:
+  pull_request:
+    branches: [develop]
+
+# Dependabot-triggered runs get a read-only token by default; these two scopes
+# are what let `gh pr merge --auto` act on the pull request. Nothing here checks
+# out or executes the pull request's code, so the elevated token never runs
+# anything Dependabot proposed.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge
+    # Matched on the pull request's author rather than github.actor: actor is
+    # whoever caused this particular run, which a rerun by a human would change.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch update metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      - name: Enable auto-merge for patch and minor updates
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # A major update is left alone deliberately, and says so on the pull
+      # request -- otherwise the only signal is that nothing happened, which
+      # reads identically to the automation being broken.
+      - name: Explain why a major update was left alone
+        if: |
+          steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: |
+          gh pr comment "$PR_URL" --body \
+            "Left for review: this is a major update (\`${UPDATE_TYPE}\`), and auto-merge covers patch and minor only. Merge it by hand once you are happy with it."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          UPDATE_TYPE: ${{ steps.metadata.outputs.update-type }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
