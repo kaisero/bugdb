@@ -220,3 +220,24 @@ def test_split_bug_id_cell_recovers_id_living_outside_div_p():
         "lxml",
     )
     assert split_bug_id_cell(soup.find("td")) == ["PAN-212726", "PAN-211519"]
+
+
+def test_split_bug_id_cell_splits_slash_joined_ids():
+    """Prisma SD-WAN pairs two ids with a forward slash in one cell.
+
+    Verified live on the 6.3.0 addressed-issues page:
+    ``<td class="entry">CGSDW-37984/CGSDW-37622</td>``. When '/' was
+    dropped from the connector set the cell stopped splitting, so
+    CGSDW-37622 vanished from the database and reappeared as a bogus
+    fix_info of "/CGSDW-37622" on CGSDW-37984 — the exact defect this
+    helper exists to prevent.
+    """
+    soup = BeautifulSoup('<td class="entry">CGSDW-37984/CGSDW-37622</td>', "lxml")
+    assert split_bug_id_cell(soup.find("td")) == ["CGSDW-37984", "CGSDW-37622"]
+
+
+def test_split_bug_id_cell_keeps_slash_prose_intact():
+    """Allowing '/' as a connector must not split a cell where the slash
+    is prose rather than a separator between two ids."""
+    soup = BeautifulSoup('<td class="entry">A/B testing PAN-123456</td>', "lxml")
+    assert split_bug_id_cell(soup.find("td")) == ["A/B testing PAN-123456"]

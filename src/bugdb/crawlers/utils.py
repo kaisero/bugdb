@@ -397,11 +397,16 @@ _BUG_ID_PART_RE = re.compile(r"^[A-Z]+-\d{3,}$")
 _BUG_ID_FINDALL_RE = re.compile(r"[A-Z]+-\d{3,}")
 
 # Connector tokens allowed to remain once every bug id has been removed
-# from a cell's text: whitespace, ',', and the word "and". Limited to
-# exactly what's evidenced in observed markup (the report) and the test
-# fixtures below — no ';', '&', '/', or case-insensitive "AND" have ever
-# been seen, so they're left out rather than added speculatively.
-_CONNECTOR_RESIDUE_RE = re.compile(r"(?:[\s,]|and)*")
+# from a cell's text: whitespace, ',', '/', and the word "and". Limited to
+# what has actually been observed upstream — ';', '&' and a case-insensitive
+# "AND" have never been seen, so they are left out rather than added
+# speculatively.
+#
+# '/' is evidenced by Prisma SD-WAN, whose 6.3.0 addressed-issues page pairs
+# two ids as "CGSDW-37984/CGSDW-37622" in a single cell. Dropping it once
+# cost that second id, which reappeared as a bogus fix_info of
+# "/CGSDW-37622" on the first — so there is a regression test below.
+_CONNECTOR_RESIDUE_RE = re.compile(r"(?:[\s,/]|and)*")
 
 
 def _split_bug_id_text(text: str) -> list[str]:

@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discarded. Use the full re-crawl after a crawler's parsing or version
   keying changes.
 
+### Fixed
+- **Bug IDs paired with a slash are no longer lost.** Prisma SD-WAN writes
+  two IDs into one cell as `CGSDW-37984/CGSDW-37622`. A slash was not
+  recognised as a separator, so the second ID disappeared and was filed as
+  the first one's "fix info" — the same defect 1.0.8 fixed for the other
+  separators, reintroduced for this one.
+
 ## [1.0.8] - 2026-08-16
 
 ### Added
