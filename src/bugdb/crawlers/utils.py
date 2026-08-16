@@ -362,3 +362,37 @@ def extract_cell_text_with_tables(cell) -> str:
     # Get the text content with proper spacing
     text = normalize_text(cell_copy)
     return text
+
+
+# A cell is only split into multiple bug ids when EVERY part looks like a
+# bug id. This keeps the "EPM-4616" + "Resolved in ..." shape going
+# through extract_bug_id_and_fix_info as one string, so no existing
+# product's parse changes.
+_BUG_ID_PART_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+
+
+def split_bug_id_cell(cell) -> list[str]:
+    """Return the raw bug-id strings held in an issue-ID table cell.
+
+    Upstream sometimes maps two bug ids to one description by putting
+    two sibling ``<div class="p">`` elements in a single ``<td>``
+    (verified on the RBI known-issues page). ``get_text(strip=True)``
+    fuses those into ``"ARBI-7796ARBI-7757"``, which fails the caller's
+    ``^[A-Z]+-\\d+$`` guard and silently drops the row.
+
+    Returns a single-element list for the ordinary case, so callers can
+    treat both shapes identically.
+
+    Args:
+        cell: BeautifulSoup td/th element for the issue-ID column.
+
+    Returns:
+        List of raw bug-id strings, one per part when the cell holds
+        multiple sibling ``div.p`` elements that all look like bug ids;
+        otherwise a single-element list with the cell's full text.
+    """
+    parts = [p.get_text(strip=True) for p in cell.find_all("div", class_="p")]
+    parts = [p for p in parts if p]
+    if len(parts) > 1 and all(_BUG_ID_PART_RE.match(p) for p in parts):
+        return parts
+    return [cell.get_text(strip=True)]

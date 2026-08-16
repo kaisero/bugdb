@@ -30,6 +30,7 @@ from .utils import (
     extract_fix_info_from_description,
     extract_workaround,
     normalize_text,
+    split_bug_id_cell,
     version_sort_key,
 )
 
@@ -652,6 +653,79 @@ class BaseCrawler:
             return version
         return None
 
+    def _issues_from_row(
+        self, bug_id_cell, raw_description: str, feature: str | None = None
+    ) -> list[Issue]:
+        """Turn one issues-table row into zero or more Issue objects.
+
+        Shared by :meth:`_parse_issues_table` and
+        :meth:`_parse_issues_table_with_feature`, which differ only in
+        whether they attach a ``feature`` to ``affected_components``. A
+        row normally holds exactly one bug id, but some pages (verified
+        on RBI known-issues) pack two ids into one cell as sibling
+        ``<div class="p">`` elements sharing a single description;
+        :func:`split_bug_id_cell` recovers both, and this method emits
+        one ``Issue`` per recovered id.
+
+        Args:
+            bug_id_cell: The row's issue-ID ``<td>``/``<th>`` element.
+            raw_description: Already-extracted description text for the
+                row (from ``extract_cell_text_with_tables``, or ``""``
+                if the table has no description column).
+            feature: Optional feature name to prepend to each returned
+                issue's ``affected_components``.
+
+        Returns:
+            List of Issue objects, one per valid bug id found in the cell.
+        """
+        issues: list[Issue] = []
+
+        for raw_bug_id in split_bug_id_cell(bug_id_cell):
+            # Extract bug ID and fix info
+            # (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
+            bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
+
+            # Validate bug_id format (e.g., GPC-12345, PAN-12345)
+            if not re.match(r"^[A-Z]+-\d+$", bug_id):
+                logger.debug("Skipping invalid bug ID: %s", raw_bug_id)
+                continue
+
+            # Extract workaround from description if present
+            description, workaround = extract_workaround(raw_description)
+
+            # Extract fix info from description (e.g., "This issue is resolved in...")
+            description, fix_info = extract_fix_info_from_description(description, fix_info)
+
+            # Extract affected components from description start (e.g., "(NGFW Clusters)")
+            description, affected_components = extract_affected_components(description)
+
+            # Add feature as affected component if present
+            if feature:
+                if affected_components:
+                    # Prepend feature to existing components
+                    affected_components = [feature, *affected_components]
+                else:
+                    affected_components = [feature]
+
+            logger.debug(
+                "Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
+                bug_id,
+                fix_info is not None,
+                workaround is not None,
+                affected_components is not None,
+            )
+            issues.append(
+                Issue(
+                    bug_id=bug_id,
+                    description=description,
+                    workaround=workaround,
+                    fix_info=fix_info,
+                    affected_components=affected_components,
+                )
+            )
+
+        return issues
+
     def _parse_issues_table(self, table) -> list[Issue]:
         """Parse issues from a single table element.
 
@@ -740,46 +814,11 @@ class BaseCrawler:
             if len(cells) <= max(issue_col, desc_col or 0):
                 continue
 
-            raw_bug_id = cells[issue_col].get_text(strip=True)
             # Use extract_cell_text_with_tables to convert nested tables to text
             raw_description = (
                 extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
-
-            # Extract bug ID and fix info
-            # (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
-            bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
-
-            # Validate bug_id format (e.g., GPC-12345, PAN-12345)
-            if not re.match(r"^[A-Z]+-\d+$", bug_id):
-                logger.debug("Skipping invalid bug ID: %s", raw_bug_id)
-                continue
-
-            # Extract workaround from description if present
-            description, workaround = extract_workaround(raw_description)
-
-            # Extract fix info from description (e.g., "This issue is resolved in...")
-            description, fix_info = extract_fix_info_from_description(description, fix_info)
-
-            # Extract affected components from description start (e.g., "(NGFW Clusters)")
-            description, affected_components = extract_affected_components(description)
-
-            logger.debug(
-                "Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
-                bug_id,
-                fix_info is not None,
-                workaround is not None,
-                affected_components is not None,
-            )
-            issues.append(
-                Issue(
-                    bug_id=bug_id,
-                    description=description,
-                    workaround=workaround,
-                    fix_info=fix_info,
-                    affected_components=affected_components,
-                )
-            )
+            issues.extend(self._issues_from_row(cells[issue_col], raw_description))
 
         logger.debug("Parsed %d issues from table", len(issues))
         return issues
@@ -843,44 +882,10 @@ class BaseCrawler:
             if len(cells) <= max(issue_col, desc_col or 0):
                 continue
 
-            raw_bug_id = cells[issue_col].get_text(strip=True)
             raw_description = (
                 extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
-
-            # Extract bug ID and fix info
-            bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
-
-            # Validate bug_id format
-            if not re.match(r"^[A-Z]+-\d+$", bug_id):
-                continue
-
-            # Extract workaround
-            description, workaround = extract_workaround(raw_description)
-
-            # Extract fix info from description
-            description, fix_info = extract_fix_info_from_description(description, fix_info)
-
-            # Extract affected components from description
-            description, affected_components = extract_affected_components(description)
-
-            # Add feature as affected component if present
-            if feature:
-                if affected_components:
-                    # Prepend feature to existing components
-                    affected_components = [feature, *affected_components]
-                else:
-                    affected_components = [feature]
-
-            issues.append(
-                Issue(
-                    bug_id=bug_id,
-                    description=description,
-                    workaround=workaround,
-                    fix_info=fix_info,
-                    affected_components=affected_components,
-                )
-            )
+            issues.extend(self._issues_from_row(cells[issue_col], raw_description, feature))
 
         return issues
 
