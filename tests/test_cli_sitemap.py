@@ -101,7 +101,13 @@ def test_fetch_no_manifest_does_not_write_manifest(tmp_path: Path):
 
 @respx.mock
 def test_fetch_with_manifest_skips_known_url(tmp_path: Path):
-    """When manifest lastmod matches sitemap, the issue URL is not fetched."""
+    """When manifest lastmod matches sitemap, the issue URL is not fetched.
+
+    Uses a plain (non-force) fetch: --force now always bypasses the manifest
+    (it overwrites rather than merging, so honouring the manifest there would
+    leave skipped URLs simply absent from the output), so it is no longer a
+    valid way to exercise the manifest-skip path.
+    """
     respx.get("https://docs.paloaltonetworks.com/sitemap.xml").mock(
         return_value=httpx.Response(200, text=_SITEMAP)
     )
@@ -132,7 +138,6 @@ def test_fetch_with_manifest_skips_known_url(tmp_path: Path):
             "panos",
             "-o",
             str(out),
-            "-f",
             "--manifest",
             str(manifest_path),
             "--no-progress",
@@ -141,3 +146,53 @@ def test_fetch_with_manifest_skips_known_url(tmp_path: Path):
     assert result.exit_code == 0, result.output
     # The known-issue page was never fetched because the manifest skipped it.
     assert issue_route.call_count == 0
+
+
+@respx.mock
+def test_fetch_force_ignores_manifest(tmp_path: Path):
+    """--force overwrites rather than merging, so it must bypass the manifest
+    entirely -- otherwise a "skipped" URL would simply be absent from the
+    freshly written output instead of just left unrefreshed."""
+    respx.get("https://docs.paloaltonetworks.com/sitemap.xml").mock(
+        return_value=httpx.Response(200, text=_SITEMAP)
+    )
+    issue_route = respx.get(
+        "https://docs.paloaltonetworks.com/pan-os/11-2/pan-os-release-notes/pan-os-11-2-3-known-and-addressed-issues/pan-os-11-2-3-known-issues"
+    ).mock(return_value=httpx.Response(200, text=_ISSUE_PAGE))
+
+    out = tmp_path / "bugdb.json"
+    manifest_path = tmp_path / "bugdb.manifest.json"
+    # Pre-seed the manifest so the URL's lastmod already matches -- under a
+    # plain fetch this would cause the URL to be skipped.
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "entries": {
+                    "https://docs.paloaltonetworks.com/pan-os/11-2/pan-os-release-notes/pan-os-11-2-3-known-and-addressed-issues/pan-os-11-2-3-known-issues": {
+                        "lastmod": "2026-04-01"
+                    }
+                }
+            }
+        )
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "fetch",
+            "panos",
+            "-o",
+            str(out),
+            "-f",
+            "--manifest",
+            str(manifest_path),
+            "--no-progress",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    # --force fetched the URL anyway, so the version is present in the output.
+    assert issue_route.call_count == 1
+    data = json.loads(out.read_text())
+    versions = data["products"][0]["versions"]
+    assert any(v["version"] == "11.2.3" for v in versions)

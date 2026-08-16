@@ -183,6 +183,12 @@ open dist/index.html
 | `--progress/--no-progress` | Show live progress bar (default: auto-detect TTY) |
 | `-l, --log-file` | Write streaming fetch log to PATH; `-l auto` defaults to `<output>.log` |
 
+`--incremental` only adds versions that aren't already in the output file — it
+won't refresh a version you already have, even if the upstream data changed.
+If you need corrected data for an existing version, run a full fetch instead.
+`--force` overwrites the output file rather than merging into it, and always
+ignores the manifest, so it does a complete fetch every time.
+
 ## JSON Schema
 
 The bug database uses this structure:

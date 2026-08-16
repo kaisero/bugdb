@@ -266,7 +266,7 @@ def fetch(
         typer.Option(
             "--force",
             "-f",
-            help="Overwrite existing file.",
+            help="Overwrite existing file; ignores the manifest to guarantee a complete fetch.",
         ),
     ] = False,
     incremental: Annotated[
@@ -274,7 +274,10 @@ def fetch(
         typer.Option(
             "--incremental",
             "-i",
-            help="Only fetch versions not already in the output file. Requires existing data file.",
+            help=(
+                "Only fetch versions not already in the output file; does not refresh "
+                "versions you already have. Requires existing data file."
+            ),
         ),
     ] = False,
     headless: Annotated[
@@ -539,7 +542,11 @@ def fetch(
 
     # ----- Build shared sitemap + manifest ---------------------------------
     manifest_path = manifest or output.with_suffix(".manifest.json")
-    manifest_obj = FetchManifest() if no_manifest else FetchManifest.load(manifest_path)
+    # --force overwrites the output rather than merging into it, so honouring
+    # the manifest here would let "unchanged" URLs be skipped and end up
+    # simply absent from the written file. Bypass the read (the manifest is
+    # still written below) so --force always does a complete fetch.
+    manifest_obj = FetchManifest() if (no_manifest or force) else FetchManifest.load(manifest_path)
 
     sitemap_index: SitemapIndex | None = None
     if not use_browser:
