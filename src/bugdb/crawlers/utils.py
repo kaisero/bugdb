@@ -372,6 +372,51 @@ def extract_cell_text_with_tables(cell) -> str:
 # product's parse changes.
 _BUG_ID_PART_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
 
+# Finds every bug-id-shaped run inside a cell's text, regardless of what
+# (if anything) separates them. Real cells fuse adjacent inline elements
+# with no whitespace at all (get_text(strip=True) turns "LST-15102 and
+# LST-15123" into "LST-15102andLST-15123", and two sibling ids into
+# "PAN-212726PAN-211519"), so a separator-driven split can't see either
+# shape. Extract-and-verify-residue can: find every id-shaped run, then
+# check nothing but connectors is left over.
+_BUG_ID_FINDALL_RE = re.compile(r"[A-Z][A-Z0-9]*-\d+")
+
+# Connector tokens allowed to remain once every bug id has been removed
+# from a cell's text: whitespace, ',', ';', '&', '/', and the word "and".
+_CONNECTOR_RESIDUE_RE = re.compile(r"(?:[\s,;&/]|and)*", re.IGNORECASE)
+
+
+def _split_bug_id_text(text: str) -> list[str]:
+    """Split a single cell's raw text into the bug ids it contains.
+
+    Same all-or-nothing guard as ``split_bug_id_cell``, but applied via
+    extract-and-verify-residue rather than a separator split: find every
+    bug-id-shaped run in the text, remove them, and only accept the split
+    if what remains is nothing but connector characters/words (whitespace,
+    ``,``, ``;``, ``&``, ``/``, ``and``). This is what lets it see fused
+    text with no separating whitespace at all, e.g.
+    "LST-15102andLST-15123" or "PAN-212726PAN-211519" — both produced by
+    ``get_text(strip=True)`` collapsing adjacent inline elements — while
+    still leaving prose like "EPM-4616Resolved in 25.3" (residue "Resolved
+    in 25.3", not just connectors) or "PAN-99999, see notes below"
+    (residue ", see notes below") unsplit.
+
+    Args:
+        text: Raw text from a bug-id cell or cell part.
+
+    Returns:
+        List of bug-id strings if every bug-id-shaped run in the text is
+        separated only by connectors; otherwise a single-element list
+        with the text unchanged.
+    """
+    matches = _BUG_ID_FINDALL_RE.findall(text)
+    if len(matches) < 2:
+        return [text]
+    residue = _BUG_ID_FINDALL_RE.sub("", text)
+    if _CONNECTOR_RESIDUE_RE.fullmatch(residue):
+        return matches
+    return [text]
+
 
 def split_bug_id_cell(cell) -> list[str]:
     """Return the raw bug-id strings held in an issue-ID table cell.
@@ -382,19 +427,38 @@ def split_bug_id_cell(cell) -> list[str]:
     fuses those into ``"ARBI-7796ARBI-7757"``, which fails the caller's
     ``^[A-Z]+-\\d+$`` guard and silently drops the row.
 
+    Upstream also joins two ids with "and" or a comma list inside a
+    single element, fused by the same ``get_text(strip=True)`` collapse,
+    e.g. ``"LST-15102andLST-15123"`` (AI Access Security known-issues
+    page). Each ``div.p`` part is run through that same
+    extract-and-verify-residue split, so the two shapes compose: a
+    sibling ``div.p`` may itself hold an 'and'-joined pair.
+
+    A third shape puts the two ids in *different* element types — one in
+    a ``<span class="ph uicontrol">``, one in a ``<div class="p">``
+    (verified on the panos known-issues page, PAN-212726 / PAN-211519).
+    ``cell.find_all("div", class_="p")`` only ever sees the ``div.p``
+    side of that pair, so whenever the ``div.p`` parts alone don't
+    resolve to two-or-more clean ids, the fallback re-applies the same
+    residue rule to the *whole* cell's text rather than returning it raw
+    — that is what lets it see ids living outside any ``div.p``.
+
     Returns a single-element list for the ordinary case, so callers can
-    treat both shapes identically.
+    treat all shapes identically.
 
     Args:
         cell: BeautifulSoup td/th element for the issue-ID column.
 
     Returns:
-        List of raw bug-id strings, one per part when the cell holds
-        multiple sibling ``div.p`` elements that all look like bug ids;
-        otherwise a single-element list with the cell's full text.
+        List of raw bug-id strings, one per id when the cell resolves
+        (via its sibling ``div.p`` parts, or via the whole cell's text)
+        to two or more parts that all look like bug ids; otherwise a
+        single-element list with the cell's full text.
     """
     parts = [p.get_text(strip=True) for p in cell.find_all("div", class_="p")]
     parts = [p for p in parts if p]
-    if len(parts) > 1 and all(_BUG_ID_PART_RE.match(p) for p in parts):
-        return parts
-    return [cell.get_text(strip=True)]
+    if parts:
+        candidate = [id_part for part in parts for id_part in _split_bug_id_text(part)]
+        if len(candidate) > 1 and all(_BUG_ID_PART_RE.match(p) for p in candidate):
+            return candidate
+    return _split_bug_id_text(cell.get_text(strip=True))
