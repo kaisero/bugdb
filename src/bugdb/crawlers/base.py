@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -30,6 +31,7 @@ from .utils import (
     extract_fix_info_from_description,
     extract_workaround,
     normalize_text,
+    split_bug_id_cell,
     version_sort_key,
 )
 
@@ -130,10 +132,9 @@ class BaseCrawler:
         """Return True iff this crawler will actually use Playwright.
 
         Default: only when no httpx Transport was injected. Subclasses
-        that have an alternative API client (e.g. CortexXDRCrawler with
-        a FluidTopics khub client) override this to also return False
-        when their alternative client is present, so Playwright isn't
-        launched on machines that don't have its browser binaries.
+        that fetch through something other than the injected Transport
+        may override this to return False, so Playwright isn't launched
+        on machines that don't have its browser binaries.
         """
         return self._transport is None
 
@@ -480,127 +481,6 @@ class BaseCrawler:
             )
         raise last_error
 
-    async def _fetch_cortex_page_with_semaphore(
-        self, url: str, wait_time: int = 5000
-    ) -> BeautifulSoup:
-        """Fetch a Cortex XDR page with shadow DOM content.
-
-        Cortex XDR docs use shadow DOM which isn't captured by page.content().
-        This method uses Playwright's query_selector_all which pierces shadow DOM
-        to extract tables and links, then builds a synthetic HTML document.
-
-        Args:
-            url: URL to fetch.
-            wait_time: Time to wait for JS to render (ms).
-
-        Returns:
-            BeautifulSoup parsed HTML with extracted content.
-
-        Raises:
-            Exception: If all retry attempts fail.
-        """
-        last_error: Exception | None = None
-
-        for attempt in range(self.max_retries):
-            await self._wait_for_global_backoff()
-
-            logger.debug("Acquiring semaphore for Cortex page: %s (attempt %d)", url, attempt + 1)
-            async with self._semaphore:
-                logger.debug("Semaphore acquired, creating new page for: %s", url)
-                page: Page | None = None
-                try:
-                    page = await self._new_page()
-                    result = await self._fetch_cortex_page(page, url, wait_time)
-                    logger.debug("Successfully fetched Cortex page: %s", url)
-                    return result
-                except Exception as e:
-                    last_error = e
-
-                    if self._is_connection_refused_error(e):
-                        await self._trigger_global_backoff()
-
-                    logger.warning(
-                        "Fetch failed for %s (attempt %d/%d): %s",
-                        url,
-                        attempt + 1,
-                        self.max_retries,
-                        e,
-                    )
-                finally:
-                    if page is not None:
-                        await page.close()
-
-            if attempt < self.max_retries - 1:
-                delay = self.retry_delay * (2**attempt)
-                logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
-                await asyncio.sleep(delay)
-
-        # All retries failed. See _fetch_page_with_semaphore for rationale.
-        if last_error is None:
-            raise RuntimeError(
-                f"No fetch attempts were made for {url} (max_retries={self.max_retries})"
-            )
-        raise last_error
-
-    async def _fetch_cortex_page(
-        self, page: Page, url: str, wait_time: int = 5000
-    ) -> BeautifulSoup:
-        """Fetch a Cortex XDR page and extract content from shadow DOM.
-
-        Cortex XDR docs use shadow DOM which isn't captured by page.content()
-        or JavaScript's document.querySelectorAll(). This method uses Playwright's
-        query_selector_all which can pierce shadow DOM.
-
-        Args:
-            page: Playwright page instance.
-            url: URL to fetch.
-            wait_time: Time to wait for JS to render (ms).
-
-        Returns:
-            BeautifulSoup parsed HTML with extracted content.
-        """
-        logger.debug("Fetching Cortex page: %s", url)
-        await page.goto(url, wait_until="networkidle", timeout=60000)
-        await page.wait_for_timeout(wait_time)
-
-        # Extract headings and tables using Playwright's query_selector_all
-        # which pierces shadow DOM (JavaScript querySelectorAll cannot)
-        elements = await page.query_selector_all("h1, h2, h3, h4, table")
-        elements_html = []
-        for element in elements:
-            html = await element.evaluate("el => el.outerHTML")
-            elements_html.append(html)
-        logger.debug("Extracted %d headings/tables from Cortex page", len(elements_html))
-
-        # Extract links using Playwright's query_selector_all
-        links = await page.query_selector_all("a")
-        links_html = []
-        for link in links:
-            href = await link.get_attribute("href")
-            if href:
-                text = await link.inner_text()
-                # Escape any HTML in the text
-                text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                links_html.append(f'<a href="{href}">{text}</a>')
-        logger.debug("Extracted %d links from Cortex page", len(links_html))
-
-        # Build synthetic HTML document with elements in document order
-        combined_html = f"""
-        <html>
-        <body>
-        <div class="content">
-        {"".join(elements_html)}
-        </div>
-        <div class="links">
-        {"".join(links_html)}
-        </div>
-        </body>
-        </html>
-        """
-
-        logger.debug("Built synthetic HTML (%d bytes) for: %s", len(combined_html), url)
-        return BeautifulSoup(combined_html, "lxml")
-
     def _version_sort_key(self, version: str) -> tuple:
         """Create a sort key for version strings.
 
@@ -651,6 +531,79 @@ class BaseCrawler:
                 version += f"-{suffix}"
             return version
         return None
+
+    def _issues_from_row(
+        self, bug_id_cell, raw_description: str, feature: str | None = None
+    ) -> list[Issue]:
+        """Turn one issues-table row into zero or more Issue objects.
+
+        Shared by :meth:`_parse_issues_table` and
+        :meth:`_parse_issues_table_with_feature`, which differ only in
+        whether they attach a ``feature`` to ``affected_components``. A
+        row normally holds exactly one bug id, but some pages (verified
+        on RBI known-issues) pack two ids into one cell as sibling
+        ``<div class="p">`` elements sharing a single description;
+        :func:`split_bug_id_cell` recovers both, and this method emits
+        one ``Issue`` per recovered id.
+
+        Args:
+            bug_id_cell: The row's issue-ID ``<td>``/``<th>`` element.
+            raw_description: Already-extracted description text for the
+                row (from ``extract_cell_text_with_tables``, or ``""``
+                if the table has no description column).
+            feature: Optional feature name to prepend to each returned
+                issue's ``affected_components``.
+
+        Returns:
+            List of Issue objects, one per valid bug id found in the cell.
+        """
+        issues: list[Issue] = []
+
+        for raw_bug_id in split_bug_id_cell(bug_id_cell):
+            # Extract bug ID and fix info
+            # (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
+            bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
+
+            # Validate bug_id format (e.g., GPC-12345, PAN-12345)
+            if not re.match(r"^[A-Z]+-\d+$", bug_id):
+                logger.debug("Skipping invalid bug ID: %s", raw_bug_id)
+                continue
+
+            # Extract workaround from description if present
+            description, workaround = extract_workaround(raw_description)
+
+            # Extract fix info from description (e.g., "This issue is resolved in...")
+            description, fix_info = extract_fix_info_from_description(description, fix_info)
+
+            # Extract affected components from description start (e.g., "(NGFW Clusters)")
+            description, affected_components = extract_affected_components(description)
+
+            # Add feature as affected component if present
+            if feature:
+                if affected_components:
+                    # Prepend feature to existing components
+                    affected_components = [feature, *affected_components]
+                else:
+                    affected_components = [feature]
+
+            logger.debug(
+                "Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
+                bug_id,
+                fix_info is not None,
+                workaround is not None,
+                affected_components is not None,
+            )
+            issues.append(
+                Issue(
+                    bug_id=bug_id,
+                    description=description,
+                    workaround=workaround,
+                    fix_info=fix_info,
+                    affected_components=affected_components,
+                )
+            )
+
+        return issues
 
     def _parse_issues_table(self, table) -> list[Issue]:
         """Parse issues from a single table element.
@@ -740,46 +693,11 @@ class BaseCrawler:
             if len(cells) <= max(issue_col, desc_col or 0):
                 continue
 
-            raw_bug_id = cells[issue_col].get_text(strip=True)
             # Use extract_cell_text_with_tables to convert nested tables to text
             raw_description = (
                 extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
-
-            # Extract bug ID and fix info
-            # (e.g., "EPM-4616Resolved in..." -> "EPM-4616", "Resolved in...")
-            bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
-
-            # Validate bug_id format (e.g., GPC-12345, PAN-12345)
-            if not re.match(r"^[A-Z]+-\d+$", bug_id):
-                logger.debug("Skipping invalid bug ID: %s", raw_bug_id)
-                continue
-
-            # Extract workaround from description if present
-            description, workaround = extract_workaround(raw_description)
-
-            # Extract fix info from description (e.g., "This issue is resolved in...")
-            description, fix_info = extract_fix_info_from_description(description, fix_info)
-
-            # Extract affected components from description start (e.g., "(NGFW Clusters)")
-            description, affected_components = extract_affected_components(description)
-
-            logger.debug(
-                "Parsed issue: %s (fix_info: %s, workaround: %s, components: %s)",
-                bug_id,
-                fix_info is not None,
-                workaround is not None,
-                affected_components is not None,
-            )
-            issues.append(
-                Issue(
-                    bug_id=bug_id,
-                    description=description,
-                    workaround=workaround,
-                    fix_info=fix_info,
-                    affected_components=affected_components,
-                )
-            )
+            issues.extend(self._issues_from_row(cells[issue_col], raw_description))
 
         logger.debug("Parsed %d issues from table", len(issues))
         return issues
@@ -843,44 +761,10 @@ class BaseCrawler:
             if len(cells) <= max(issue_col, desc_col or 0):
                 continue
 
-            raw_bug_id = cells[issue_col].get_text(strip=True)
             raw_description = (
                 extract_cell_text_with_tables(cells[desc_col]) if desc_col is not None else ""
             )
-
-            # Extract bug ID and fix info
-            bug_id, fix_info = extract_bug_id_and_fix_info(raw_bug_id)
-
-            # Validate bug_id format
-            if not re.match(r"^[A-Z]+-\d+$", bug_id):
-                continue
-
-            # Extract workaround
-            description, workaround = extract_workaround(raw_description)
-
-            # Extract fix info from description
-            description, fix_info = extract_fix_info_from_description(description, fix_info)
-
-            # Extract affected components from description
-            description, affected_components = extract_affected_components(description)
-
-            # Add feature as affected component if present
-            if feature:
-                if affected_components:
-                    # Prepend feature to existing components
-                    affected_components = [feature, *affected_components]
-                else:
-                    affected_components = [feature]
-
-            issues.append(
-                Issue(
-                    bug_id=bug_id,
-                    description=description,
-                    workaround=workaround,
-                    fix_info=fix_info,
-                    affected_components=affected_components,
-                )
-            )
+            issues.extend(self._issues_from_row(cells[issue_col], raw_description, feature))
 
         return issues
 
@@ -902,8 +786,29 @@ class BaseCrawler:
         issues = []
 
         for topic in soup.find_all("div", class_="topic"):
-            # Extract bug ID from h2.title or h3.title
-            title_elem = topic.find(["h2", "h3"], class_="title")
+            # A topic is an issue when it has its own content once nested
+            # topics are excluded. Some pages nest issue blocks (e.g.
+            # PLUG-12161 on the plugin-aws known-issues page physically
+            # contains the FWAAS-5817/6961/7721/7766 blocks as
+            # descendants) and every level in that chain can be a real,
+            # independent issue. Others use div.topic purely as a
+            # wrapper around their per-issue children (AI Access Security,
+            # Enterprise DLP) and borrow the first child's heading with no
+            # content of their own.
+            #
+            # Extracting from a copy with nested div.topic descendants
+            # removed handles both: a pure wrapper loses its borrowed
+            # title and all content, so it's skipped below (no title, or
+            # empty description); a topic with its own text keeps that
+            # text scoped to itself, with the nested topics' content
+            # excluded.
+            scoped = copy.copy(topic)
+            for nested in scoped.find_all("div", class_="topic"):
+                nested.decompose()
+
+            # Extract bug ID from h2.title or h3.title, scoped so a
+            # wrapper can't borrow a nested topic's heading.
+            title_elem = scoped.find(["h2", "h3"], class_="title")
             if not title_elem:
                 continue
 
@@ -920,7 +825,7 @@ class BaseCrawler:
             fix_info_text = None
 
             # Get shortdesc if present
-            shortdesc = topic.find("div", class_="shortdesc")
+            shortdesc = scoped.find("div", class_="shortdesc")
             if shortdesc:
                 description_parts.append(normalize_text(shortdesc))
 
@@ -928,7 +833,7 @@ class BaseCrawler:
             in_workaround = False
             first_p_processed = False
 
-            for p_elem in topic.find_all("div", class_="p"):
+            for p_elem in scoped.find_all("div", class_="p"):
                 p_text = normalize_text(p_elem)
 
                 # Check for workaround marker

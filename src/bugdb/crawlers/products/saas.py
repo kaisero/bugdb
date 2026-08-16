@@ -49,14 +49,21 @@ async def _fetch_saas_pages(
                 )
             )
             continue
+        parsed_page: list = []
         for table in result.find_all("table"):
             if table.find_parent("table"):
                 continue
-            parsed = crawler._parse_issues_table(table)
-            if kind == "known":
-                known_issues.extend(parsed)
-            else:
-                addressed_issues.extend(parsed)
+            parsed_page.extend(crawler._parse_issues_table(table))
+        # Same fallback order as BaseCrawler._parse_issues_page: some
+        # products (AI Access Security's addressed page) publish issues
+        # as div.topic blocks with no table at all. Only fires when the
+        # tables produced nothing, so no existing product changes.
+        if not parsed_page:
+            parsed_page = crawler._parse_topic_format_issues(result)
+        if kind == "known":
+            known_issues.extend(parsed_page)
+        else:
+            addressed_issues.extend(parsed_page)
     return known_issues, addressed_issues, failed_fetches
 
 
@@ -180,6 +187,79 @@ class AIRuntimeSecurityCrawler(BaseCrawler):
         known_urls, addressed_urls = discover_saas_urls(
             self._sitemap, self.product_id, manifest=self._manifest
         )
+        if not known_urls:
+            known_urls = [self._DEFAULT_KNOWN_ISSUES_URL]
+        if not addressed_urls:
+            addressed_urls = [self._DEFAULT_ADDRESSED_ISSUES_URL]
+
+        known_issues, addressed_issues, failed_fetches = await _fetch_saas_pages(
+            self, known_urls, addressed_urls
+        )
+
+        if failed_fetches:
+            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
+            failed_fetches = still_failed
+
+        known_issues = self._deduplicate_issues(known_issues)
+        addressed_issues = self._deduplicate_issues(addressed_issues)
+
+        versions = []
+        if known_issues or addressed_issues:
+            versions.append(
+                ProductVersion(
+                    version="SaaS",
+                    known_issues=known_issues,
+                    addressed_issues=addressed_issues,
+                )
+            )
+
+        self._advance_task(f"{self.product_name}: done")
+
+        return CrawlResult(
+            product=Product(
+                id=self.product_id,
+                name=self.product_name,
+                versions=versions,
+            ),
+            failed_fetches=failed_fetches,
+        )
+
+
+class AIAccessSecurityCrawler(BaseCrawler):
+    """Crawler for AI Access Security release notes.
+
+    A SaaS product with exactly two issue pages and no versions. The two
+    pages use different markup: known issues is a table, addressed
+    issues is a set of div.topic blocks. ``_fetch_saas_pages`` handles
+    both.
+    """
+
+    product_id = "ai-access-security"
+    product_name = "AI Access Security"
+
+    _DEFAULT_KNOWN_ISSUES_URL = "/ai-access-security/release-notes/known-issues"
+    _DEFAULT_ADDRESSED_ISSUES_URL = "/ai-access-security/release-notes/addressed-issues"
+
+    async def crawl(
+        self,
+        major_versions: list[str] | None = None,
+        skip_versions: set[str] | None = None,
+    ) -> CrawlResult:
+        """Crawl AI Access Security release notes.
+
+        Returns:
+            CrawlResult with Product and any failed fetches.
+        """
+        logger.info("Crawling AI Access Security...")
+        self._set_task_total(1, f"{self.product_name}: fetching")
+
+        known_urls, addressed_urls = discover_saas_urls(
+            self._sitemap, self.product_id, manifest=self._manifest
+        )
+        if not known_urls and not addressed_urls:
+            logger.warning(
+                "%s: discovery found nothing, falling back to default URLs", self.product_name
+            )
         if not known_urls:
             known_urls = [self._DEFAULT_KNOWN_ISSUES_URL]
         if not addressed_urls:

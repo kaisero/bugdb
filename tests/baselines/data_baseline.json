@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-04T21:04:50+00:00",
+  "captured_at": "2026-08-16T18:10:39+00:00",
   "products": {
     "adem": {
       "versions": {
@@ -148,6 +148,22 @@
         }
       }
     },
+    "ai-access-security": {
+      "versions": {
+        "SaaS": {
+          "known": 3,
+          "addressed": 3,
+          "bug_ids": [
+            "LST-15102",
+            "LST-15123",
+            "NETVIS-1825",
+            "NETVIS-1973",
+            "NETVIS-2039",
+            "NETVIS-2045"
+          ]
+        }
+      }
+    },
     "ai-runtime-security": {
       "versions": {
         "SaaS": {
@@ -194,9 +210,10 @@
     "cloud-ngfw-aws": {
       "versions": {
         "SaaS": {
-          "known": 18,
+          "known": 19,
           "addressed": 0,
           "bug_ids": [
+            "AIP-1216",
             "DIT-40385",
             "DIT-40616",
             "FWAAS-10971",
@@ -261,32 +278,26 @@
       "versions": {
         "5.0": {
           "known": 11,
-          "addressed": 83,
+          "addressed": 88,
           "bug_ids": [
             "CPA-1278",
             "CPA-1768",
-            "CPA-1768This issue is now resolved. SeeAddressed Issues in Traps Agent 5.0.4.",
             "CPA-1861",
-            "CPA-1861This issue is now resolved. SeeAddressed Issues in Traps Agent 5.0.4.",
             "CPA-1942",
-            "CPA-1942This issue is now resolved. SeeTraps Agent 5.0.1 Addressed Issues.",
             "CPA-2525",
             "CPA-2559",
             "CPA-2590",
             "CPA-2679",
             "CPA-2681",
-            "CPA-2681This issue is now resolved. SeeTraps Agent 5.0.1 Addressed Issues.",
             "CPA-2697",
             "CPA-2722",
             "CPA-2723",
             "CPA-2814",
-            "CPA-2814This issue is now resolved. SeeAddressed Issues in Traps Agent 5.0.3.",
             "CPA-3018",
             "CPA-3130",
             "CPA-3134",
             "CPA-3287",
             "CPA-3352",
-            "CPA-3352This issue is now resolved. SeeAddressed Issues in Traps Agent 5.0.6.",
             "CPA-3358",
             "CPA-3404",
             "CPA-3413",
@@ -335,16 +346,17 @@
             "CPATR-10427",
             "CPATR-10614",
             "CPATR-10687",
+            "CPATR-11311",
+            "CPATR-11927",
             "CPATR-12009",
-            "CPATR-12507,CPATR-11927",
+            "CPATR-12507",
             "CPATR-12633",
-            "CPATR-12649,CPATR-11311",
+            "CPATR-12649",
             "CPATR-12865",
             "CPATR-12877",
             "CPATR-13405",
             "CPATR-13408",
             "CPATR-13480",
-            "CPATR-13480,CPATR-13408,CPATR-13405,CPATR-12633",
             "CPATR-14895",
             "CPATR-17434",
             "CPATR-6464",
@@ -359,9 +371,363 @@
             "CPATR-9871"
           ]
         },
+        "6.1": {
+          "known": 13,
+          "addressed": 90,
+          "bug_ids": [
+            "CPA-5970",
+            "CPA-6315",
+            "CPA-6344",
+            "CPA-6356",
+            "CPA-6357",
+            "CPA-6381",
+            "CPA-6461",
+            "CPA-6464",
+            "CPA-6505",
+            "CPA-6513",
+            "CPA-6542",
+            "CPA-6567",
+            "CPA-6586",
+            "CPA-6588",
+            "CPA-6607",
+            "CPA-6643",
+            "CPA-6651",
+            "CPA-6666",
+            "CPA-6730",
+            "CPA-6782",
+            "CPA-6786",
+            "CPA-6840",
+            "CPA-6866",
+            "CPA-6881",
+            "CPA-6885",
+            "CPA-6892",
+            "CPA-6893",
+            "CPA-6953",
+            "CPA-6993",
+            "CPA-7050",
+            "CPA-7143",
+            "CPA-7193",
+            "CPA-7252",
+            "CPATR-10042",
+            "CPATR-10614",
+            "CPATR-10622",
+            "CPATR-10688",
+            "CPATR-11311",
+            "CPATR-11927",
+            "CPATR-12009",
+            "CPATR-12633",
+            "CPATR-12649",
+            "CPATR-12713",
+            "CPATR-13405",
+            "CPATR-13408",
+            "CPATR-13480",
+            "CPATR-14258",
+            "CPATR-14729",
+            "CPATR-14895",
+            "CPATR-16539",
+            "CPATR-2436",
+            "CPATR-6668",
+            "CPATR-6918",
+            "CPATR-7311",
+            "CPATR-7342",
+            "CPATR-7360",
+            "CPATR-7396",
+            "CPATR-7397",
+            "CPATR-7402",
+            "CPATR-7408",
+            "CPATR-7419",
+            "CPATR-7420",
+            "CPATR-7487",
+            "CPATR-7509",
+            "CPATR-7545",
+            "CPATR-7575",
+            "CPATR-7577",
+            "CPATR-7635",
+            "CPATR-7663",
+            "CPATR-7669",
+            "CPATR-7798",
+            "CPATR-7852",
+            "CPATR-7864",
+            "CPATR-7900",
+            "CPATR-7911",
+            "CPATR-7962",
+            "CPATR-7995",
+            "CPATR-8063",
+            "CPATR-8131",
+            "CPATR-8157",
+            "CPATR-8244",
+            "CPATR-8305",
+            "CPATR-8342",
+            "CPATR-8353",
+            "CPATR-8403",
+            "CPATR-8404",
+            "CPATR-8459",
+            "CPATR-8488",
+            "CPATR-8533",
+            "CPATR-8763",
+            "CPATR-8891",
+            "CPATR-8988",
+            "CPATR-9008",
+            "CPATR-9082",
+            "CPATR-9134",
+            "CPATR-9718",
+            "CPATR-9871",
+            "CPATR-9972"
+          ]
+        },
+        "7.0": {
+          "known": 12,
+          "addressed": 39,
+          "bug_ids": [
+            "CPATR-10042",
+            "CPATR-10614",
+            "CPATR-10688",
+            "CPATR-6000",
+            "CPATR-7317",
+            "CPATR-7365",
+            "CPATR-7768",
+            "CPATR-7798",
+            "CPATR-7825",
+            "CPATR-7900",
+            "CPATR-7911",
+            "CPATR-7962",
+            "CPATR-7985",
+            "CPATR-7989",
+            "CPATR-7995",
+            "CPATR-8063",
+            "CPATR-8064",
+            "CPATR-8078",
+            "CPATR-8131",
+            "CPATR-8157",
+            "CPATR-8305",
+            "CPATR-8342",
+            "CPATR-8353",
+            "CPATR-8355",
+            "CPATR-8403",
+            "CPATR-8404",
+            "CPATR-8488",
+            "CPATR-8533",
+            "CPATR-8709",
+            "CPATR-8747",
+            "CPATR-8763",
+            "CPATR-8778",
+            "CPATR-8891",
+            "CPATR-8988",
+            "CPATR-9042",
+            "CPATR-9055",
+            "CPATR-9058",
+            "CPATR-9082",
+            "CPATR-9134",
+            "CPATR-9265",
+            "CPATR-9493",
+            "CPATR-9609",
+            "CPATR-9621",
+            "CPATR-9712",
+            "CPATR-9718",
+            "CPATR-9760",
+            "CPATR-9871",
+            "CPATR-9972"
+          ]
+        },
+        "7.2": {
+          "known": 25,
+          "addressed": 68,
+          "bug_ids": [
+            "CPATR-10010",
+            "CPATR-10095",
+            "CPATR-10121",
+            "CPATR-10129",
+            "CPATR-10164",
+            "CPATR-10187",
+            "CPATR-10614",
+            "CPATR-10695",
+            "CPATR-10748",
+            "CPATR-10830",
+            "CPATR-10896",
+            "CPATR-10900",
+            "CPATR-10931",
+            "CPATR-10944",
+            "CPATR-10956",
+            "CPATR-10963",
+            "CPATR-11003",
+            "CPATR-11009",
+            "CPATR-11010",
+            "CPATR-11051",
+            "CPATR-11122",
+            "CPATR-11143",
+            "CPATR-11150",
+            "CPATR-11179",
+            "CPATR-11199",
+            "CPATR-11218",
+            "CPATR-11246",
+            "CPATR-11309",
+            "CPATR-11311",
+            "CPATR-11313",
+            "CPATR-11349",
+            "CPATR-11373",
+            "CPATR-11459",
+            "CPATR-11474",
+            "CPATR-11491",
+            "CPATR-11533",
+            "CPATR-11663",
+            "CPATR-11752",
+            "CPATR-11828",
+            "CPATR-11830",
+            "CPATR-11845",
+            "CPATR-11858",
+            "CPATR-11871",
+            "CPATR-11875",
+            "CPATR-11883",
+            "CPATR-11927",
+            "CPATR-11966",
+            "CPATR-12001",
+            "CPATR-12009",
+            "CPATR-12083",
+            "CPATR-12102",
+            "CPATR-12242",
+            "CPATR-12307",
+            "CPATR-12323",
+            "CPATR-12337",
+            "CPATR-12376",
+            "CPATR-12476",
+            "CPATR-12582",
+            "CPATR-12610",
+            "CPATR-12629",
+            "CPATR-12633",
+            "CPATR-12649",
+            "CPATR-12674",
+            "CPATR-12675",
+            "CPATR-12693",
+            "CPATR-12723",
+            "CPATR-12803",
+            "CPATR-12865",
+            "CPATR-12874",
+            "CPATR-12923",
+            "CPATR-12954",
+            "CPATR-12970",
+            "CPATR-12976",
+            "CPATR-12982",
+            "CPATR-12984",
+            "CPATR-13043",
+            "CPATR-13269",
+            "CPATR-13303",
+            "CPATR-13363",
+            "CPATR-13384",
+            "CPATR-13408",
+            "CPATR-13418",
+            "CPATR-13480",
+            "CPATR-13789",
+            "CPATR-9907",
+            "CTNGTR-3437"
+          ]
+        },
+        "7.5-CE": {
+          "known": 3,
+          "addressed": 43,
+          "bug_ids": [
+            "CPATR-12475",
+            "CPATR-14074",
+            "CPATR-14717",
+            "CPATR-14729",
+            "CPATR-14737",
+            "CPATR-14788",
+            "CPATR-14790",
+            "CPATR-14804",
+            "CPATR-14950",
+            "CPATR-15041",
+            "CPATR-15048",
+            "CPATR-15058",
+            "CPATR-15228",
+            "CPATR-15252",
+            "CPATR-15441",
+            "CPATR-15801",
+            "CPATR-16387",
+            "CPATR-16530",
+            "CPATR-16539",
+            "CPATR-16767",
+            "CPATR-16785",
+            "CPATR-16842",
+            "CPATR-16886",
+            "CPATR-17161",
+            "CPATR-17192",
+            "CPATR-17277",
+            "CPATR-17600",
+            "CPATR-17609",
+            "CPATR-17802",
+            "CPATR-17886",
+            "CPATR-17984",
+            "CPATR-18100",
+            "CPATR-18332",
+            "CPATR-18573",
+            "CPATR-18580",
+            "CPATR-18628",
+            "CPATR-18754",
+            "CTNGTR-5127",
+            "XDRSUP-7193"
+          ]
+        },
+        "7.7": {
+          "known": 2,
+          "addressed": 52,
+          "bug_ids": [
+            "CPATR-14814",
+            "CPATR-15041",
+            "CPATR-15050",
+            "CPATR-15300",
+            "CPATR-15310",
+            "CPATR-15441",
+            "CPATR-15777",
+            "CPATR-15801",
+            "CPATR-16106",
+            "CPATR-16296",
+            "CPATR-16354",
+            "CPATR-16387",
+            "CPATR-16530",
+            "CPATR-16539",
+            "CPATR-16564",
+            "CPATR-16566",
+            "CPATR-16591",
+            "CPATR-16609",
+            "CPATR-16666",
+            "CPATR-16690",
+            "CPATR-16723",
+            "CPATR-16736",
+            "CPATR-16755",
+            "CPATR-16766",
+            "CPATR-16767",
+            "CPATR-16783",
+            "CPATR-16785",
+            "CPATR-16842",
+            "CPATR-16865",
+            "CPATR-16886",
+            "CPATR-16943",
+            "CPATR-17090",
+            "CPATR-17106",
+            "CPATR-17107",
+            "CPATR-17108",
+            "CPATR-17136",
+            "CPATR-17152",
+            "CPATR-17198",
+            "CPATR-17230",
+            "CPATR-17269",
+            "CPATR-17276",
+            "CPATR-17286",
+            "CPATR-17291",
+            "CPATR-17305",
+            "CPATR-17371",
+            "CPATR-17378",
+            "CPATR-17382",
+            "CPATR-17414",
+            "CPATR-17429",
+            "CPATR-17466",
+            "CPATR-17515",
+            "CPATR-17561",
+            "CPATR-17610"
+          ]
+        },
         "7.8": {
           "known": 3,
-          "addressed": 32,
+          "addressed": 33,
           "bug_ids": [
             "CPATR-10830",
             "CPATR-14975",
@@ -387,7 +753,8 @@
             "CPATR-17802",
             "CPATR-17806",
             "CPATR-17933",
-            "CPATR-17949, CPATR-17950",
+            "CPATR-17949",
+            "CPATR-17950",
             "CPATR-17994",
             "CPATR-18100",
             "CPATR-18108",
@@ -469,9 +836,9 @@
             "XSUP-21285"
           ]
         },
-        "7.9ce": {
+        "7.9-CE": {
           "known": 4,
-          "addressed": 71,
+          "addressed": 72,
           "bug_ids": [
             "CPATR-10830",
             "CPATR-11752",
@@ -495,6 +862,7 @@
             "CPATR-18314",
             "CPATR-18332",
             "CPATR-18342",
+            "CPATR-18374",
             "CPATR-18568",
             "CPATR-18580",
             "CPATR-18588",
@@ -544,7 +912,7 @@
             "CPATR-22755",
             "CPATR-23265",
             "CPATR-23360",
-            "CPATR-23499Windows",
+            "CPATR-23499",
             "CPATR-24120",
             "CPATR-24407",
             "XSUP-21285"
@@ -726,78 +1094,9 @@
             "XSUP-21285"
           ]
         },
-        "8.3.0": {
-          "known": 0,
-          "addressed": 18,
-          "bug_ids": [
-            "CPATR-18631",
-            "CPATR-19876",
-            "CPATR-21014",
-            "CPATR-21216",
-            "CPATR-21619",
-            "CPATR-21825",
-            "CPATR-21870",
-            "CPATR-22095",
-            "CPATR-22202",
-            "CPATR-22228",
-            "CPATR-22247",
-            "CPATR-22407",
-            "CPATR-22409",
-            "CPATR-22536",
-            "CPATR-22636",
-            "CPATR-22682",
-            "CPATR-22755",
-            "CPATR-3703"
-          ]
-        },
-        "8.3.100": {
-          "known": 0,
-          "addressed": 9,
-          "bug_ids": [
-            "CPATR-20233",
-            "CPATR-22565",
-            "CPATR-23053",
-            "CPATR-23265",
-            "CPATR-23360",
-            "CPATR-23443",
-            "CPATR-23499",
-            "CPATR-23516",
-            "CPATR-23540"
-          ]
-        },
-        "8.3.101": {
-          "known": 0,
-          "addressed": 6,
-          "bug_ids": [
-            "CPATR-24594",
-            "CPATR-24784",
-            "CPATR-25193",
-            "CPATR-25268",
-            "CPATR-25516",
-            "CPATR-26540"
-          ]
-        },
-        "8.3.102": {
-          "known": 0,
-          "addressed": 12,
-          "bug_ids": [
-            "CPATR-18158",
-            "CPATR-23086",
-            "CPATR-25193",
-            "CPATR-25760",
-            "CPATR-26119",
-            "CPATR-26349",
-            "CPATR-26540",
-            "CPATR-27148",
-            "CPATR-27550",
-            "CPATR-28368",
-            "CPATR-28903",
-            "CPATR-31056"
-          ]
-        },
-        "8.3CE": {
+        "8.3-CE": {
           "known": 4,
-          "addressed": 43,
+          "addressed": 44,
           "bug_ids": [
             "CPATR-11752",
             "CPATR-18158",
@@ -841,6 +1140,7 @@
             "CPATR-26540",
             "CPATR-27148",
             "CPATR-27550",
+            "CPATR-28273",
             "CPATR-28368",
             "CPATR-28903",
             "CPATR-31056",
@@ -850,7 +1150,7 @@
         },
         "8.4": {
           "known": 4,
-          "addressed": 20,
+          "addressed": 21,
           "bug_ids": [
             "CPATR-11752",
             "CPATR-18568",
@@ -874,48 +1174,18 @@
             "CPATR-24120",
             "CPATR-24594",
             "CPATR-25268",
+            "CPATR-28273",
             "XSUP-21285"
-          ]
-        },
-        "8.4.0": {
-          "known": 0,
-          "addressed": 16,
-          "bug_ids": [
-            "CPATR-19295",
-            "CPATR-20233",
-            "CPATR-20245",
-            "CPATR-20826",
-            "CPATR-21703",
-            "CPATR-21955",
-            "CPATR-22103",
-            "CPATR-22317",
-            "CPATR-22985",
-            "CPATR-23053",
-            "CPATR-23360",
-            "CPATR-23443",
-            "CPATR-23499",
-            "CPATR-23516",
-            "CPATR-23540"
-          ]
-        },
-        "8.4.1": {
-          "known": 0,
-          "addressed": 4,
-          "bug_ids": [
-            "CPATR-22866",
-            "CPATR-24120",
-            "CPATR-24594",
-            "CPATR-25268"
           ]
         },
         "8.5": {
           "known": 2,
-          "addressed": 23,
+          "addressed": 24,
           "bug_ids": [
             "CPATR-11752",
             "CPATR-18158",
             "CPATR-18568",
-            "CPATR-22866Mac",
+            "CPATR-22866",
             "CPATR-23086",
             "CPATR-23885",
             "CPATR-23980",
@@ -936,18 +1206,30 @@
             "CPATR-27022",
             "CPATR-27148",
             "CPATR-27550",
-            "CPATR-27836"
+            "CPATR-27836",
+            "CPATR-28273"
           ]
         },
         "8.6": {
           "known": 2,
-          "addressed": 19,
+          "addressed": 31,
           "bug_ids": [
             "CPATR-11752",
             "CPATR-18158",
             "CPATR-18568",
             "CPATR-23086",
             "CPATR-24802",
+            "CPATR-24856",
+            "CPATR-24965",
+            "CPATR-25048",
+            "CPATR-25063",
+            "CPATR-25193",
+            "CPATR-25268",
+            "CPATR-25295",
+            "CPATR-25536",
+            "CPATR-25549",
+            "CPATR-25760",
+            "CPATR-26119",
             "CPATR-26168",
             "CPATR-26204",
             "CPATR-26349",
@@ -963,48 +1245,18 @@
             "CPATR-28368",
             "CPATR-28504",
             "CPATR-28903",
-            "CPATR-29112"
-          ]
-        },
-        "8.6.1": {
-          "known": 0,
-          "addressed": 7,
-          "bug_ids": [
-            "CPATR-18158",
-            "CPATR-26204",
-            "CPATR-26349",
-            "CPATR-26540",
-            "CPATR-26757",
-            "CPATR-26882",
-            "CPATR-26947"
-          ]
-        },
-        "8.6.2": {
-          "known": 0,
-          "addressed": 12,
-          "bug_ids": [
-            "CPATR-23086",
-            "CPATR-24802",
-            "CPATR-26168",
-            "CPATR-27022",
-            "CPATR-27148",
-            "CPATR-27550",
-            "CPATR-27779",
-            "CPATR-27836",
-            "CPATR-28368",
-            "CPATR-28504",
-            "CPATR-28903",
-            "CPATR-29112"
+            "CPATR-29112",
+            "CPATR-29203"
           ]
         },
         "8.7": {
           "known": 1,
-          "addressed": 31,
+          "addressed": 32,
           "bug_ids": [
             "CPATR-18568",
             "CPATR-18658",
             "CPATR-21392",
-            "CPATR-21711Linux",
+            "CPATR-21711",
             "CPATR-23086",
             "CPATR-24802",
             "CPATR-25058",
@@ -1024,6 +1276,7 @@
             "CPATR-27836",
             "CPATR-28504",
             "CPATR-28693",
+            "CPATR-28805",
             "CPATR-28903",
             "CPATR-28981",
             "CPATR-29112",
@@ -1035,7 +1288,7 @@
             "CPATR-29517"
           ]
         },
-        "8.7CE": {
+        "8.7-CE": {
           "known": 1,
           "addressed": 27,
           "bug_ids": [
@@ -1071,7 +1324,7 @@
         },
         "8.8": {
           "known": 1,
-          "addressed": 27,
+          "addressed": 26,
           "bug_ids": [
             "CPATR-18568",
             "CPATR-26410",
@@ -1103,9 +1356,10 @@
           ]
         },
         "8.9": {
-          "known": 1,
+          "known": 2,
           "addressed": 26,
           "bug_ids": [
+            "CPATR-11752",
             "CPATR-15207",
             "CPATR-18568",
             "CPATR-28805",
@@ -1234,20 +1488,24 @@
         },
         "9.2": {
           "known": 1,
-          "addressed": 11,
+          "addressed": 15,
           "bug_ids": [
             "CPATR-18568",
             "CPATR-33161",
             "CPATR-33194",
             "CPATR-34085",
             "CPATR-35036",
+            "CPATR-35053",
             "CPATR-35293",
             "CPATR-35311",
             "CPATR-35812",
             "CPATR-36025",
             "CPATR-36464",
             "CPATR-36490",
-            "CPATR-36649"
+            "CPATR-36649",
+            "CPATR-36872",
+            "CPATR-37525",
+            "CPATR-38420"
           ]
         },
         "9.3": {
@@ -1396,7 +1654,7 @@
         },
         "2026": {
           "known": 0,
-          "addressed": 65,
+          "addressed": 69,
           "bug_ids": [
             "DIT-67774",
             "DIT-67971",
@@ -1462,7 +1720,726 @@
             "DIT-79765",
             "DIT-80241",
             "DIT-80287",
-            "DIT-80544"
+            "DIT-80544",
+            "DIT-82273",
+            "DIT-82588",
+            "DIT-82642",
+            "DIT-84365"
+          ]
+        }
+      }
+    },
+    "enterprise-dlp": {
+      "versions": {
+        "1.0.1": {
+          "known": 11,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9461",
+            "WIF-523"
+          ]
+        },
+        "1.0.2": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-8313",
+            "PLUG-9461",
+            "WIF-523"
+          ]
+        },
+        "1.0.3": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-8313",
+            "PLUG-9461",
+            "WIF-523"
+          ]
+        },
+        "1.0.4": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-8313",
+            "PLUG-9323",
+            "PLUG-9360",
+            "PLUG-9461",
+            "WIF-523"
+          ]
+        },
+        "1.0.5": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-10530",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9323",
+            "PLUG-9811",
+            "WIF-523"
+          ]
+        },
+        "1.0.6": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-10252",
+            "PLUG-10282",
+            "PLUG-10530",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-6145",
+            "PLUG-6254",
+            "WIF-523",
+            "WIF-582"
+          ]
+        },
+        "1.0.7": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-10252",
+            "PLUG-10282",
+            "PLUG-10530",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811",
+            "WIF-523"
+          ]
+        },
+        "1.0.8": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-10252",
+            "PLUG-10282",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811",
+            "WIF-523"
+          ]
+        },
+        "2025": {
+          "known": 0,
+          "addressed": 7,
+          "bug_ids": [
+            "DIT-54573",
+            "DSPM-557",
+            "DSS-18161",
+            "DSS-21179",
+            "DSS-21292",
+            "DSS-21945",
+            "DSS-22557"
+          ]
+        },
+        "3.0.0": {
+          "known": 26,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PAN-191014",
+            "PLUG-10252",
+            "PLUG-11197",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9323",
+            "PLUG-9811",
+            "WIF-470",
+            "WIF-495",
+            "WIF-523"
+          ]
+        },
+        "3.0.1": {
+          "known": 26,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-155923",
+            "PAN-191014",
+            "PAN-191513",
+            "PLUG-10252",
+            "PLUG-10330",
+            "PLUG-11197",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9323",
+            "PLUG-9811",
+            "WIF-523"
+          ]
+        },
+        "3.0.10": {
+          "known": 11,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-15645",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "3.0.2": {
+          "known": 21,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206066",
+            "PLUG-11447",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811",
+            "WIF-864"
+          ]
+        },
+        "3.0.3": {
+          "known": 20,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811",
+            "WIF-864"
+          ]
+        },
+        "3.0.4": {
+          "known": 19,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811"
+          ]
+        },
+        "3.0.5": {
+          "known": 18,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811"
+          ]
+        },
+        "3.0.6": {
+          "known": 16,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "3.0.7": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "3.0.8": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "3.0.9": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "4.0.0": {
+          "known": 15,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-11423",
+            "PLUG-11742",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.1": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.2": {
+          "known": 15,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-11750",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.3": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.4": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-11851",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.5": {
+          "known": 10,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.0": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.1": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.2": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.3": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.4": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-17207",
+            "PLUG-18281",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.5": {
+          "known": 9,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.6": {
+          "known": 6,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.7": {
+          "known": 6,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.8": {
+          "known": 5,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-20948",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "6.0.1": {
+          "known": 9,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-16720",
+            "PLUG-19290",
+            "PLUG-20948",
+            "PLUG-21080",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "6.0.2": {
+          "known": 4,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-16720",
+            "PLUG-6145"
           ]
         }
       }
@@ -2846,8 +3823,9 @@
         },
         "6.2.8-h11": {
           "known": 0,
-          "addressed": 8,
+          "addressed": 9,
           "bug_ids": [
+            "GPC-24992",
             "GPC-25280",
             "GPC-25320",
             "GPC-25394",
@@ -2895,6 +3873,15 @@
             "GPC-26856",
             "GPC-26946",
             "GPC-26949"
+          ]
+        },
+        "6.2.8-h13": {
+          "known": 1,
+          "addressed": 2,
+          "bug_ids": [
+            "GPC-25294",
+            "GPC-27177",
+            "GPC-27179"
           ]
         },
         "6.2.8-h4": {
@@ -2995,7 +3982,7 @@
         },
         "6.2.8-h9": {
           "known": 0,
-          "addressed": 15,
+          "addressed": 16,
           "bug_ids": [
             "GPC-24006",
             "GPC-24300",
@@ -3011,7 +3998,8 @@
             "GPC-25222",
             "GPC-25300",
             "GPC-25324",
-            "GPC-25637"
+            "GPC-25637",
+            "GPC-25702"
           ]
         },
         "6.2.8-linux": {
@@ -3399,6 +4387,16 @@
             "GPC-26856",
             "GPC-26919",
             "GPC-26946"
+          ]
+        },
+        "6.3.3-h14": {
+          "known": 1,
+          "addressed": 3,
+          "bug_ids": [
+            "GPC-25576",
+            "GPC-27119",
+            "GPC-27177",
+            "GPC-27179"
           ]
         },
         "6.3.3-h2": {
@@ -5740,7 +6738,7 @@
         },
         "10.1.3": {
           "known": 151,
-          "addressed": 43,
+          "addressed": 44,
           "bug_ids": [
             "APL-15000",
             "APL-8269",
@@ -5803,6 +6801,7 @@
             "PAN-157327",
             "PAN-157444",
             "PAN-157962",
+            "PAN-158334",
             "PAN-160238",
             "PAN-161451",
             "PAN-161666",
@@ -6500,11 +7499,13 @@
         },
         "10.1.5-h1": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 5,
           "bug_ids": [
+            "PAN-177905",
             "PAN-178450",
             "PAN-189643",
-            "PAN-190175"
+            "PAN-190175",
+            "PAN-190223"
           ]
         },
         "10.1.5-h2": {
@@ -8177,7 +9178,7 @@
         },
         "10.2.1": {
           "known": 88,
-          "addressed": 47,
+          "addressed": 48,
           "bug_ids": [
             "PAN-145833",
             "PAN-164885",
@@ -8256,6 +9257,7 @@
             "PAN-189565",
             "PAN-189665",
             "PAN-190175",
+            "PAN-190223",
             "PAN-190311",
             "PAN-190435",
             "PAN-190727",
@@ -12020,9 +13022,10 @@
         },
         "10.2.4-h2": {
           "known": 0,
-          "addressed": 12,
+          "addressed": 13,
           "bug_ids": [
             "PAN-195912",
+            "PAN-211519",
             "PAN-211870",
             "PAN-212726",
             "PAN-213079",
@@ -12933,7 +13936,7 @@
         },
         "10.2.8": {
           "known": 78,
-          "addressed": 186,
+          "addressed": 187,
           "bug_ids": [
             "PAN-164885",
             "PAN-171938",
@@ -12949,6 +13952,7 @@
             "PAN-180661",
             "PAN-181706",
             "PAN-181823",
+            "PAN-181876",
             "PAN-181933",
             "PAN-183404",
             "PAN-184406",
@@ -13281,9 +14285,10 @@
         },
         "10.2.8-h18": {
           "known": 0,
-          "addressed": 17,
+          "addressed": 18,
           "bug_ids": [
             "PAN-216941",
+            "PAN-221352",
             "PAN-222579",
             "PAN-228515",
             "PAN-230825",
@@ -13535,9 +14540,10 @@
         },
         "10.2.9-h18": {
           "known": 0,
-          "addressed": 22,
+          "addressed": 23,
           "bug_ids": [
             "PAN-216941",
+            "PAN-221352",
             "PAN-224833",
             "PAN-226184",
             "PAN-235877",
@@ -14205,7 +15211,7 @@
         },
         "11.0.3": {
           "known": 64,
-          "addressed": 135,
+          "addressed": 136,
           "bug_ids": [
             "PAN-160633",
             "PAN-164885",
@@ -14213,6 +15219,7 @@
             "PAN-171938",
             "PAN-177227",
             "PAN-180082",
+            "PAN-181876",
             "PAN-181933",
             "PAN-183404",
             "PAN-184406",
@@ -16722,7 +17729,7 @@
         },
         "11.1.14": {
           "known": 35,
-          "addressed": 352,
+          "addressed": 353,
           "bug_ids": [
             "PAN-181933",
             "PAN-183404",
@@ -17109,6 +18116,7 @@
             "PAN-316911",
             "PAN-317177",
             "PAN-317215",
+            "PAN-317598",
             "PAN-317755",
             "PAN-325120"
           ]
@@ -17190,7 +18198,7 @@
         },
         "11.1.16": {
           "known": 32,
-          "addressed": 62,
+          "addressed": 63,
           "bug_ids": [
             "PAN-181933",
             "PAN-183404",
@@ -17279,6 +18287,7 @@
             "PAN-321340",
             "PAN-321516",
             "PAN-321527",
+            "PAN-321573",
             "PAN-321699",
             "PAN-321816",
             "PAN-323485",
@@ -17286,6 +18295,30 @@
             "PAN-326354",
             "PAN-326677",
             "PAN-327009"
+          ]
+        },
+        "11.1.16-h1": {
+          "known": 0,
+          "addressed": 18,
+          "bug_ids": [
+            "PAN-310263",
+            "PAN-310476",
+            "PAN-312685",
+            "PAN-316721",
+            "PAN-321937",
+            "PAN-323141",
+            "PAN-323501",
+            "PAN-323842",
+            "PAN-323974",
+            "PAN-325496",
+            "PAN-325724",
+            "PAN-325903",
+            "PAN-326056",
+            "PAN-327460",
+            "PAN-328822",
+            "PAN-329034",
+            "PAN-329698",
+            "PAN-329834"
           ]
         },
         "11.1.2": {
@@ -18130,9 +19163,10 @@
         },
         "11.1.4-h27": {
           "known": 0,
-          "addressed": 9,
+          "addressed": 10,
           "bug_ids": [
             "PAN-251715",
+            "PAN-271216",
             "PAN-271221",
             "PAN-272539",
             "PAN-278296",
@@ -20384,7 +21418,7 @@
           ]
         },
         "11.2.10": {
-          "known": 47,
+          "known": 48,
           "addressed": 68,
           "bug_ids": [
             "PAN-181933",
@@ -20501,6 +21535,7 @@
             "PAN-308418",
             "PAN-308507",
             "PAN-308564",
+            "PAN-314624",
             "PAN-317755"
           ]
         },
@@ -20700,7 +21735,7 @@
           ]
         },
         "11.2.11": {
-          "known": 36,
+          "known": 37,
           "addressed": 427,
           "bug_ids": [
             "PAN-181933",
@@ -21162,13 +22197,14 @@
             "PAN-313572",
             "PAN-313623",
             "PAN-314142",
+            "PAN-314624",
             "PAN-316911",
             "PAN-317755",
             "PAN-325120"
           ]
         },
         "11.2.12": {
-          "known": 35,
+          "known": 36,
           "addressed": 13,
           "bug_ids": [
             "PAN-181933",
@@ -21212,6 +22248,7 @@
             "PAN-314018",
             "PAN-314147",
             "PAN-314319",
+            "PAN-314624",
             "PAN-315176",
             "PAN-315912",
             "PAN-317583",
@@ -21222,7 +22259,7 @@
           ]
         },
         "11.2.13": {
-          "known": 35,
+          "known": 36,
           "addressed": 42,
           "bug_ids": [
             "PAN-181933",
@@ -21283,6 +22320,7 @@
             "PAN-314020",
             "PAN-314061",
             "PAN-314512",
+            "PAN-314624",
             "PAN-315314",
             "PAN-315337",
             "PAN-315919",
@@ -21301,6 +22339,26 @@
             "PAN-321150",
             "PAN-321699",
             "PAN-328145"
+          ]
+        },
+        "11.2.13-h1": {
+          "known": 0,
+          "addressed": 14,
+          "bug_ids": [
+            "PAN-310736",
+            "PAN-313827",
+            "PAN-314624",
+            "PAN-314776",
+            "PAN-316721",
+            "PAN-317068",
+            "PAN-317648",
+            "PAN-323485",
+            "PAN-325002",
+            "PAN-326705",
+            "PAN-327460",
+            "PAN-329180",
+            "PAN-329698",
+            "PAN-329834"
           ]
         },
         "11.2.2": {
@@ -23487,6 +24545,1253 @@
             "PAN-317755"
           ]
         },
+        "12.1.2": {
+          "known": 50,
+          "addressed": 4,
+          "bug_ids": [
+            "DRS-6556",
+            "PAN-237106",
+            "PAN-242777",
+            "PAN-283053",
+            "PAN-283429",
+            "PAN-286496",
+            "PAN-287133",
+            "PAN-288726",
+            "PAN-289524",
+            "PAN-290692",
+            "PAN-291499",
+            "PAN-292601",
+            "PAN-293718",
+            "PAN-293754",
+            "PAN-294687",
+            "PAN-297114",
+            "PAN-297610",
+            "PAN-297772",
+            "PAN-298047",
+            "PAN-298083",
+            "PAN-298540",
+            "PAN-299114",
+            "PAN-299170",
+            "PAN-299229",
+            "PAN-299387",
+            "PAN-299562",
+            "PAN-300025",
+            "PAN-300053",
+            "PAN-300069",
+            "PAN-300114",
+            "PAN-300192",
+            "PAN-300230",
+            "PAN-300334",
+            "PAN-300407",
+            "PAN-300467",
+            "PAN-300483",
+            "PAN-300627",
+            "PAN-300671",
+            "PAN-300677",
+            "PAN-300809",
+            "PAN-300850",
+            "PAN-303663",
+            "PAN-303959",
+            "PAN-304718",
+            "PAN-305301",
+            "PAN-307702",
+            "PAN-308507",
+            "PAN-308564",
+            "PAN-309602",
+            "PAN-314201",
+            "PAN-314624",
+            "PAN-317755",
+            "PLUG-19238",
+            "PLUG-21065"
+          ]
+        },
+        "12.1.3": {
+          "known": 54,
+          "addressed": 8,
+          "bug_ids": [
+            "DRS-6556",
+            "PAN-237106",
+            "PAN-262831",
+            "PAN-267450",
+            "PAN-272245",
+            "PAN-283053",
+            "PAN-283429",
+            "PAN-286496",
+            "PAN-286576",
+            "PAN-289249",
+            "PAN-289524",
+            "PAN-290692",
+            "PAN-292601",
+            "PAN-293718",
+            "PAN-293754",
+            "PAN-294687",
+            "PAN-295803",
+            "PAN-296490",
+            "PAN-297114",
+            "PAN-297610",
+            "PAN-297772",
+            "PAN-298047",
+            "PAN-298083",
+            "PAN-298241",
+            "PAN-298540",
+            "PAN-299114",
+            "PAN-299170",
+            "PAN-299229",
+            "PAN-299387",
+            "PAN-299562",
+            "PAN-300025",
+            "PAN-300053",
+            "PAN-300069",
+            "PAN-300114",
+            "PAN-300192",
+            "PAN-300230",
+            "PAN-300334",
+            "PAN-300407",
+            "PAN-300467",
+            "PAN-300483",
+            "PAN-300627",
+            "PAN-300671",
+            "PAN-300677",
+            "PAN-300809",
+            "PAN-300850",
+            "PAN-303663",
+            "PAN-303959",
+            "PAN-304576",
+            "PAN-304718",
+            "PAN-305301",
+            "PAN-305880",
+            "PAN-307702",
+            "PAN-308507",
+            "PAN-308564",
+            "PAN-309602",
+            "PAN-309604",
+            "PAN-313623",
+            "PAN-314201",
+            "PAN-314624",
+            "PAN-317755",
+            "PLUG-19238",
+            "PLUG-21065"
+          ]
+        },
+        "12.1.3-h1": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "PAN-304195"
+          ]
+        },
+        "12.1.3-h3": {
+          "known": 0,
+          "addressed": 2,
+          "bug_ids": [
+            "PAN-305480",
+            "PAN-306534"
+          ]
+        },
+        "12.1.4": {
+          "known": 55,
+          "addressed": 39,
+          "bug_ids": [
+            "DRS-6556",
+            "PAN-237106",
+            "PAN-262353",
+            "PAN-274333",
+            "PAN-282640",
+            "PAN-283053",
+            "PAN-283429",
+            "PAN-286496",
+            "PAN-287387",
+            "PAN-288598",
+            "PAN-289524",
+            "PAN-290453",
+            "PAN-290640",
+            "PAN-290665",
+            "PAN-290692",
+            "PAN-291661",
+            "PAN-291716",
+            "PAN-292393",
+            "PAN-292601",
+            "PAN-293718",
+            "PAN-293754",
+            "PAN-294687",
+            "PAN-295221",
+            "PAN-295803",
+            "PAN-296202",
+            "PAN-296453",
+            "PAN-296478",
+            "PAN-296635",
+            "PAN-297005",
+            "PAN-297114",
+            "PAN-297610",
+            "PAN-297708",
+            "PAN-297772",
+            "PAN-297797",
+            "PAN-297972",
+            "PAN-298047",
+            "PAN-298083",
+            "PAN-298514",
+            "PAN-298540",
+            "PAN-298654",
+            "PAN-298684",
+            "PAN-299114",
+            "PAN-299170",
+            "PAN-299193",
+            "PAN-299229",
+            "PAN-299387",
+            "PAN-299562",
+            "PAN-299678",
+            "PAN-299815",
+            "PAN-300025",
+            "PAN-300053",
+            "PAN-300069",
+            "PAN-300096",
+            "PAN-300114",
+            "PAN-300192",
+            "PAN-300230",
+            "PAN-300372",
+            "PAN-300407",
+            "PAN-300467",
+            "PAN-300483",
+            "PAN-300627",
+            "PAN-300671",
+            "PAN-300677",
+            "PAN-300809",
+            "PAN-300837",
+            "PAN-300850",
+            "PAN-301496",
+            "PAN-301801",
+            "PAN-302908",
+            "PAN-303559",
+            "PAN-303663",
+            "PAN-303700",
+            "PAN-303836",
+            "PAN-303959",
+            "PAN-304075",
+            "PAN-304195",
+            "PAN-304576",
+            "PAN-304718",
+            "PAN-305151",
+            "PAN-305301",
+            "PAN-305480",
+            "PAN-305880",
+            "PAN-307702",
+            "PAN-308507",
+            "PAN-308564",
+            "PAN-309602",
+            "PAN-309604",
+            "PAN-312706",
+            "PAN-313623",
+            "PAN-314201",
+            "PAN-314624",
+            "PAN-317755",
+            "PLUG-19238",
+            "PLUG-21065"
+          ]
+        },
+        "12.1.4-h2": {
+          "known": 0,
+          "addressed": 4,
+          "bug_ids": [
+            "PAN-304195",
+            "PAN-304496",
+            "PAN-306451",
+            "PAN-311938"
+          ]
+        },
+        "12.1.4-h3": {
+          "known": 0,
+          "addressed": 3,
+          "bug_ids": [
+            "PAN-292447",
+            "PAN-300664",
+            "PAN-313572"
+          ]
+        },
+        "12.1.4-h5": {
+          "known": 0,
+          "addressed": 3,
+          "bug_ids": [
+            "PAN-304576",
+            "PAN-308507",
+            "PAN-316911"
+          ]
+        },
+        "12.1.4-h7": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "PAN-317755"
+          ]
+        },
+        "12.1.4-h9": {
+          "known": 0,
+          "addressed": 2,
+          "bug_ids": [
+            "PAN-319838",
+            "PAN-329834"
+          ]
+        },
+        "12.1.5": {
+          "known": 47,
+          "addressed": 359,
+          "bug_ids": [
+            "DRS-6556",
+            "PAN-185731",
+            "PAN-237106",
+            "PAN-241953",
+            "PAN-242952",
+            "PAN-248913",
+            "PAN-257195",
+            "PAN-259853",
+            "PAN-264349",
+            "PAN-267450",
+            "PAN-267965",
+            "PAN-272175",
+            "PAN-272605",
+            "PAN-273158",
+            "PAN-273195",
+            "PAN-274333",
+            "PAN-274484",
+            "PAN-275050",
+            "PAN-276745",
+            "PAN-277178",
+            "PAN-278288",
+            "PAN-279552",
+            "PAN-280536",
+            "PAN-281371",
+            "PAN-281588",
+            "PAN-281721",
+            "PAN-282687",
+            "PAN-282956",
+            "PAN-283053",
+            "PAN-283101",
+            "PAN-283237",
+            "PAN-283311",
+            "PAN-283429",
+            "PAN-283704",
+            "PAN-285169",
+            "PAN-285181",
+            "PAN-285208",
+            "PAN-285213",
+            "PAN-285672",
+            "PAN-285758",
+            "PAN-286496",
+            "PAN-287034",
+            "PAN-287035",
+            "PAN-287086",
+            "PAN-287387",
+            "PAN-287581",
+            "PAN-287599",
+            "PAN-288139",
+            "PAN-288141",
+            "PAN-288175",
+            "PAN-288388",
+            "PAN-288869",
+            "PAN-288938",
+            "PAN-289067",
+            "PAN-289383",
+            "PAN-289413",
+            "PAN-289524",
+            "PAN-289578",
+            "PAN-289706",
+            "PAN-289736",
+            "PAN-289826",
+            "PAN-289852",
+            "PAN-290681",
+            "PAN-290692",
+            "PAN-290728",
+            "PAN-290757",
+            "PAN-290783",
+            "PAN-290851",
+            "PAN-290938",
+            "PAN-290948",
+            "PAN-290954",
+            "PAN-291009",
+            "PAN-291067",
+            "PAN-291174",
+            "PAN-291247",
+            "PAN-291273",
+            "PAN-291631",
+            "PAN-291650",
+            "PAN-291660",
+            "PAN-291706",
+            "PAN-291792",
+            "PAN-291915",
+            "PAN-291940",
+            "PAN-291984",
+            "PAN-292019",
+            "PAN-292079",
+            "PAN-292220",
+            "PAN-292242",
+            "PAN-292285",
+            "PAN-292306",
+            "PAN-292447",
+            "PAN-292529",
+            "PAN-292580",
+            "PAN-292601",
+            "PAN-292752",
+            "PAN-293141",
+            "PAN-293281",
+            "PAN-293297",
+            "PAN-293561",
+            "PAN-293686",
+            "PAN-293708",
+            "PAN-293718",
+            "PAN-293754",
+            "PAN-293825",
+            "PAN-293840",
+            "PAN-293847",
+            "PAN-293848",
+            "PAN-293858",
+            "PAN-293879",
+            "PAN-294001",
+            "PAN-294123",
+            "PAN-294161",
+            "PAN-294179",
+            "PAN-294191",
+            "PAN-294307",
+            "PAN-294434",
+            "PAN-294524",
+            "PAN-294687",
+            "PAN-294770",
+            "PAN-294893",
+            "PAN-295095",
+            "PAN-295185",
+            "PAN-295221",
+            "PAN-295240",
+            "PAN-295245",
+            "PAN-295257",
+            "PAN-295385",
+            "PAN-295421",
+            "PAN-295470",
+            "PAN-295578",
+            "PAN-295586",
+            "PAN-295644",
+            "PAN-295662",
+            "PAN-295728",
+            "PAN-295766",
+            "PAN-295796",
+            "PAN-295802",
+            "PAN-295803",
+            "PAN-295838",
+            "PAN-295854",
+            "PAN-295899",
+            "PAN-295950",
+            "PAN-295951",
+            "PAN-295958",
+            "PAN-296020",
+            "PAN-296202",
+            "PAN-296206",
+            "PAN-296208",
+            "PAN-296224",
+            "PAN-296283",
+            "PAN-296397",
+            "PAN-296443",
+            "PAN-296519",
+            "PAN-296535",
+            "PAN-296598",
+            "PAN-296616",
+            "PAN-296666",
+            "PAN-296694",
+            "PAN-296749",
+            "PAN-296752",
+            "PAN-296977",
+            "PAN-297114",
+            "PAN-297263",
+            "PAN-297320",
+            "PAN-297321",
+            "PAN-297370",
+            "PAN-297540",
+            "PAN-297609",
+            "PAN-297610",
+            "PAN-297749",
+            "PAN-297759",
+            "PAN-297761",
+            "PAN-297772",
+            "PAN-297774",
+            "PAN-297782",
+            "PAN-297796",
+            "PAN-297819",
+            "PAN-297963",
+            "PAN-297972",
+            "PAN-297975",
+            "PAN-297976",
+            "PAN-298000",
+            "PAN-298047",
+            "PAN-298083",
+            "PAN-298141",
+            "PAN-298252",
+            "PAN-298279",
+            "PAN-298288",
+            "PAN-298387",
+            "PAN-298460",
+            "PAN-298514",
+            "PAN-298540",
+            "PAN-298617",
+            "PAN-298872",
+            "PAN-298907",
+            "PAN-298929",
+            "PAN-298945",
+            "PAN-299027",
+            "PAN-299114",
+            "PAN-299161",
+            "PAN-299170",
+            "PAN-299228",
+            "PAN-299229",
+            "PAN-299242",
+            "PAN-299387",
+            "PAN-299450",
+            "PAN-299495",
+            "PAN-299562",
+            "PAN-299615",
+            "PAN-299622",
+            "PAN-299623",
+            "PAN-299705",
+            "PAN-299706",
+            "PAN-299738",
+            "PAN-299751",
+            "PAN-299757",
+            "PAN-299772",
+            "PAN-299785",
+            "PAN-299910",
+            "PAN-299915",
+            "PAN-300025",
+            "PAN-300053",
+            "PAN-300055",
+            "PAN-300069",
+            "PAN-300114",
+            "PAN-300138",
+            "PAN-300186",
+            "PAN-300192",
+            "PAN-300216",
+            "PAN-300227",
+            "PAN-300230",
+            "PAN-300280",
+            "PAN-300407",
+            "PAN-300423",
+            "PAN-300467",
+            "PAN-300483",
+            "PAN-300548",
+            "PAN-300555",
+            "PAN-300612",
+            "PAN-300617",
+            "PAN-300627",
+            "PAN-300637",
+            "PAN-300638",
+            "PAN-300664",
+            "PAN-300671",
+            "PAN-300677",
+            "PAN-300809",
+            "PAN-300850",
+            "PAN-300906",
+            "PAN-300916",
+            "PAN-300922",
+            "PAN-301018",
+            "PAN-301089",
+            "PAN-301113",
+            "PAN-301186",
+            "PAN-301222",
+            "PAN-301290",
+            "PAN-301305",
+            "PAN-301386",
+            "PAN-301409",
+            "PAN-301430",
+            "PAN-301456",
+            "PAN-301496",
+            "PAN-301600",
+            "PAN-301653",
+            "PAN-301691",
+            "PAN-301733",
+            "PAN-301848",
+            "PAN-301912",
+            "PAN-301965",
+            "PAN-301975",
+            "PAN-302073",
+            "PAN-302085",
+            "PAN-302127",
+            "PAN-302196",
+            "PAN-302254",
+            "PAN-302387",
+            "PAN-302428",
+            "PAN-302471",
+            "PAN-302551",
+            "PAN-302564",
+            "PAN-302567",
+            "PAN-302737",
+            "PAN-302790",
+            "PAN-302811",
+            "PAN-302834",
+            "PAN-302908",
+            "PAN-302921",
+            "PAN-302983",
+            "PAN-303051",
+            "PAN-303064",
+            "PAN-303156",
+            "PAN-303379",
+            "PAN-303390",
+            "PAN-303487",
+            "PAN-303508",
+            "PAN-303627",
+            "PAN-303662",
+            "PAN-303663",
+            "PAN-303671",
+            "PAN-303700",
+            "PAN-303722",
+            "PAN-303737",
+            "PAN-303745",
+            "PAN-303765",
+            "PAN-303791",
+            "PAN-303826",
+            "PAN-303833",
+            "PAN-303836",
+            "PAN-303954",
+            "PAN-303959",
+            "PAN-304148",
+            "PAN-304177",
+            "PAN-304205",
+            "PAN-304229",
+            "PAN-304397",
+            "PAN-304496",
+            "PAN-304538",
+            "PAN-304576",
+            "PAN-304636",
+            "PAN-304689",
+            "PAN-304696",
+            "PAN-304718",
+            "PAN-304746",
+            "PAN-304756",
+            "PAN-304840",
+            "PAN-305105",
+            "PAN-305188",
+            "PAN-305301",
+            "PAN-305374",
+            "PAN-305411",
+            "PAN-305412",
+            "PAN-305414",
+            "PAN-305502",
+            "PAN-305549",
+            "PAN-305552",
+            "PAN-305557",
+            "PAN-305605",
+            "PAN-305835",
+            "PAN-305874",
+            "PAN-305919",
+            "PAN-305922",
+            "PAN-306103",
+            "PAN-306215",
+            "PAN-306225",
+            "PAN-306226",
+            "PAN-306451",
+            "PAN-306533",
+            "PAN-306884",
+            "PAN-306886",
+            "PAN-306903",
+            "PAN-306934",
+            "PAN-307066",
+            "PAN-307072",
+            "PAN-307453",
+            "PAN-307481",
+            "PAN-307597",
+            "PAN-307702",
+            "PAN-307714",
+            "PAN-307773",
+            "PAN-307795",
+            "PAN-307806",
+            "PAN-307893",
+            "PAN-307901",
+            "PAN-308060",
+            "PAN-308085",
+            "PAN-308188",
+            "PAN-308305",
+            "PAN-308507",
+            "PAN-308564",
+            "PAN-308606",
+            "PAN-308654",
+            "PAN-308668",
+            "PAN-308786",
+            "PAN-309009",
+            "PAN-309258",
+            "PAN-309300",
+            "PAN-309379",
+            "PAN-309392",
+            "PAN-309459",
+            "PAN-309602",
+            "PAN-309604",
+            "PAN-309826",
+            "PAN-309831",
+            "PAN-309853",
+            "PAN-310402",
+            "PAN-310499",
+            "PAN-311073",
+            "PAN-311087",
+            "PAN-311524",
+            "PAN-311938",
+            "PAN-312247",
+            "PAN-312618",
+            "PAN-312706",
+            "PAN-313258",
+            "PAN-313572",
+            "PAN-313623",
+            "PAN-313669",
+            "PAN-313779",
+            "PAN-314142",
+            "PAN-314201",
+            "PAN-314624",
+            "PAN-317755",
+            "PAN-330836",
+            "PLUG-19238",
+            "PLUG-21065"
+          ]
+        },
+        "12.1.6": {
+          "known": 44,
+          "addressed": 13,
+          "bug_ids": [
+            "DRS-6556",
+            "PAN-237106",
+            "PAN-283429",
+            "PAN-286496",
+            "PAN-289524",
+            "PAN-290692",
+            "PAN-292601",
+            "PAN-293718",
+            "PAN-293754",
+            "PAN-294687",
+            "PAN-297114",
+            "PAN-297772",
+            "PAN-298047",
+            "PAN-298083",
+            "PAN-298540",
+            "PAN-299114",
+            "PAN-299170",
+            "PAN-299229",
+            "PAN-299387",
+            "PAN-299562",
+            "PAN-300025",
+            "PAN-300053",
+            "PAN-300069",
+            "PAN-300114",
+            "PAN-300192",
+            "PAN-300230",
+            "PAN-300407",
+            "PAN-300467",
+            "PAN-300483",
+            "PAN-300627",
+            "PAN-300677",
+            "PAN-300809",
+            "PAN-300850",
+            "PAN-308261",
+            "PAN-308418",
+            "PAN-308507",
+            "PAN-308564",
+            "PAN-309602",
+            "PAN-309604",
+            "PAN-310240",
+            "PAN-310362",
+            "PAN-311250",
+            "PAN-311261",
+            "PAN-311412",
+            "PAN-311512",
+            "PAN-312247",
+            "PAN-313216",
+            "PAN-313623",
+            "PAN-313669",
+            "PAN-313779",
+            "PAN-314201",
+            "PAN-314624",
+            "PAN-316911",
+            "PAN-317755",
+            "PAN-330836",
+            "PLUG-19238",
+            "PLUG-21065"
+          ]
+        },
+        "12.1.7": {
+          "known": 14,
+          "addressed": 46,
+          "bug_ids": [
+            "PAN-260661",
+            "PAN-273028",
+            "PAN-273805",
+            "PAN-282335",
+            "PAN-283028",
+            "PAN-289524",
+            "PAN-289757",
+            "PAN-292601",
+            "PAN-294998",
+            "PAN-295806",
+            "PAN-295946",
+            "PAN-296635",
+            "PAN-298083",
+            "PAN-299562",
+            "PAN-300230",
+            "PAN-300615",
+            "PAN-300667",
+            "PAN-302512",
+            "PAN-302855",
+            "PAN-304360",
+            "PAN-308377",
+            "PAN-308564",
+            "PAN-310328",
+            "PAN-310851",
+            "PAN-311040",
+            "PAN-311601",
+            "PAN-311938",
+            "PAN-312143",
+            "PAN-312354",
+            "PAN-312514",
+            "PAN-313606",
+            "PAN-313623",
+            "PAN-314020",
+            "PAN-314147",
+            "PAN-314319",
+            "PAN-314365",
+            "PAN-314624",
+            "PAN-314823",
+            "PAN-315005",
+            "PAN-315134",
+            "PAN-315912",
+            "PAN-315965",
+            "PAN-316605",
+            "PAN-316740",
+            "PAN-316937",
+            "PAN-317068",
+            "PAN-317177",
+            "PAN-317215",
+            "PAN-317466",
+            "PAN-317548",
+            "PAN-317583",
+            "PAN-317755",
+            "PAN-317772",
+            "PAN-318275",
+            "PAN-318288",
+            "PAN-320897",
+            "PAN-322630",
+            "PAN-322681",
+            "PAN-322815",
+            "PAN-330836"
+          ]
+        },
+        "12.1.7-h1": {
+          "known": 0,
+          "addressed": 4,
+          "bug_ids": [
+            "PAN-302150",
+            "PAN-317133",
+            "PAN-317755",
+            "PAN-320598"
+          ]
+        },
+        "12.1.7-h2": {
+          "known": 0,
+          "addressed": 7,
+          "bug_ids": [
+            "PAN-313700",
+            "PAN-314512",
+            "PAN-314624",
+            "PAN-317867",
+            "PAN-318619",
+            "PAN-323809",
+            "PAN-324014"
+          ]
+        },
+        "12.1.7-h3": {
+          "known": 0,
+          "addressed": 6,
+          "bug_ids": [
+            "PAN-307618",
+            "PAN-323485",
+            "PAN-325890",
+            "PAN-326677",
+            "PAN-327460",
+            "PAN-329834"
+          ]
+        },
+        "12.1.8": {
+          "known": 19,
+          "addressed": 259,
+          "bug_ids": [
+            "PAN-250445",
+            "PAN-260661",
+            "PAN-264349",
+            "PAN-264762",
+            "PAN-266843",
+            "PAN-272175",
+            "PAN-273028",
+            "PAN-273805",
+            "PAN-274622",
+            "PAN-280196",
+            "PAN-282335",
+            "PAN-283028",
+            "PAN-283704",
+            "PAN-287280",
+            "PAN-289460",
+            "PAN-289524",
+            "PAN-289578",
+            "PAN-290712",
+            "PAN-291284",
+            "PAN-291785",
+            "PAN-292191",
+            "PAN-292220",
+            "PAN-292447",
+            "PAN-292601",
+            "PAN-293586",
+            "PAN-293718",
+            "PAN-294434",
+            "PAN-294998",
+            "PAN-295047",
+            "PAN-295082",
+            "PAN-295806",
+            "PAN-295946",
+            "PAN-296246",
+            "PAN-296635",
+            "PAN-297819",
+            "PAN-298083",
+            "PAN-298252",
+            "PAN-298788",
+            "PAN-298960",
+            "PAN-299562",
+            "PAN-300230",
+            "PAN-300423",
+            "PAN-300445",
+            "PAN-300615",
+            "PAN-300617",
+            "PAN-300667",
+            "PAN-301513",
+            "PAN-302150",
+            "PAN-302387",
+            "PAN-302512",
+            "PAN-302834",
+            "PAN-302855",
+            "PAN-303173",
+            "PAN-303662",
+            "PAN-304360",
+            "PAN-304718",
+            "PAN-305240",
+            "PAN-305369",
+            "PAN-305619",
+            "PAN-305950",
+            "PAN-306217",
+            "PAN-306356",
+            "PAN-306533",
+            "PAN-307470",
+            "PAN-307491",
+            "PAN-307618",
+            "PAN-307717",
+            "PAN-307773",
+            "PAN-307937",
+            "PAN-308261",
+            "PAN-308377",
+            "PAN-308418",
+            "PAN-308444",
+            "PAN-308461",
+            "PAN-308507",
+            "PAN-308563",
+            "PAN-308651",
+            "PAN-308711",
+            "PAN-308732",
+            "PAN-308775",
+            "PAN-308876",
+            "PAN-308928",
+            "PAN-309300",
+            "PAN-309493",
+            "PAN-309676",
+            "PAN-309828",
+            "PAN-309927",
+            "PAN-309944",
+            "PAN-309960",
+            "PAN-310240",
+            "PAN-310267",
+            "PAN-310328",
+            "PAN-310362",
+            "PAN-310452",
+            "PAN-310472",
+            "PAN-310473",
+            "PAN-310526",
+            "PAN-310743",
+            "PAN-310851",
+            "PAN-311040",
+            "PAN-311074",
+            "PAN-311098",
+            "PAN-311113",
+            "PAN-311166",
+            "PAN-311205",
+            "PAN-311218",
+            "PAN-311248",
+            "PAN-311250",
+            "PAN-311261",
+            "PAN-311285",
+            "PAN-311352",
+            "PAN-311412",
+            "PAN-311419",
+            "PAN-311449",
+            "PAN-311456",
+            "PAN-311512",
+            "PAN-311601",
+            "PAN-311658",
+            "PAN-311938",
+            "PAN-312143",
+            "PAN-312156",
+            "PAN-312267",
+            "PAN-312277",
+            "PAN-312354",
+            "PAN-312514",
+            "PAN-312618",
+            "PAN-312697",
+            "PAN-312706",
+            "PAN-313036",
+            "PAN-313048",
+            "PAN-313193",
+            "PAN-313216",
+            "PAN-313258",
+            "PAN-313443",
+            "PAN-313494",
+            "PAN-313523",
+            "PAN-313572",
+            "PAN-313575",
+            "PAN-313606",
+            "PAN-313623",
+            "PAN-313669",
+            "PAN-313700",
+            "PAN-313779",
+            "PAN-313787",
+            "PAN-313827",
+            "PAN-313828",
+            "PAN-313976",
+            "PAN-314018",
+            "PAN-314020",
+            "PAN-314126",
+            "PAN-314142",
+            "PAN-314147",
+            "PAN-314201",
+            "PAN-314223",
+            "PAN-314300",
+            "PAN-314319",
+            "PAN-314365",
+            "PAN-314372",
+            "PAN-314385",
+            "PAN-314398",
+            "PAN-314435",
+            "PAN-314477",
+            "PAN-314512",
+            "PAN-314623",
+            "PAN-314624",
+            "PAN-314630",
+            "PAN-314712",
+            "PAN-314724",
+            "PAN-314752",
+            "PAN-314764",
+            "PAN-314818",
+            "PAN-314823",
+            "PAN-314873",
+            "PAN-315005",
+            "PAN-315134",
+            "PAN-315160",
+            "PAN-315176",
+            "PAN-315314",
+            "PAN-315326",
+            "PAN-315337",
+            "PAN-315424",
+            "PAN-315912",
+            "PAN-315913",
+            "PAN-315958",
+            "PAN-315964",
+            "PAN-315965",
+            "PAN-316070",
+            "PAN-316106",
+            "PAN-316120",
+            "PAN-316263",
+            "PAN-316433",
+            "PAN-316435",
+            "PAN-316556",
+            "PAN-316605",
+            "PAN-316631",
+            "PAN-316718",
+            "PAN-316740",
+            "PAN-316761",
+            "PAN-316856",
+            "PAN-316911",
+            "PAN-316937",
+            "PAN-316978",
+            "PAN-317068",
+            "PAN-317133",
+            "PAN-317177",
+            "PAN-317215",
+            "PAN-317372",
+            "PAN-317466",
+            "PAN-317548",
+            "PAN-317583",
+            "PAN-317600",
+            "PAN-317614",
+            "PAN-317749",
+            "PAN-317755",
+            "PAN-317772",
+            "PAN-317858",
+            "PAN-317867",
+            "PAN-318030",
+            "PAN-318106",
+            "PAN-318120",
+            "PAN-318275",
+            "PAN-318288",
+            "PAN-318567",
+            "PAN-318619",
+            "PAN-318784",
+            "PAN-318949",
+            "PAN-318990",
+            "PAN-319136",
+            "PAN-319228",
+            "PAN-319266",
+            "PAN-319288",
+            "PAN-319335",
+            "PAN-319419",
+            "PAN-319481",
+            "PAN-319557",
+            "PAN-319793",
+            "PAN-319798",
+            "PAN-320245",
+            "PAN-320290",
+            "PAN-320420",
+            "PAN-320598",
+            "PAN-321081",
+            "PAN-321084",
+            "PAN-321150",
+            "PAN-321222",
+            "PAN-321340",
+            "PAN-321516",
+            "PAN-321527",
+            "PAN-321699",
+            "PAN-321816",
+            "PAN-321937",
+            "PAN-322325",
+            "PAN-322390",
+            "PAN-322402",
+            "PAN-322630",
+            "PAN-322681",
+            "PAN-322815",
+            "PAN-323243",
+            "PAN-323485",
+            "PAN-323809",
+            "PAN-323825",
+            "PAN-323862",
+            "PAN-323974",
+            "PAN-324014",
+            "PAN-324275",
+            "PAN-324370",
+            "PAN-324966",
+            "PAN-325120",
+            "PAN-325890",
+            "PAN-325903",
+            "PAN-326677",
+            "PAN-327009",
+            "PAN-329146",
+            "PAN-330836",
+            "PAN-330902",
+            "PAN-330906",
+            "PAN-330964",
+            "PAN-330995"
+          ]
+        },
+        "12.1.9": {
+          "known": 13,
+          "addressed": 35,
+          "bug_ids": [
+            "PAN-252699",
+            "PAN-283028",
+            "PAN-289524",
+            "PAN-292601",
+            "PAN-293718",
+            "PAN-294752",
+            "PAN-295946",
+            "PAN-297818",
+            "PAN-298083",
+            "PAN-299562",
+            "PAN-300230",
+            "PAN-300667",
+            "PAN-302175",
+            "PAN-308614",
+            "PAN-309306",
+            "PAN-310699",
+            "PAN-311601",
+            "PAN-311624",
+            "PAN-311988",
+            "PAN-312143",
+            "PAN-312330",
+            "PAN-312685",
+            "PAN-313190",
+            "PAN-313218",
+            "PAN-313669",
+            "PAN-313850",
+            "PAN-314061",
+            "PAN-314776",
+            "PAN-315959",
+            "PAN-316720",
+            "PAN-317214",
+            "PAN-317598",
+            "PAN-318382",
+            "PAN-318580",
+            "PAN-319504",
+            "PAN-319838",
+            "PAN-320345",
+            "PAN-323249",
+            "PAN-324902",
+            "PAN-325002",
+            "PAN-325613",
+            "PAN-326354",
+            "PAN-327460",
+            "PAN-327590",
+            "PAN-328742",
+            "PAN-329180",
+            "PAN-329834",
+            "PAN-331636"
+          ]
+        },
+        "12.2.2": {
+          "known": 40,
+          "addressed": 1,
+          "bug_ids": [
+            "PAN-242777",
+            "PAN-283028",
+            "PAN-289524",
+            "PAN-292601",
+            "PAN-293718",
+            "PAN-294752",
+            "PAN-295946",
+            "PAN-298083",
+            "PAN-299286",
+            "PAN-299562",
+            "PAN-300230",
+            "PAN-300667",
+            "PAN-305734",
+            "PAN-309410",
+            "PAN-310328",
+            "PAN-311601",
+            "PAN-312143",
+            "PAN-313669",
+            "PAN-314625",
+            "PAN-316972",
+            "PAN-326791",
+            "PAN-327958",
+            "PAN-328647",
+            "PAN-329146",
+            "PAN-329515",
+            "PAN-329606",
+            "PAN-330381",
+            "PAN-330964",
+            "PAN-330974",
+            "PAN-330995",
+            "PAN-331498",
+            "PAN-33165",
+            "PAN-331659",
+            "PAN-331687",
+            "PAN-331722",
+            "PAN-331987",
+            "PAN-332130",
+            "PAN-332576",
+            "PAN-332874",
+            "PAN-332943",
+            "PLUG-23656"
+          ]
+        },
         "8.1.0": {
           "known": 131,
           "addressed": 29,
@@ -24241,7 +26546,7 @@
         },
         "8.1.15": {
           "known": 0,
-          "addressed": 61,
+          "addressed": 64,
           "bug_ids": [
             "PAN-102202",
             "PAN-103290",
@@ -24298,6 +26603,9 @@
             "PAN-144251",
             "PAN-144479",
             "PAN-144782",
+            "PAN-145149",
+            "PAN-145150",
+            "PAN-145151",
             "PAN-145195",
             "PAN-148068",
             "PAN-148988",
@@ -24315,7 +26623,7 @@
         },
         "8.1.16": {
           "known": 0,
-          "addressed": 61,
+          "addressed": 63,
           "bug_ids": [
             "PAN-100757",
             "PAN-112539",
@@ -24372,6 +26680,8 @@
             "PAN-149005",
             "PAN-149325",
             "PAN-149813",
+            "PAN-149822",
+            "PAN-150013",
             "PAN-150170",
             "PAN-150172",
             "PAN-150243",
@@ -24664,8 +26974,9 @@
         },
         "8.1.20-h1": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 5,
           "bug_ids": [
+            "PAN-158334",
             "PAN-176618",
             "PAN-176653",
             "PAN-176655",
@@ -24719,12 +27030,13 @@
         },
         "8.1.23": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 5,
           "bug_ids": [
             "PAN-158328",
             "PAN-162600",
             "PAN-177551",
-            "PAN-190175"
+            "PAN-190175",
+            "PAN-190223"
           ]
         },
         "8.1.23-h1": {
@@ -26182,8 +28494,9 @@
         },
         "9.1.11-h2": {
           "known": 0,
-          "addressed": 8,
+          "addressed": 9,
           "bug_ids": [
+            "PAN-158334",
             "PAN-169173",
             "PAN-176131",
             "PAN-176461",
@@ -26541,9 +28854,10 @@
         },
         "9.1.13-h3": {
           "known": 0,
-          "addressed": 1,
+          "addressed": 2,
           "bug_ids": [
-            "PAN-190175"
+            "PAN-190175",
+            "PAN-190223"
           ]
         },
         "9.1.13-h4": {
@@ -27467,7 +29781,7 @@
         },
         "9.1.3": {
           "known": 76,
-          "addressed": 127,
+          "addressed": 130,
           "bug_ids": [
             "PAN-101537",
             "PAN-101688",
@@ -27623,6 +29937,9 @@
             "PAN-144782",
             "PAN-144889",
             "PAN-145026",
+            "PAN-145149",
+            "PAN-145150",
+            "PAN-145151",
             "PAN-145195",
             "PAN-146485",
             "PAN-146573",
@@ -27683,7 +30000,7 @@
         },
         "9.1.4": {
           "known": 76,
-          "addressed": 69,
+          "addressed": 71,
           "bug_ids": [
             "PAN-101484",
             "PAN-101537",
@@ -27787,6 +30104,8 @@
             "PAN-148676",
             "PAN-148806",
             "PAN-149377",
+            "PAN-149822",
+            "PAN-150013",
             "PAN-150170",
             "PAN-150172",
             "PAN-151197",
@@ -28599,7 +30918,7 @@
     "plugin-aws": {
       "versions": {
         "1.0.0": {
-          "known": 8,
+          "known": 7,
           "addressed": 0,
           "bug_ids": [
             "PLUG-1029",
@@ -28613,15 +30932,15 @@
         },
         "1.0.1": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-2000",
             "PLUG-3806"
           ]
         },
         "2.0.0": {
-          "known": 14,
-          "addressed": 2,
+          "known": 13,
+          "addressed": 1,
           "bug_ids": [
             "PAN-116383",
             "PAN-119033",
@@ -28640,7 +30959,7 @@
         },
         "2.0.1": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-3806",
             "PLUG-3923"
@@ -28648,14 +30967,14 @@
         },
         "2.0.2": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-4491",
             "PLUG-4819"
           ]
         },
         "3.0.0": {
-          "known": 20,
+          "known": 19,
           "addressed": 0,
           "bug_ids": [
             "PAN-176234",
@@ -28680,8 +30999,8 @@
           ]
         },
         "3.0.1": {
-          "known": 3,
-          "addressed": 2,
+          "known": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-9149",
             "PLUG-9182",
@@ -28689,8 +31008,8 @@
           ]
         },
         "3.0.2": {
-          "known": 6,
-          "addressed": 2,
+          "known": 5,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-7659",
             "PLUG-9182",
@@ -28701,14 +31020,14 @@
           ]
         },
         "3.0.3": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-11220"
           ]
         },
         "4.0.0": {
-          "known": 5,
+          "known": 4,
           "addressed": 0,
           "bug_ids": [
             "PLUG-10091",
@@ -28718,8 +31037,8 @@
           ]
         },
         "4.1.0": {
-          "known": 7,
-          "addressed": 5,
+          "known": 6,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-11200",
             "PLUG-11476",
@@ -28734,7 +31053,7 @@
           ]
         },
         "5.0.0": {
-          "known": 6,
+          "known": 5,
           "addressed": 0,
           "bug_ids": [
             "FWAAS-6536",
@@ -28745,8 +31064,8 @@
           ]
         },
         "5.0.1": {
-          "known": 8,
-          "addressed": 3,
+          "known": 7,
+          "addressed": 2,
           "bug_ids": [
             "FWAAS-5823",
             "FWAAS-5842",
@@ -28760,8 +31079,8 @@
           ]
         },
         "5.1.1": {
-          "known": 7,
-          "addressed": 4,
+          "known": 6,
+          "addressed": 3,
           "bug_ids": [
             "FWAAS-5817",
             "FWAAS-6961",
@@ -28775,8 +31094,8 @@
           ]
         },
         "5.1.2": {
-          "known": 2,
-          "addressed": 6,
+          "known": 1,
+          "addressed": 5,
           "bug_ids": [
             "PLUG-17007",
             "PLUG-17012",
@@ -28788,14 +31107,14 @@
         },
         "5.1.3": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-17427"
           ]
         },
         "5.2.0": {
-          "known": 6,
-          "addressed": 2,
+          "known": 5,
+          "addressed": 1,
           "bug_ids": [
             "FWAAS-5817",
             "FWAAS-6961",
@@ -28806,8 +31125,8 @@
           ]
         },
         "5.2.1": {
-          "known": 6,
-          "addressed": 2,
+          "known": 5,
+          "addressed": 1,
           "bug_ids": [
             "FWAAS-5817",
             "FWAAS-6961",
@@ -28818,8 +31137,8 @@
           ]
         },
         "5.2.2": {
-          "known": 7,
-          "addressed": 4,
+          "known": 6,
+          "addressed": 3,
           "bug_ids": [
             "FWAAS-5817",
             "FWAAS-6961",
@@ -28834,7 +31153,7 @@
         },
         "5.3.0": {
           "known": 0,
-          "addressed": 5,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-15577",
             "PLUG-15709",
@@ -28843,8 +31162,8 @@
           ]
         },
         "5.3.1": {
-          "known": 2,
-          "addressed": 4,
+          "known": 1,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-17709",
             "PLUG-18021",
@@ -28854,14 +31173,14 @@
         },
         "5.3.2": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-17626"
           ]
         },
         "5.3.4": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-18650",
             "PLUG-18787"
@@ -28869,14 +31188,14 @@
         },
         "5.4.1": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-20260"
           ]
         },
         "5.4.2": {
-          "known": 2,
-          "addressed": 2,
+          "known": 1,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-17471",
             "PLUG-22303"
@@ -28884,14 +31203,14 @@
         },
         "5.4.3": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-22588"
           ]
         },
         "5.5.0": {
-          "known": 2,
-          "addressed": 5,
+          "known": 1,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-22142",
             "PLUG-22211",
@@ -28905,7 +31224,7 @@
     "plugin-azure": {
       "versions": {
         "1.0.0": {
-          "known": 6,
+          "known": 5,
           "addressed": 0,
           "bug_ids": [
             "PLUG-1029",
@@ -28916,7 +31235,7 @@
           ]
         },
         "2.0.0": {
-          "known": 10,
+          "known": 9,
           "addressed": 0,
           "bug_ids": [
             "PLUG-1613",
@@ -28931,8 +31250,8 @@
           ]
         },
         "2.0.1": {
-          "known": 11,
-          "addressed": 2,
+          "known": 10,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-1613",
             "PLUG-1646",
@@ -28949,7 +31268,7 @@
         },
         "2.0.2": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-3478",
             "PLUG-3797"
@@ -28957,13 +31276,13 @@
         },
         "2.0.3": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-4477"
           ]
         },
         "3.0.0": {
-          "known": 14,
+          "known": 13,
           "addressed": 0,
           "bug_ids": [
             "PLUG-4572",
@@ -28982,8 +31301,8 @@
           ]
         },
         "3.0.1": {
-          "known": 8,
-          "addressed": 8,
+          "known": 7,
+          "addressed": 7,
           "bug_ids": [
             "PLUG-4572",
             "PLUG-5389",
@@ -29002,8 +31321,8 @@
           ]
         },
         "3.1.0": {
-          "known": 8,
-          "addressed": 2,
+          "known": 7,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-4572",
             "PLUG-5389",
@@ -29016,8 +31335,8 @@
           ]
         },
         "3.2.0": {
-          "known": 10,
-          "addressed": 3,
+          "known": 9,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10134",
             "PLUG-10338",
@@ -29033,8 +31352,8 @@
           ]
         },
         "3.2.1": {
-          "known": 6,
-          "addressed": 6,
+          "known": 5,
+          "addressed": 5,
           "bug_ids": [
             "PLUG-10437",
             "PLUG-10707",
@@ -29049,8 +31368,8 @@
           ]
         },
         "3.2.2": {
-          "known": 4,
-          "addressed": 2,
+          "known": 3,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10792",
             "PLUG-10896",
@@ -29059,7 +31378,7 @@
           ]
         },
         "4.0.0": {
-          "known": 5,
+          "known": 4,
           "addressed": 0,
           "bug_ids": [
             "PLUG-10091",
@@ -29069,8 +31388,8 @@
           ]
         },
         "4.1.0": {
-          "known": 12,
-          "addressed": 2,
+          "known": 11,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10091",
             "PLUG-10122",
@@ -29087,8 +31406,8 @@
           ]
         },
         "4.2.0": {
-          "known": 8,
-          "addressed": 3,
+          "known": 7,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10091",
             "PLUG-11011",
@@ -29102,8 +31421,8 @@
           ]
         },
         "5.1.1": {
-          "known": 5,
-          "addressed": 8,
+          "known": 4,
+          "addressed": 7,
           "bug_ids": [
             "FWAAS-7948",
             "FWAAS-9041",
@@ -29120,7 +31439,7 @@
         },
         "5.1.2": {
           "known": 0,
-          "addressed": 8,
+          "addressed": 7,
           "bug_ids": [
             "FWAAS-9738",
             "FWAAS-9739",
@@ -29132,7 +31451,7 @@
           ]
         },
         "5.2.0": {
-          "known": 4,
+          "known": 3,
           "addressed": 0,
           "bug_ids": [
             "DIT-40519",
@@ -29141,16 +31460,16 @@
           ]
         },
         "5.2.1": {
-          "known": 2,
-          "addressed": 2,
+          "known": 1,
+          "addressed": 1,
           "bug_ids": [
             "FWAAS-10146",
             "PLUG-15904"
           ]
         },
         "5.2.2": {
-          "known": 7,
-          "addressed": 5,
+          "known": 6,
+          "addressed": 4,
           "bug_ids": [
             "FWAAS-7880",
             "PLUG-15050",
@@ -29165,8 +31484,8 @@
           ]
         },
         "5.2.3": {
-          "known": 3,
-          "addressed": 4,
+          "known": 2,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-15914",
             "PLUG-16717",
@@ -29176,8 +31495,8 @@
           ]
         },
         "5.2.4": {
-          "known": 2,
-          "addressed": 3,
+          "known": 1,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-20289",
             "PLUG-21924",
@@ -29189,7 +31508,7 @@
     "plugin-cisco-aci": {
       "versions": {
         "1.0.0": {
-          "known": 4,
+          "known": 3,
           "addressed": 0,
           "bug_ids": [
             "PLUG-1387",
@@ -29198,8 +31517,8 @@
           ]
         },
         "1.0.1": {
-          "known": 4,
-          "addressed": 6,
+          "known": 3,
+          "addressed": 5,
           "bug_ids": [
             "PAN-115158",
             "PLUG-1387",
@@ -29212,8 +31531,8 @@
           ]
         },
         "2.0.0": {
-          "known": 6,
-          "addressed": 2,
+          "known": 4,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-1387",
             "PLUG-1550",
@@ -29223,8 +31542,8 @@
           ]
         },
         "2.0.1": {
-          "known": 4,
-          "addressed": 6,
+          "known": 3,
+          "addressed": 5,
           "bug_ids": [
             "PLUG-1387",
             "PLUG-1550",
@@ -29237,7 +31556,7 @@
           ]
         },
         "2.0.2": {
-          "known": 4,
+          "known": 3,
           "addressed": 0,
           "bug_ids": [
             "PLUG-1387",
@@ -29246,8 +31565,8 @@
           ]
         },
         "2.0.3": {
-          "known": 3,
-          "addressed": 2,
+          "known": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-1387",
             "PLUG-4467",
@@ -29256,7 +31575,7 @@
         },
         "3.0.1": {
           "known": 0,
-          "addressed": 5,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-11822",
             "PLUG-14288",
@@ -29269,14 +31588,14 @@
     "plugin-cisco-trustsec": {
       "versions": {
         "1.0.1": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-3998"
           ]
         },
         "1.0.2": {
-          "known": 3,
+          "known": 2,
           "addressed": 0,
           "bug_ids": [
             "PLUG-3998",
@@ -29284,16 +31603,16 @@
           ]
         },
         "1.0.3": {
-          "known": 2,
-          "addressed": 2,
+          "known": 1,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-5911",
             "PLUG-6556"
           ]
         },
         "1.0.4": {
-          "known": 2,
-          "addressed": 3,
+          "known": 1,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10303",
             "PLUG-10626",
@@ -29302,7 +31621,7 @@
         },
         "2.0.0": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10719",
             "PLUG-6556"
@@ -29310,7 +31629,7 @@
         },
         "2.0.1": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-12633",
             "PLUG-14929",
@@ -29319,14 +31638,14 @@
         },
         "2.0.2": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-16832"
           ]
         },
         "2.0.3": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-20335",
             "PLUG-21708"
@@ -29334,7 +31653,7 @@
         },
         "2.0.4": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-22710",
             "PLUG-22865"
@@ -29345,14 +31664,14 @@
     "plugin-clustering": {
       "versions": {
         "1.0.0": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-12173"
           ]
         },
         "2.0.0": {
-          "known": 3,
+          "known": 2,
           "addressed": 0,
           "bug_ids": [
             "PAN-232315",
@@ -29364,14 +31683,14 @@
     "plugin-gcp": {
       "versions": {
         "1.0.0": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-1202"
           ]
         },
         "2.0.0": {
-          "known": 23,
+          "known": 22,
           "addressed": 0,
           "bug_ids": [
             "PAN-124575",
@@ -29399,15 +31718,15 @@
           ]
         },
         "3.1.0": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-11941"
           ]
         },
         "3.1.1": {
-          "known": 2,
-          "addressed": 3,
+          "known": 1,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-11941",
             "PLUG-15635",
@@ -29416,7 +31735,7 @@
         },
         "3.1.2": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-17481"
           ]
@@ -29426,7 +31745,7 @@
     "plugin-kubernetes": {
       "versions": {
         "1.0.0": {
-          "known": 10,
+          "known": 9,
           "addressed": 0,
           "bug_ids": [
             "PLUG-3339",
@@ -29441,8 +31760,8 @@
           ]
         },
         "1.0.1": {
-          "known": 12,
-          "addressed": 4,
+          "known": 11,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-3339",
             "PLUG-3524",
@@ -29461,8 +31780,8 @@
           ]
         },
         "1.0.2": {
-          "known": 12,
-          "addressed": 2,
+          "known": 11,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-3339",
             "PLUG-3524",
@@ -29479,8 +31798,8 @@
           ]
         },
         "1.0.3": {
-          "known": 12,
-          "addressed": 2,
+          "known": 11,
+          "addressed": 1,
           "bug_ids": [
             "PAN-179812",
             "PLUG-3339",
@@ -29497,8 +31816,8 @@
           ]
         },
         "1.0.4": {
-          "known": 11,
-          "addressed": 4,
+          "known": 10,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-10046",
             "PLUG-3339",
@@ -29516,8 +31835,8 @@
           ]
         },
         "1.0.5": {
-          "known": 11,
-          "addressed": 3,
+          "known": 10,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10502",
             "PLUG-10524",
@@ -29534,7 +31853,7 @@
           ]
         },
         "2.0.0": {
-          "known": 11,
+          "known": 10,
           "addressed": 0,
           "bug_ids": [
             "PLUG-3524",
@@ -29551,7 +31870,7 @@
         },
         "2.0.1": {
           "known": 0,
-          "addressed": 6,
+          "addressed": 5,
           "bug_ids": [
             "PAN-179812",
             "PLUG-10046",
@@ -29561,7 +31880,7 @@
           ]
         },
         "3.0.0": {
-          "known": 4,
+          "known": 3,
           "addressed": 0,
           "bug_ids": [
             "PLUG-9648",
@@ -29570,8 +31889,8 @@
           ]
         },
         "3.0.1": {
-          "known": 4,
-          "addressed": 4,
+          "known": 3,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-10374",
             "PLUG-11685",
@@ -29583,7 +31902,7 @@
         },
         "3.0.2": {
           "known": 0,
-          "addressed": 5,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-12550",
             "PLUG-12777",
@@ -29592,8 +31911,8 @@
           ]
         },
         "3.0.3": {
-          "known": 2,
-          "addressed": 4,
+          "known": 1,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-16491",
             "PLUG-16809",
@@ -29603,27 +31922,27 @@
         },
         "3.0.4": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-18030"
           ]
         },
         "3.1.2": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-21505"
           ]
         },
         "3.1.3": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-22340"
           ]
         },
         "4.0.0": {
-          "known": 13,
+          "known": 12,
           "addressed": 0,
           "bug_ids": [
             "PLUG-10781",
@@ -29646,21 +31965,21 @@
       "versions": {
         "1.0.1": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-216"
           ]
         },
         "1.0.2": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-246"
           ]
         },
         "1.0.3": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-302",
             "PLUG-306"
@@ -29668,13 +31987,13 @@
         },
         "1.0.4": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-339"
           ]
         },
         "2.0.0": {
-          "known": 3,
+          "known": 2,
           "addressed": 0,
           "bug_ids": [
             "PLUG-241",
@@ -29682,8 +32001,8 @@
           ]
         },
         "2.0.1": {
-          "known": 6,
-          "addressed": 5,
+          "known": 5,
+          "addressed": 4,
           "bug_ids": [
             "PAN-88091",
             "PAN-91111",
@@ -29697,8 +32016,8 @@
           ]
         },
         "2.0.2": {
-          "known": 6,
-          "addressed": 8,
+          "known": 5,
+          "addressed": 7,
           "bug_ids": [
             "PAN-88091",
             "PAN-91111",
@@ -29715,8 +32034,8 @@
           ]
         },
         "2.0.3": {
-          "known": 19,
-          "addressed": 7,
+          "known": 18,
+          "addressed": 6,
           "bug_ids": [
             "PAN-106302",
             "PAN-108225",
@@ -29745,8 +32064,8 @@
           ]
         },
         "2.0.4": {
-          "known": 19,
-          "addressed": 3,
+          "known": 18,
+          "addressed": 2,
           "bug_ids": [
             "PAN-106302",
             "PAN-113000",
@@ -29771,8 +32090,8 @@
           ]
         },
         "2.0.5": {
-          "known": 19,
-          "addressed": 4,
+          "known": 18,
+          "addressed": 3,
           "bug_ids": [
             "PAN-106302",
             "PAN-113000",
@@ -29798,8 +32117,8 @@
           ]
         },
         "2.0.6": {
-          "known": 18,
-          "addressed": 2,
+          "known": 17,
+          "addressed": 1,
           "bug_ids": [
             "PAN-106302",
             "PAN-113000",
@@ -29822,7 +32141,7 @@
           ]
         },
         "3.0.0": {
-          "known": 8,
+          "known": 7,
           "addressed": 0,
           "bug_ids": [
             "PAN-121449",
@@ -29835,8 +32154,8 @@
           ]
         },
         "3.0.1": {
-          "known": 6,
-          "addressed": 2,
+          "known": 5,
+          "addressed": 1,
           "bug_ids": [
             "PAN-122714",
             "PLUG-1618",
@@ -29847,8 +32166,8 @@
           ]
         },
         "3.2.0": {
-          "known": 18,
-          "addressed": 2,
+          "known": 17,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-1618",
             "PLUG-1787",
@@ -29870,8 +32189,8 @@
           ]
         },
         "3.2.1": {
-          "known": 13,
-          "addressed": 6,
+          "known": 12,
+          "addressed": 5,
           "bug_ids": [
             "PLUG-1618",
             "PLUG-1633",
@@ -29893,8 +32212,8 @@
           ]
         },
         "3.2.3": {
-          "known": 13,
-          "addressed": 8,
+          "known": 12,
+          "addressed": 7,
           "bug_ids": [
             "PLUG-1618",
             "PLUG-1787",
@@ -29918,8 +32237,8 @@
           ]
         },
         "3.2.4": {
-          "known": 13,
-          "addressed": 2,
+          "known": 12,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10368",
             "PLUG-10652",
@@ -29937,8 +32256,8 @@
           ]
         },
         "4.0.0": {
-          "known": 7,
-          "addressed": 2,
+          "known": 6,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-5982",
             "PLUG-7030",
@@ -29950,8 +32269,8 @@
           ]
         },
         "4.0.1": {
-          "known": 8,
-          "addressed": 2,
+          "known": 7,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10368",
             "PLUG-10652",
@@ -29964,8 +32283,8 @@
           ]
         },
         "4.0.2": {
-          "known": 8,
-          "addressed": 2,
+          "known": 7,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10652",
             "PLUG-10766",
@@ -29978,8 +32297,8 @@
           ]
         },
         "4.0.3": {
-          "known": 8,
-          "addressed": 2,
+          "known": 7,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10652",
             "PLUG-10766",
@@ -29992,8 +32311,8 @@
           ]
         },
         "4.0.4": {
-          "known": 7,
-          "addressed": 4,
+          "known": 6,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-12192",
             "PLUG-12664",
@@ -30007,8 +32326,8 @@
           ]
         },
         "5.0.0": {
-          "known": 5,
-          "addressed": 2,
+          "known": 4,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10368",
             "PLUG-10874",
@@ -30018,8 +32337,8 @@
           ]
         },
         "5.0.1": {
-          "known": 6,
-          "addressed": 5,
+          "known": 5,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-10874",
             "PLUG-11165",
@@ -30033,8 +32352,8 @@
           ]
         },
         "5.0.2": {
-          "known": 5,
-          "addressed": 4,
+          "known": 4,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-10874",
             "PLUG-13198",
@@ -30050,7 +32369,7 @@
     "plugin-vmware-vcenter": {
       "versions": {
         "1.0.0": {
-          "known": 7,
+          "known": 6,
           "addressed": 0,
           "bug_ids": [
             "PAN-121449",
@@ -30062,8 +32381,8 @@
           ]
         },
         "1.0.1": {
-          "known": 2,
-          "addressed": 7,
+          "known": 1,
+          "addressed": 6,
           "bug_ids": [
             "PAN-163387",
             "PAN-165744",
@@ -30075,8 +32394,8 @@
           ]
         },
         "2.1.0": {
-          "known": 3,
-          "addressed": 3,
+          "known": 2,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10124",
             "PLUG-10372",
@@ -30117,7 +32436,7 @@
           ]
         },
         "2.0.0": {
-          "known": 3,
+          "known": 2,
           "addressed": 0,
           "bug_ids": [
             "PAN-183567",
@@ -30125,14 +32444,14 @@
           ]
         },
         "2.0.1": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PAN-189106"
           ]
         },
         "2.0.2": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PAN-189106"
@@ -30144,7 +32463,7 @@
       "versions": {
         "3.2.0": {
           "known": 169,
-          "addressed": 98,
+          "addressed": 99,
           "bug_ids": [
             "CYR-10043",
             "CYR-10044",
@@ -30283,6 +32602,7 @@
             "CYR-27084",
             "CYR-27275",
             "CYR-27347",
+            "CYR-27489",
             "CYR-27513",
             "CYR-27545",
             "CYR-27558",
@@ -32403,7 +34723,7 @@
         },
         "6.3.0": {
           "known": 19,
-          "addressed": 183,
+          "addressed": 184,
           "bug_ids": [
             "CGSDW-14766",
             "CGSDW-15201",
@@ -32578,6 +34898,7 @@
             "CGSDW-37411",
             "CGSDW-37475",
             "CGSDW-37487",
+            "CGSDW-37622",
             "CGSDW-37642",
             "CGSDW-37798",
             "CGSDW-37836",
@@ -32863,20 +35184,43 @@
             "CGSDW-37823",
             "CGSDW-38316"
           ]
+        },
+        "6.8.0": {
+          "known": 0,
+          "addressed": 14,
+          "bug_ids": [
+            "CGSDW-33589",
+            "CGSDW-37535",
+            "CGSDW-37642",
+            "CGSDW-38087",
+            "CGSDW-38388",
+            "CGSDW-38511",
+            "CGSDW-38747",
+            "CGSDW-38824",
+            "CGSDW-38944",
+            "CGSDW-38947",
+            "CGSDW-38948",
+            "CGSDW-39293",
+            "CGSDW-39585",
+            "CGSDW-39695"
+          ]
         }
       }
     },
     "remote-browser-isolation": {
       "versions": {
         "SaaS": {
-          "known": 7,
+          "known": 10,
           "addressed": 0,
           "bug_ids": [
+            "ARBI-10270",
             "ARBI-3376",
             "ARBI-4199",
             "ARBI-5089",
+            "ARBI-7657",
             "ARBI-7721",
             "ARBI-7752",
+            "ARBI-7757",
             "ARBI-7769",
             "ARBI-7796"
           ]
@@ -32885,11 +35229,127 @@
     },
     "scm": {
       "versions": {
+        "2023.r6.0": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "ADI-23167"
+          ]
+        },
+        "2023.r7.1": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "ADI-25541"
+          ]
+        },
+        "2024.r1.0": {
+          "known": 0,
+          "addressed": 3,
+          "bug_ids": [
+            "ADI-25415",
+            "ADI-25507",
+            "ADI-25723"
+          ]
+        },
+        "2024.r1.1": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "ADI-26149"
+          ]
+        },
+        "2024.r1.3": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "ADI-28195"
+          ]
+        },
+        "2024.r2.0": {
+          "known": 0,
+          "addressed": 7,
+          "bug_ids": [
+            "ADI-25875",
+            "ADI-28491",
+            "ADI-28726",
+            "ADI-28737",
+            "ADI-30089",
+            "ADI-30165",
+            "ADI-30901"
+          ]
+        },
+        "2024.r3.0": {
+          "known": 0,
+          "addressed": 14,
+          "bug_ids": [
+            "ADI-23905",
+            "ADI-30721",
+            "ADI-31502",
+            "ADI-31538",
+            "ADI-31713",
+            "ADI-31750",
+            "ADI-32068",
+            "ADI-32094",
+            "ADI-32181",
+            "ADI-32781",
+            "ADI-32883",
+            "ADI-33611",
+            "ADI-35319",
+            "ADI-36846"
+          ]
+        },
+        "2024.r4.0": {
+          "known": 0,
+          "addressed": 7,
+          "bug_ids": [
+            "ADI-29956",
+            "ADI-29989",
+            "ADI-30026",
+            "ADI-31823",
+            "ADI-33316",
+            "ADI-33909",
+            "ADI-34607"
+          ]
+        },
+        "2024.r4.2": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "ADI-35489"
+          ]
+        },
+        "2024.r5.0": {
+          "known": 0,
+          "addressed": 19,
+          "bug_ids": [
+            "ADI-26131",
+            "ADI-30111",
+            "ADI-33775",
+            "ADI-34294",
+            "ADI-34609",
+            "ADI-34819",
+            "ADI-35300",
+            "ADI-35445",
+            "ADI-35656",
+            "ADI-35919",
+            "ADI-36043",
+            "ADI-36050",
+            "ADI-36114",
+            "ADI-36127",
+            "ADI-36387",
+            "ADI-36624",
+            "ADI-37100",
+            "ADI-37190",
+            "ADI-38973"
+          ]
+        },
         "2025.r1.0": {
           "known": 0,
-          "addressed": 15,
+          "addressed": 16,
           "bug_ids": [
             "ADI-32757",
+            "ADI-36179",
             "ADI-37429",
             "ADI-38277",
             "ADI-39966",
@@ -32977,7 +35437,7 @@
           ]
         },
         "SaaS": {
-          "known": 51,
+          "known": 45,
           "addressed": 0,
           "bug_ids": [
             "ADI-19128",
@@ -32988,12 +35448,9 @@
             "ADI-28518",
             "ADI-29665",
             "ADI-30298",
-            "ADI-30404",
             "ADI-30768",
             "ADI-31050",
             "ADI-31756",
-            "ADI-33262",
-            "ADI-33776",
             "ADI-33914",
             "ADI-35546",
             "ADI-35760",
@@ -33002,18 +35459,16 @@
             "ADI-40766",
             "ADI-40767",
             "ADI-43690",
-            "ADI-47966",
             "ADI-48921",
             "ADI-49196",
             "ADI-49478",
             "ADI-49520",
             "ADI-50448",
             "ADI-50619",
-            "ADI-53146",
             "ADI-53480",
             "AIOPS-9888",
             "NETVIS-1555",
-            "NETVIS-1890",
+            "NETVIS-1862",
             "NETVIS-1899",
             "NETVIS-1904",
             "NETVIS-1905",
@@ -33026,7 +35481,6 @@
             "NETVIS-892",
             "NETVIS-924",
             "NETVIS-927",
-            "NETVIS-955",
             "NETVIS-962",
             "PAMSP-3082",
             "PAMSP-4216",
@@ -33035,67 +35489,8 @@
         },
         "Unknown": {
           "known": 0,
-          "addressed": 77,
+          "addressed": 5,
           "bug_ids": [
-            "ADI-20135",
-            "ADI-21401",
-            "ADI-23167",
-            "ADI-23905",
-            "ADI-25415",
-            "ADI-25507",
-            "ADI-25541",
-            "ADI-25662",
-            "ADI-25723",
-            "ADI-25875",
-            "ADI-26131",
-            "ADI-26149",
-            "ADI-28195",
-            "ADI-28491",
-            "ADI-28726",
-            "ADI-28737",
-            "ADI-29956",
-            "ADI-29989",
-            "ADI-30026",
-            "ADI-30089",
-            "ADI-30111",
-            "ADI-30165",
-            "ADI-30721",
-            "ADI-30901",
-            "ADI-31502",
-            "ADI-31538",
-            "ADI-31713",
-            "ADI-31750",
-            "ADI-31823",
-            "ADI-32068",
-            "ADI-32094",
-            "ADI-32181",
-            "ADI-32781",
-            "ADI-32883",
-            "ADI-33316",
-            "ADI-33611",
-            "ADI-33775",
-            "ADI-33909",
-            "ADI-34294",
-            "ADI-34607",
-            "ADI-34609",
-            "ADI-34819",
-            "ADI-35300",
-            "ADI-35319",
-            "ADI-35445",
-            "ADI-35489",
-            "ADI-35656",
-            "ADI-35919",
-            "ADI-36043",
-            "ADI-36050",
-            "ADI-36114",
-            "ADI-36127",
-            "ADI-36179",
-            "ADI-36387",
-            "ADI-36624",
-            "ADI-36846",
-            "ADI-37100",
-            "ADI-37190",
-            "ADI-38973",
             "NETVIS-2017",
             "NETVIS-477",
             "NETVIS-535",
@@ -33865,22 +36260,22 @@
         },
         "3.3.3-h2": {
           "known": 0,
-          "addressed": 12,
+          "addressed": 15,
           "bug_ids": [
             "PLUG-18888",
             "PLUG-19159",
             "PLUG-20071",
-            "PLUG-20267"
+            "PLUG-20267",
+            "PLUG-21660"
           ]
         },
         "3.3.4": {
           "known": 0,
-          "addressed": 16,
+          "addressed": 13,
           "bug_ids": [
             "PLUG-18873",
             "PLUG-20071",
             "PLUG-21340",
-            "PLUG-21660",
             "PLUG-22581"
           ]
         },
@@ -34036,10 +36431,63 @@
         }
       }
     },
+    "ts-agent": {
+      "versions": {
+        "10.1.0": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-727"
+          ]
+        },
+        "10.1.2": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-890"
+          ]
+        },
+        "10.2.2": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-890"
+          ]
+        },
+        "11.0.1": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-890"
+          ]
+        },
+        "11.0.2": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-1032"
+          ]
+        },
+        "11.0.3": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-1122"
+          ]
+        },
+        "11.0.4": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-1137"
+          ]
+        }
+      }
+    },
     "vm-series-plugin": {
       "versions": {
         "1.0.0": {
-          "known": 10,
+          "known": 9,
           "addressed": 0,
           "bug_ids": [
             "PLUG-1074",
@@ -34054,8 +36502,8 @@
           ]
         },
         "1.0.2": {
-          "known": 9,
-          "addressed": 2,
+          "known": 8,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-1074",
             "PLUG-1503",
@@ -34069,8 +36517,8 @@
           ]
         },
         "1.0.3": {
-          "known": 6,
-          "addressed": 5,
+          "known": 5,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-1074",
             "PLUG-1503",
@@ -34084,8 +36532,8 @@
           ]
         },
         "1.0.4": {
-          "known": 8,
-          "addressed": 4,
+          "known": 7,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-1074",
             "PLUG-1681",
@@ -34100,8 +36548,8 @@
           ]
         },
         "1.0.5": {
-          "known": 7,
-          "addressed": 2,
+          "known": 6,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-1074",
             "PLUG-1681",
@@ -34114,22 +36562,22 @@
         },
         "1.0.6": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-2698"
           ]
         },
         "1.0.7": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-2637",
             "PLUG-2763"
           ]
         },
         "1.0.8": {
-          "known": 2,
-          "addressed": 8,
+          "known": 1,
+          "addressed": 7,
           "bug_ids": [
             "PAN-111403",
             "PLUG-1694",
@@ -34142,8 +36590,8 @@
           ]
         },
         "1.0.9": {
-          "known": 9,
-          "addressed": 3,
+          "known": 8,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-3509",
             "PLUG-3562",
@@ -34158,7 +36606,7 @@
           ]
         },
         "2.0.0": {
-          "known": 3,
+          "known": 2,
           "addressed": 0,
           "bug_ids": [
             "PLUG-3562",
@@ -34166,8 +36614,8 @@
           ]
         },
         "2.0.1": {
-          "known": 6,
-          "addressed": 5,
+          "known": 5,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34181,8 +36629,8 @@
           ]
         },
         "2.0.2": {
-          "known": 3,
-          "addressed": 4,
+          "known": 2,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34192,8 +36640,8 @@
           ]
         },
         "2.0.3": {
-          "known": 4,
-          "addressed": 2,
+          "known": 3,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34202,8 +36650,8 @@
           ]
         },
         "2.0.4": {
-          "known": 3,
-          "addressed": 2,
+          "known": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34211,8 +36659,8 @@
           ]
         },
         "2.0.5": {
-          "known": 5,
-          "addressed": 3,
+          "known": 4,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34223,8 +36671,8 @@
           ]
         },
         "2.0.6": {
-          "known": 4,
-          "addressed": 2,
+          "known": 3,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34233,8 +36681,8 @@
           ]
         },
         "2.0.7": {
-          "known": 3,
-          "addressed": 4,
+          "known": 2,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34244,7 +36692,7 @@
           ]
         },
         "2.1.0": {
-          "known": 3,
+          "known": 2,
           "addressed": 0,
           "bug_ids": [
             "PLUG-3562",
@@ -34252,7 +36700,7 @@
           ]
         },
         "2.1.1": {
-          "known": 3,
+          "known": 2,
           "addressed": 0,
           "bug_ids": [
             "PLUG-3562",
@@ -34261,15 +36709,15 @@
         },
         "2.1.14": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-13362",
             "PLUG-14009"
           ]
         },
         "2.1.2": {
-          "known": 3,
-          "addressed": 2,
+          "known": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34277,8 +36725,8 @@
           ]
         },
         "2.1.3": {
-          "known": 3,
-          "addressed": 3,
+          "known": 2,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-3562",
             "PLUG-4179",
@@ -34287,7 +36735,7 @@
           ]
         },
         "2.1.4": {
-          "known": 5,
+          "known": 4,
           "addressed": 0,
           "bug_ids": [
             "PLUG-3562",
@@ -34297,8 +36745,8 @@
           ]
         },
         "2.1.5": {
-          "known": 5,
-          "addressed": 2,
+          "known": 4,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10024",
             "PLUG-3562",
@@ -34308,8 +36756,8 @@
           ]
         },
         "2.1.6": {
-          "known": 4,
-          "addressed": 6,
+          "known": 3,
+          "addressed": 5,
           "bug_ids": [
             "PLUG-10229",
             "PLUG-10237",
@@ -34322,8 +36770,8 @@
           ]
         },
         "2.1.7": {
-          "known": 6,
-          "addressed": 7,
+          "known": 5,
+          "addressed": 6,
           "bug_ids": [
             "PAN-196146",
             "PLUG-10236",
@@ -34339,8 +36787,8 @@
           ]
         },
         "2.1.8": {
-          "known": 6,
-          "addressed": 8,
+          "known": 5,
+          "addressed": 7,
           "bug_ids": [
             "PAN-196146",
             "PLUG-10319",
@@ -34357,8 +36805,8 @@
           ]
         },
         "2.1.9": {
-          "known": 6,
-          "addressed": 5,
+          "known": 5,
+          "addressed": 4,
           "bug_ids": [
             "PAN-196146",
             "PLUG-10392",
@@ -34372,7 +36820,7 @@
           ]
         },
         "3.0.0": {
-          "known": 9,
+          "known": 8,
           "addressed": 0,
           "bug_ids": [
             "PLUG-10069",
@@ -34386,8 +36834,8 @@
           ]
         },
         "3.0.1": {
-          "known": 6,
-          "addressed": 6,
+          "known": 5,
+          "addressed": 5,
           "bug_ids": [
             "PLUG-10139",
             "PLUG-10180",
@@ -34402,8 +36850,8 @@
           ]
         },
         "3.0.11": {
-          "known": 2,
-          "addressed": 4,
+          "known": 1,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-16108",
             "PLUG-16988",
@@ -34412,8 +36860,8 @@
           ]
         },
         "3.0.13": {
-          "known": 2,
-          "addressed": 3,
+          "known": 1,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-19349",
             "PLUG-19486",
@@ -34421,8 +36869,8 @@
           ]
         },
         "3.0.2": {
-          "known": 3,
-          "addressed": 3,
+          "known": 2,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10237",
             "PLUG-10392",
@@ -34432,7 +36880,7 @@
         },
         "3.0.3": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-10412",
             "PLUG-10604",
@@ -34440,8 +36888,8 @@
           ]
         },
         "3.0.4": {
-          "known": 3,
-          "addressed": 6,
+          "known": 2,
+          "addressed": 5,
           "bug_ids": [
             "PLUG-10691",
             "PLUG-10743",
@@ -34454,7 +36902,7 @@
         },
         "3.0.5": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-12091",
             "PLUG-12725",
@@ -34462,8 +36910,8 @@
           ]
         },
         "3.0.6": {
-          "known": 2,
-          "addressed": 2,
+          "known": 1,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-12368",
             "PLUG-13353"
@@ -34471,7 +36919,7 @@
         },
         "3.0.8": {
           "known": 0,
-          "addressed": 7,
+          "addressed": 6,
           "bug_ids": [
             "PLUG-13110",
             "PLUG-14251",
@@ -34483,7 +36931,7 @@
         },
         "3.0.9": {
           "known": 0,
-          "addressed": 5,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-15221",
             "PLUG-15396",
@@ -34493,14 +36941,14 @@
         },
         "3.1.0": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-16827",
             "PLUG-16988"
           ]
         },
         "4.0.0": {
-          "known": 3,
+          "known": 2,
           "addressed": 0,
           "bug_ids": [
             "PLUG-10978",
@@ -34508,8 +36956,8 @@
           ]
         },
         "4.0.1": {
-          "known": 3,
-          "addressed": 3,
+          "known": 2,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10978",
             "PLUG-11022",
@@ -34518,8 +36966,8 @@
           ]
         },
         "4.0.2": {
-          "known": 3,
-          "addressed": 4,
+          "known": 2,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-10978",
             "PLUG-11726",
@@ -34529,8 +36977,8 @@
           ]
         },
         "4.0.3": {
-          "known": 4,
-          "addressed": 4,
+          "known": 2,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-10978",
             "PLUG-11726",
@@ -34539,22 +36987,22 @@
           ]
         },
         "4.0.4": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-10978"
           ]
         },
         "4.0.5": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-10978"
           ]
         },
         "4.0.7": {
-          "known": 2,
-          "addressed": 2,
+          "known": 1,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-10978",
             "PLUG-14869"
@@ -34562,7 +37010,7 @@
         },
         "4.0.8": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-15510",
             "PLUG-16107"
@@ -34570,7 +37018,7 @@
         },
         "5.0.0": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-11639",
             "PLUG-12901",
@@ -34579,20 +37027,20 @@
         },
         "5.0.6": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-18556"
           ]
         },
         "5.0.7": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-19213"
           ]
         },
         "5.1.0": {
-          "known": 2,
+          "known": 1,
           "addressed": 0,
           "bug_ids": [
             "PLUG-15879"
@@ -34600,14 +37048,14 @@
         },
         "5.1.1": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-16383"
           ]
         },
         "5.1.11": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-20819",
             "PLUG-21000"
@@ -34615,14 +37063,14 @@
         },
         "5.1.11-h3": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-21988"
           ]
         },
         "5.1.12": {
           "known": 0,
-          "addressed": 9,
+          "addressed": 8,
           "bug_ids": [
             "PLUG-17069",
             "PLUG-19774",
@@ -34636,7 +37084,7 @@
         },
         "5.1.13": {
           "known": 0,
-          "addressed": 5,
+          "addressed": 4,
           "bug_ids": [
             "PLUG-17437",
             "PLUG-22650",
@@ -34646,7 +37094,7 @@
         },
         "5.1.3": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-14382",
             "PLUG-15879",
@@ -34655,21 +37103,21 @@
         },
         "5.1.5": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-18377"
           ]
         },
         "5.1.5-h8": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-21570"
           ]
         },
         "5.1.6": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-16987",
             "PLUG-17319",
@@ -34678,14 +37126,14 @@
         },
         "5.1.7": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-19137"
           ]
         },
         "5.1.9": {
           "known": 0,
-          "addressed": 3,
+          "addressed": 2,
           "bug_ids": [
             "PLUG-19949",
             "PLUG-20264"
@@ -34693,21 +37141,21 @@
         },
         "6.1.2": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-21504"
           ]
         },
         "6.1.2-h1": {
           "known": 0,
-          "addressed": 2,
+          "addressed": 1,
           "bug_ids": [
             "PLUG-22078"
           ]
         },
         "6.1.3": {
           "known": 0,
-          "addressed": 8,
+          "addressed": 7,
           "bug_ids": [
             "PLUG-19774",
             "PLUG-20819",
@@ -34720,7 +37168,7 @@
         },
         "6.1.4": {
           "known": 0,
-          "addressed": 4,
+          "addressed": 3,
           "bug_ids": [
             "PLUG-22650",
             "PLUG-22986",

@@ -1,6 +1,37 @@
 {
   "releases": [
     {
+      "version": "1.0.8",
+      "date": "2026-08-16",
+      "title": null,
+      "changes": [
+        {
+          "type": "feature",
+          "description": "AI Access Security known and addressed issues are now crawled and searchable."
+        },
+        {
+          "type": "feature",
+          "description": "Enterprise DLP is now crawled and searchable, covering plugin releases 1.0 through 6.0 for known issues and calendar years for addressed issues."
+        },
+        {
+          "type": "feature",
+          "description": "Terminal Server (TS) Agent addressed issues are now crawled and searchable."
+        },
+        {
+          "type": "fix",
+          "description": "Cortex XDR data is being collected again. Palo Alto moved those release notes onto a new documentation platform and the crawler had been quietly returning nothing; coverage goes from 836 to 1,126 issues."
+        },
+        {
+          "type": "fix",
+          "description": "Bug IDs are no longer lost when one table cell lists several of them. Recovers 28 issues, mostly in PAN-OS."
+        },
+        {
+          "type": "fix",
+          "description": "Issues that contain other issues are no longer dropped, and layout wrappers no longer show up as duplicates."
+        }
+      ]
+    },
+    {
       "version": "1.0.7",
       "date": "2026-08-05",
       "title": null,

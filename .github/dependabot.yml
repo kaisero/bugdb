@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # Needs a committed uv.lock, which this repo has.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Dependabot defaults to the repository's default branch (main). CI runs on
+    # pull requests and on pushes to develop, and main only receives already
+    # tested merges, so updates belong on develop.
+    target-branch: "develop"
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+
+  # Workflow actions are pinned by tag here, so this is what moves them.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    target-branch: "develop"
+    groups:
+      github-actions:
+        patterns: ["*"]

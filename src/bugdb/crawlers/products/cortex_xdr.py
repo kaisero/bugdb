@@ -1,9 +1,30 @@
-"""Cortex XDR Agent crawler implementation."""
+"""Cortex XDR Agent crawler implementation.
+
+Palo Alto migrated the Cortex documentation from FluidTopics
+(``docs-cortex.paloaltonetworks.com``, which exposed a JSON "khub" API) to
+GitBook (``cortex-docs.paloaltonetworks.com``). The old API is gone — it
+301s to the new site's root and the new host 404s on the API path — so the
+crawler now works entirely off the new site:
+
+* **Discovery is sitemap-driven and two-level.** ``/sitemap.xml`` is a
+  sitemap *index* listing one ``sitemap-pages.xml`` per GitBook "space".
+  Each agent release-notes space holds the pages for one agent version.
+  Slugs differ wildly between versions, so page URLs are always read out of
+  the space's own ``sitemap-pages.xml`` and classified by looking for
+  ``known`` / ``addressed`` in the path — never built from a template.
+* **Tables are ARIA divs.** GitBook renders tables as ``div`` elements with
+  ``role="table"`` / ``role="row"`` / ``role="cell"``. There is not a single
+  ``<table>`` tag on these pages, so the shared ``_parse_issues_table``
+  helpers cannot see them and this module carries its own parser.
+* **Pages are fully server-rendered**, so plain httpx is enough and
+  Playwright is never needed.
+"""
+
+from __future__ import annotations
 
 import asyncio
 import logging
 import re
-from datetime import datetime
 
 from bs4 import BeautifulSoup
 
@@ -16,405 +37,403 @@ from ..utils import CORTEX_BASE_URL, extract_workaround
 logger = logging.getLogger(__name__)
 
 
-def _extract_version_from_metadata(topic: dict) -> str | None:
-    """Pull the "Version" metadata value from a FluidTopics topic dict."""
-    for entry in topic.get("metadata", []):
-        if entry.get("key") == "Version" and entry.get("values"):
-            return entry["values"][0]
-    return None
+# GitBook spaces that hold Cortex XDR *agent* release notes. Matched against
+# the space path (the sitemap-index entry minus host and trailing
+# "sitemap-pages.xml"). Four shapes exist today:
+#   xdr-agent-release-notes[/9.2|/9.1-ce]   current releases
+#   7.x, 8.x[/8.1-eol|/8.3ce|/7.5ce-eol]    EoL and CE releases
+#   5.0, 6.1-eol                            standalone Traps-era spaces
+# Everything else on the host — XSIAM, XSOAR, Cortex Cloud, the agent admin
+# guides under cortex-xdr-agent/<v>, the iOS/Android guides — is skipped.
+_SPACE_RE = re.compile(
+    r"^(?:xdr-agent-release-notes|\d+\.x|\d+\.\d+(?:-?ce)?(?:-eol)?)(?:/|$)",
+    re.IGNORECASE,
+)
+
+# A space path segment that names a version: "9.2", "8.1-eol", "8.3ce",
+# "7.5ce-eol", "9.1-ce".
+_SPACE_VERSION_RE = re.compile(r"^(\d+\.\d+)(-?ce)?$", re.IGNORECASE)
+
+# Version as spelled in the <title> of a space's root page, e.g.
+# "Cortex XDR Agent 9.3 Release Information | Cortex Documentation Portal".
+_TITLE_VERSION_RE = re.compile(r"Agent\s+(\d+\.\d+)(\s*-?\s*CE)?\b", re.IGNORECASE)
+
+_LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+
+_BUG_ID_RE = re.compile(r"[A-Z][A-Z0-9]*-\d+")
+
+# Palo Alto sometimes spells bug ids with a non-breaking hyphen, an en dash
+# or an em dash. The characters in the class below are intentional.
+_DASH_RE = re.compile(r"[‑–—]")  # noqa: RUF001
+
+# Cell texts that mark a header row on spaces whose header cells carry
+# role="cell" instead of role="columnheader".
+_HEADER_WORDS = frozenset(
+    {
+        "issue",
+        "issues",
+        "issue id",
+        "bug",
+        "bug id",
+        "id",
+        "description",
+        "details",
+        "limitation",
+        "limitations",
+        "platform",
+        "platforms",
+        "summary",
+    }
+)
+
+# Parenthesised platform tags used inside the ISSUE cell, e.g.
+# "CPATR-21870 (Windows)".
+_PLATFORM_MAP = {
+    "windows": "Windows",
+    "linux": "Linux",
+    "macos": "macOS",
+    "mac": "macOS",
+    "android": "Android",
+    "ios": "iOS",
+}
+
+# PLATFORM column values that mean "not platform specific".
+_NON_PLATFORMS = frozenset({"general", "all", "n/a", "-", ""})
 
 
-def _extract_publication_date(topic: dict) -> str | None:
-    """Pull the publication date from a FluidTopics topic dict."""
-    for entry in topic.get("metadata", []):
-        if entry.get("key") in (
-            "publicationDate",
-            "Last date published",
-        ) and entry.get("values"):
-            return entry["values"][0]
-    return None
+def _cortex_version_sort_key(version: str) -> tuple[int, int, int]:
+    """Sort key for Cortex agent versions like "9.2", "8.3-CE", "5.0".
 
-
-def _major_version(version: str) -> str:
-    """Return the "major.minor" prefix of a version string (e.g. 9.1.1 -> 9.1)."""
-    parts = version.split(".")
-    return ".".join(parts[:2]) if len(parts) >= 2 else version
+    The shared :func:`version_sort_key` expects a three-part version and
+    collapses every "major.minor" string to ``(0, 0, 0, 0)``, which would
+    leave the version list in arbitrary order. CE releases sort just after
+    the matching mainline release.
+    """
+    match = re.match(r"(\d+)\.(\d+)", version)
+    if not match:
+        return (0, 0, 0)
+    return (int(match.group(1)), int(match.group(2)), 1 if "CE" in version.upper() else 0)
 
 
 class CortexXDRCrawler(BaseCrawler):
-    """Crawler for Cortex XDR Agent release notes.
-
-    Cortex XDR has a different documentation portal (docs-cortex.paloaltonetworks.com)
-    with release notes organized by agent version. When a `fluidtopics` client
-    is injected, the crawler uses the public khub JSON API instead of the
-    legacy shadow-DOM-scraping Playwright path.
-    """
+    """Crawler for Cortex XDR Agent release notes on the GitBook docs site."""
 
     product_id = "cortex-xdr"
     product_name = "Cortex XDR Agent"
 
-    def __init__(self, *args, fluidtopics=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._fluidtopics = fluidtopics
-
     def _needs_browser(self) -> bool:
-        # FluidTopics is a JSON API client, not a browser path. When it's
-        # injected, Cortex never touches Playwright; skip the launch so
-        # the crawler works on machines without browser binaries.
-        return self._transport is None and self._fluidtopics is None
+        # The GitBook docs site is fully server-rendered, so this crawler
+        # only ever fetches through httpx (see the module docstring) and
+        # never touches Playwright, even with no transport injected.
+        return False
 
-    def _parse_cortex_release_date(self, date_text: str) -> str | None:
-        """Parse Cortex XDR release date text to YYYY-MM-DD format."""
-        if not date_text:
+    # ------------------------------------------------------------------
+    # Discovery
+    # ------------------------------------------------------------------
+
+    def _space_sitemap_urls(self, index_xml: str) -> list[str]:
+        """Return the per-space ``sitemap-pages.xml`` URLs worth crawling.
+
+        Args:
+            index_xml: Body of ``/sitemap.xml`` (a sitemap index).
+
+        Returns:
+            Sitemap URLs for the Cortex XDR agent release-notes spaces, in
+            the order the index lists them.
+        """
+        urls = []
+        for loc in _LOC_RE.findall(index_xml):
+            path = self._space_path(loc)
+            if path and _SPACE_RE.match(path):
+                urls.append(loc)
+        return urls
+
+    @staticmethod
+    def _space_path(sitemap_url: str) -> str:
+        """Reduce a space's sitemap URL to its path, e.g. ``8.x/8.1-eol``."""
+        path = sitemap_url.split("://", 1)[-1]
+        path = path.split("/", 1)[1] if "/" in path else ""
+        return path.removesuffix("sitemap-pages.xml").strip("/")
+
+    def _page_urls(self, pages_xml: str) -> list[str]:
+        """Return every page URL listed in a space's ``sitemap-pages.xml``."""
+        return _LOC_RE.findall(pages_xml)
+
+    def _classify_page(self, url: str) -> str | None:
+        """Classify a page URL as ``"known"``, ``"addressed"`` or ``None``.
+
+        Slugs are inconsistent across versions — ``addressed-issues-92``,
+        ``addressed-issues-in-cortex-xdr-agent-8.1.x`` and
+        ``cortex-xdr-agent-known-limitations`` all coexist — so this matches
+        the substrings ``known`` and ``addressed`` case-insensitively rather
+        than any exact slug.
+        """
+        lowered = url.lower()
+        if "known" in lowered:
+            return "known"
+        if "addressed" in lowered:
+            return "addressed"
+        return None
+
+    def _drop_index_pages(self, pages: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """Drop index/TOC pages that only link to child topic pages.
+
+        Some spaces (e.g. ``9.2``) hold an index page like
+        ``.../addressed-issues`` that carries no table at all — it just
+        links to real content pages beneath it, such as
+        ``.../addressed-issues/addressed-issues-92`` and
+        ``.../addressed-issues/addressed-issues-92-hotfix``. Fetching the
+        index yields zero issues and would otherwise be misreported as a
+        genuine parser gap (see :meth:`_crawl_version_pages`).
+
+        A discovered page is an index only when another discovered page's
+        path sits strictly beneath it, compared on ``/``-delimited path
+        segments so that ``.../addressed-issues`` is not mistaken for a
+        prefix of the sibling ``.../addressed-issues-92`` (no segment
+        boundary between them). Other spaces (e.g. ``8.1-eol``) have no
+        child page at all for their issue page — that page is the leaf
+        content itself and must be kept even though it's alone.
+
+        This mirrors the "known-and-addressed" landing-page convention in
+        ``sitemap_discovery.group_into_version_infos`` for the main docs
+        site, adapted to the Cortex GitBook URL shapes.
+        """
+        segments = {url: url.rstrip("/").split("/") for url, _ in pages}
+
+        def is_index(url: str) -> bool:
+            segs = segments[url]
+            return any(
+                other != url and other_segs[: len(segs)] == segs
+                for other, other_segs in segments.items()
+            )
+
+        return [(url, page_type) for url, page_type in pages if not is_index(url)]
+
+    def _version_from_space_path(self, space_path: str) -> str | None:
+        """Derive the agent version from a space path, if it carries one.
+
+        ``8.x``, ``7.x`` and the bare ``xdr-agent-release-notes`` root hold
+        the newest release of their line and name no version; those are
+        resolved from the space's root page instead
+        (:meth:`_version_from_space_root`).
+        """
+        segment = space_path.rstrip("/").rsplit("/", 1)[-1]
+        segment = re.sub(r"-eol$", "", segment, flags=re.IGNORECASE)
+        match = _SPACE_VERSION_RE.match(segment)
+        if not match:
             return None
+        return match.group(1) + ("-CE" if match.group(2) else "")
 
-        date_text = re.sub(r",\s*", ", ", date_text.strip())
+    def _version_from_space_root(self, html: str) -> str | None:
+        """Derive the agent version from a space root page's ``<title>``.
 
-        formats = [
-            "%B %d, %Y",
-            "%b %d, %Y",
-            "%B %d %Y",
-            "%Y-%m-%d",
+        Root pages are titled e.g. "Cortex XDR Agent 9.3 Release
+        Information | Cortex Documentation Portal".
+        """
+        title = re.search(r"<title>([^<]*)</title>", html, re.IGNORECASE)
+        if not title:
+            return None
+        match = _TITLE_VERSION_RE.search(title.group(1))
+        if not match:
+            return None
+        return match.group(1) + ("-CE" if match.group(2) else "")
+
+    # ------------------------------------------------------------------
+    # ARIA table parsing
+    # ------------------------------------------------------------------
+
+    def _parse_aria_issue_tables(self, soup: BeautifulSoup) -> list[Issue]:
+        """Extract issues from every ARIA table on a GitBook page.
+
+        GitBook emits ``<div role="table">`` containing ``role="row"`` and
+        ``role="cell"`` descendants. Column headers are usually
+        ``role="columnheader"``, but older spaces put the header text in an
+        ordinary first row of ``role="cell"`` divs — both shapes are
+        handled.
+
+        Rows whose ISSUE cell holds no bug id are dropped. On known-issues
+        pages most rows are feature/category names ("Windows on ARM") rather
+        than bug ids, so this guard is what keeps them out of the database.
+        """
+        issues: list[Issue] = []
+        for table in soup.find_all(attrs={"role": "table"}):
+            if table.find_parent(attrs={"role": "table"}):
+                continue
+            issues.extend(self._parse_aria_table(table))
+        return issues
+
+    def _parse_aria_table(self, table) -> list[Issue]:
+        rows = [
+            row
+            for row in table.find_all(attrs={"role": "row"})
+            if row.find_parent(attrs={"role": "table"}) is table
+        ]
+        headers = [
+            cell.get_text(" ", strip=True).lower()
+            for cell in table.find_all(attrs={"role": "columnheader"})
+            if cell.find_parent(attrs={"role": "table"}) is table
+        ]
+        if not headers and rows:
+            first = [
+                cell.get_text(" ", strip=True).lower()
+                for cell in rows[0].find_all(attrs={"role": "cell"})
+            ]
+            if first and all(text in _HEADER_WORDS for text in first):
+                headers = first
+                rows = rows[1:]
+
+        issue_col = desc_col = platform_col = None
+        for index, header in enumerate(headers):
+            if "platform" in header:
+                platform_col = index
+            elif "issue" in header or "bug" in header or header == "id":
+                issue_col = index
+            elif any(
+                word in header for word in ("description", "limitation", "details", "summary")
+            ):
+                desc_col = index
+
+        issues: list[Issue] = []
+        for row in rows:
+            cells = row.find_all(attrs={"role": "cell"})
+            if not cells:
+                continue
+            i_col = 0 if issue_col is None else issue_col
+            if i_col >= len(cells):
+                continue
+            d_col = desc_col
+            if d_col is None:
+                d_col = len(cells) - 1 if len(cells) > 1 else None
+
+            issues.extend(
+                self._issues_from_aria_row(
+                    cells[i_col],
+                    cells[d_col] if d_col is not None and d_col < len(cells) else None,
+                    cells[platform_col]
+                    if platform_col is not None and platform_col < len(cells)
+                    else None,
+                )
+            )
+        return issues
+
+    def _issues_from_aria_row(self, issue_cell, desc_cell, platform_cell) -> list[Issue]:
+        """Build zero or more issues from one ARIA row's cells."""
+        raw = _DASH_RE.sub("-", issue_cell.get_text(" ", strip=True))
+
+        # Parenthesised platform tags ride along in the ISSUE cell on the
+        # older spaces: "CPATR-21870 (Windows)".
+        components: list[str] = []
+        for group in re.findall(r"\(([^)]*)\)", raw):
+            mapped = _PLATFORM_MAP.get(group.strip().lower())
+            if mapped and mapped not in components:
+                components.append(mapped)
+        stripped = re.sub(r"\([^)]*\)", " ", raw)
+
+        bug_ids = _BUG_ID_RE.findall(stripped)
+        if not bug_ids:
+            logger.debug("Skipping ARIA row without a bug id: %r", raw[:80])
+            return []
+
+        # Anything after the last id is trailing fix information, e.g.
+        # "CPATR-10688 This issue is resolved in Cortex XDR agent 7.0.3".
+        tail = stripped[stripped.rfind(bug_ids[-1]) + len(bug_ids[-1]) :]
+        tail = re.sub(r"\s+", " ", tail).strip(" ,;:.-")
+        fix_info = tail if re.search(r"[A-Za-z]{3}", tail) else None
+
+        if platform_cell is not None:
+            platform = platform_cell.get_text(" ", strip=True)
+            for part in platform.split(","):
+                part = part.strip()
+                if not part or part.lower() in _NON_PLATFORMS:
+                    continue
+                mapped = _PLATFORM_MAP.get(part.lower(), part)
+                if mapped not in components:
+                    components.append(mapped)
+
+        raw_description = desc_cell.get_text(" ", strip=True) if desc_cell is not None else ""
+        raw_description = re.sub(r"\s+", " ", raw_description).strip()
+        description, workaround = extract_workaround(raw_description)
+
+        return [
+            Issue(
+                bug_id=bug_id,
+                description=description or raw_description,
+                workaround=workaround,
+                fix_info=fix_info,
+                affected_components=components or None,
+            )
+            for bug_id in bug_ids
         ]
 
-        for fmt in formats:
-            try:
-                dt = datetime.strptime(date_text, fmt)
-                return dt.strftime("%Y-%m-%d")
-            except ValueError:
-                continue
-
-        logger.debug("Could not parse Cortex release date: %s", date_text)
-        return None
-
-    def _extract_cortex_xdr_version(self, text: str) -> str | None:
-        """Extract version number from Cortex XDR release text."""
-        match = re.search(r"(\d+\.\d+(?:\.\d+)?)", text)
-        if match:
-            return match.group(1)
-        return None
-
-    def _parse_cortex_xdr_releases_page(self, soup) -> list[tuple[str, str, str | None]]:
-        """Parse the Cortex XDR releases page to extract version links and dates."""
-        releases: list[tuple[str, str, str | None]] = []
-        seen_versions: set[str] = set()
-
-        tables = soup.find_all("table")
-
-        for table in tables:
-            headers = [th.get_text(strip=True).upper() for th in table.find_all("th")]
-
-            if "FEATURE" in headers or "LIMITATION" in headers:
-                continue
-
-            date_col = None
-            for i, h in enumerate(headers):
-                if "DATE" in h:
-                    date_col = i
-                    break
-
-            for row in table.find_all("tr")[1:]:
-                cells = row.find_all("td")
-                if not cells:
-                    continue
-
-                link = row.find("a", href=True)
-                if not link:
-                    continue
-
-                href = link.get("href", "")
-                link_text = link.get_text(strip=True)
-
-                if any(x in link_text.lower() for x in ["ios", "android", "mobile"]):
-                    continue
-
-                version = self._extract_cortex_xdr_version(link_text)
-                if not version:
-                    continue
-
-                # For archive releases, only include >= 7.7
-                prev_header = table.find_previous(["h1", "h2", "h3"])
-                if prev_header and "archive" in prev_header.get_text().lower():
-                    try:
-                        major_minor = tuple(map(int, version.split(".")[:2]))
-                        if major_minor < (7, 7):
-                            continue
-                    except (ValueError, IndexError):
-                        pass
-
-                if version in seen_versions:
-                    continue
-                seen_versions.add(version)
-
-                if not href.startswith("http"):
-                    href = f"{CORTEX_BASE_URL}{href}"
-
-                release_date = None
-                if date_col is not None and date_col < len(cells):
-                    date_text = cells[date_col].get_text(strip=True)
-                    release_date = self._parse_cortex_release_date(date_text)
-
-                releases.append((version, href, release_date))
-                logger.debug(
-                    "Found Cortex XDR release: %s -> %s (date: %s)",
-                    version,
-                    href[:80],
-                    release_date,
-                )
-
-        return releases
-
-    def _parse_cortex_xdr_release_page(self, soup) -> tuple[list[Issue], list[Issue]]:
-        """Parse a Cortex XDR release page for known and addressed issues."""
-        known_issues: list[Issue] = []
-        addressed_issues: list[Issue] = []
-
-        current_section = None
-
-        for element in soup.find_all(["h1", "h2", "h3", "h4", "table"]):
-            if element.name in ["h1", "h2", "h3", "h4"]:
-                heading_text = element.get_text(strip=True).lower()
-
-                if (
-                    "addressed" in heading_text or "fixed" in heading_text
-                ) and "issue" in heading_text:
-                    current_section = "addressed"
-                elif "known" in heading_text and (
-                    "limitation" in heading_text or "issue" in heading_text
-                ):
-                    current_section = "known"
-                elif (
-                    "feature" in heading_text
-                    or "enhancement" in heading_text
-                    or "improvement" in heading_text
-                ):
-                    current_section = "feature"
-                continue
-
-            if element.name == "table" and current_section in ["known", "addressed"]:
-                if element.find_parent("table"):
-                    continue
-
-                headers = [th.get_text(strip=True).upper() for th in element.find_all("th")]
-
-                if "FEATURE" in headers:
-                    continue
-
-                issue_col = None
-                desc_col = None
-
-                for i, h in enumerate(headers):
-                    if h in ["ISSUE", "BUG", "ID"]:
-                        issue_col = i
-                    elif h in ["DESCRIPTION", "LIMITATION", "DETAILS"]:
-                        desc_col = i
-
-                if issue_col is None:
-                    issue_col = 0
-                    desc_col = 1 if len(headers) > 1 else 0
-
-                for row in element.find_all("tr")[1:]:
-                    cells = row.find_all("td")
-                    if len(cells) <= issue_col:
-                        continue
-
-                    bug_id_cell = cells[issue_col]
-                    bug_id_text = bug_id_cell.get_text(strip=True)
-
-                    platform_match = re.search(r"\(([^)]+)\)", bug_id_text)
-                    affected_components: list[str] | None = None
-                    if platform_match:
-                        platform = platform_match.group(1).strip().lower()
-                        platform_map = {
-                            "windows": "Windows",
-                            "linux": "Linux",
-                            "macos": "macOS",
-                            "mac": "macOS",
-                            "android": "Android",
-                            "ios": "iOS",
-                        }
-                        if platform in platform_map:
-                            affected_components = [platform_map[platform]]
-
-                    bug_id = re.sub(r"\([^)]+\)", "", bug_id_text)
-                    bug_id = bug_id.split("\n")[0].strip()
-                    # Normalize the three dash-like Unicode characters Palo Alto
-                    # sometimes uses (non-breaking hyphen, en dash, em dash) to
-                    # plain ASCII hyphen. The characters below are intentional.
-                    bug_id = re.sub(r"[‑–—]", "-", bug_id)  # noqa: RUF001
-
-                    if not bug_id or not re.match(r"^[A-Z]+-\d+", bug_id):
-                        match = re.search(r"([A-Z]+-\d+)", bug_id_cell.get_text())
-                        if match:
-                            bug_id = match.group(1)
-                        else:
-                            continue
-
-                    description = ""
-                    if desc_col is not None and desc_col < len(cells):
-                        description = cells[desc_col].get_text(strip=True)
-                    else:
-                        full_text = row.get_text(strip=True)
-                        description = full_text.replace(bug_id, "", 1).strip()
-
-                    description = re.sub(r"\s+", " ", description).strip()
-                    clean_desc, workaround = extract_workaround(description)
-
-                    issue = Issue(
-                        bug_id=bug_id,
-                        description=clean_desc or description,
-                        workaround=workaround,
-                        affected_components=affected_components,
-                    )
-
-                    if current_section == "known":
-                        known_issues.append(issue)
-                    else:
-                        addressed_issues.append(issue)
-
-        return known_issues, addressed_issues
+    # ------------------------------------------------------------------
+    # Crawl
+    # ------------------------------------------------------------------
 
     async def crawl(
         self,
         major_versions: list[str] | None = None,
         skip_versions: set[str] | None = None,
     ) -> CrawlResult:
-        """Crawl Cortex XDR Agent release notes.
+        """Crawl Cortex XDR Agent release notes from the GitBook docs site.
 
-        Uses the FluidTopics khub API when a `fluidtopics` client was injected;
-        otherwise falls back to the legacy Playwright shadow-DOM crawl.
+        Args:
+            major_versions: Unused. The registry never passes it for Cortex —
+                the sitemap index is a single cheap request that yields every
+                version, so there is nothing to narrow.
+            skip_versions: Versions already present in the database. Filtered
+                out right after discovery, before any page is fetched.
         """
-        if self._fluidtopics is not None:
-            return await self._crawl_via_fluidtopics(skip_versions)
-        return await self._legacy_crawl(major_versions, skip_versions)
-
-    async def _crawl_via_fluidtopics(
-        self,
-        skip_versions: set[str] | None = None,
-    ) -> CrawlResult:
-        """Crawl Cortex XDR via the FluidTopics khub JSON API."""
+        del major_versions
         skip_versions = skip_versions or set()
         failed_fetches: list[FailedFetch] = []
-        self._log("Crawling Cortex XDR Agent via FluidTopics...")
+        transport = self._transport
+        own_transport = None
+        if transport is None:
+            # No transport injected (direct instantiation, or the legacy
+            # `--use-browser` flag). The GitBook site is fully server
+            # rendered, so httpx is always the right client here.
+            from bugdb.transport.httpx_transport import HttpxDocsTransport
+
+            own_transport = transport = HttpxDocsTransport(concurrency=self.max_concurrency)
 
         try:
-            maps = await self._fluidtopics.list_maps(product="Cortex XDR")
-        except Exception as exc:
-            self._log(f"  Error listing Cortex XDR maps: {exc}")
-            failed_fetches.append(
-                FailedFetch(
-                    url=f"{CORTEX_BASE_URL}/api/khub/maps",
-                    error=str(exc),
-                    product=self.product_id,
-                    issue_type="maps",
-                )
+            versions, failed_fetches = await self._discover(transport, skip_versions)
+            self._set_task_total(
+                len(versions),
+                f"{self.product_name}: fetching {len(versions)} versions",
             )
-            return CrawlResult(
-                product=Product(
-                    id=self.product_id,
-                    name=self.product_name,
-                    versions=[],
+
+            sorted_versions = sorted(versions.items())
+            results = await asyncio.gather(
+                *(
+                    self._crawl_version_pages(transport, version, pages)
+                    for version, pages in sorted_versions
                 ),
-                failed_fetches=failed_fetches,
+                return_exceptions=True,
             )
-
-        # Filter to release-notes maps only.  The portal can contain other
-        # Cortex maps (admin guides, etc.).
-        rn_maps = [m for m in maps if "Release Notes" in m.get("title", "")]
-        self._log(f"  Found {len(rn_maps)} Cortex XDR release-notes maps")
-
-        # version → (known_issues, addressed_issues, release_date)
-        versions_data: dict[str, tuple[list[Issue], list[Issue], str | None]] = {}
-
-        for m in rn_maps:
-            map_id = m["id"]
-            try:
-                topics = await self._fluidtopics.list_topics(map_id=map_id)
-            except Exception as exc:
-                failed_fetches.append(
-                    FailedFetch(
-                        url=f"{CORTEX_BASE_URL}/api/khub/maps/{map_id}/topics",
-                        error=str(exc),
-                        product=self.product_id,
-                        issue_type="topics",
-                    )
-                )
-                continue
-
-            for t in topics:
-                title = t.get("title", "")
-                title_lower = title.lower()
-
-                # Only known-issues / known-limitations / addressed / fixed
-                # topics carry the bug tables we care about.
-                is_addressed = (
-                    "addressed" in title_lower or "fixed" in title_lower
-                ) and "issue" in title_lower
-                is_known = "known" in title_lower and (
-                    "issue" in title_lower or "limitation" in title_lower
-                )
-                if not (is_addressed or is_known):
-                    continue
-
-                # Pull the exact version from metadata or derive from title.
-                ver = _extract_version_from_metadata(t) or self._extract_cortex_xdr_version(title)
-                if ver is None:
-                    continue
-                if ver in skip_versions:
-                    continue
-
-                try:
-                    page = await self._fluidtopics.fetch_topic(map_id=map_id, topic_id=t["id"])
-                except Exception as exc:
-                    failed_fetches.append(
-                        FailedFetch(
-                            url=t.get("contentApiEndpoint", ""),
-                            error=str(exc),
-                            product=self.product_id,
-                            version=ver,
-                            issue_type="addressed" if is_addressed else "known",
-                        )
-                    )
-                    continue
-                if page.status_code != 200:
-                    failed_fetches.append(
-                        FailedFetch(
-                            url=t.get("contentApiEndpoint", ""),
-                            error=f"HTTP {page.status_code}",
-                            product=self.product_id,
-                            version=ver,
-                            issue_type="addressed" if is_addressed else "known",
-                        )
-                    )
-                    continue
-
-                soup = BeautifulSoup(page.html, "lxml")
-                topic_known, topic_addressed = self._parse_cortex_xdr_release_page_html(
-                    soup, force_section="known" if is_known else "addressed"
-                )
-
-                kk, aa, date = versions_data.setdefault(ver, ([], [], _extract_publication_date(t)))
-                kk.extend(topic_known)
-                aa.extend(topic_addressed)
+        finally:
+            if own_transport is not None:
+                await own_transport.aclose()
 
         product_versions: list[ProductVersion] = []
-        for ver, (known, addressed, date) in versions_data.items():
-            if not known and not addressed:
-                continue
-            product_versions.append(
-                ProductVersion(
-                    version=ver,
-                    release_date=date,
-                    known_issues=self._deduplicate_issues(known),
-                    addressed_issues=self._deduplicate_issues(addressed),
+        for (version, pages), outcome in zip(sorted_versions, results, strict=True):
+            if isinstance(outcome, Exception):
+                logger.warning("Cortex version %s failed: %s", version, outcome)
+                failed_fetches.append(
+                    FailedFetch(
+                        url=pages[0][0] if pages else f"{CORTEX_BASE_URL}/{version}",
+                        error=str(outcome),
+                        product=self.product_id,
+                        version=version,
+                    )
                 )
-            )
+                continue
+            product_version, version_failures = outcome
+            failed_fetches.extend(version_failures)
+            if product_version is not None:
+                product_versions.append(product_version)
 
-        if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
-            failed_fetches = still_failed
-
-        product_versions.sort(key=lambda v: self._version_sort_key(v.version), reverse=True)
+        product_versions.sort(key=lambda v: _cortex_version_sort_key(v.version), reverse=True)
 
         return CrawlResult(
             product=Product(
@@ -425,213 +444,168 @@ class CortexXDRCrawler(BaseCrawler):
             failed_fetches=failed_fetches,
         )
 
-    def _parse_cortex_xdr_release_page_html(
-        self, soup, *, force_section: str
-    ) -> tuple[list[Issue], list[Issue]]:
-        """Parse a FluidTopics content fragment for issues.
-
-        FluidTopics returns one topic = one section (e.g. only addressed
-        issues or only known limitations). The parser-of-record
-        (`_parse_cortex_xdr_release_page`) walks sibling headings to decide
-        the section; for these topic fragments we pass `force_section`
-        directly because the heading is in the parent topic title, not
-        the HTML.
-        """
-        known: list[Issue] = []
-        addressed: list[Issue] = []
-        for table in soup.find_all("table"):
-            if table.find_parent("table"):
-                continue
-            headers = [th.get_text(strip=True).upper() for th in table.find_all("th")]
-            if "FEATURE" in headers:
-                continue
-            issue_col = None
-            desc_col = None
-            for i, h in enumerate(headers):
-                if h in ("ISSUE", "BUG", "ID"):
-                    issue_col = i
-                elif h in ("DESCRIPTION", "LIMITATION", "DETAILS"):
-                    desc_col = i
-            if issue_col is None:
-                issue_col = 0
-                desc_col = 1 if len(headers) > 1 else 0
-
-            for row in table.find_all("tr")[1:]:
-                cells = row.find_all("td")
-                if len(cells) <= issue_col:
-                    continue
-                bug_id_cell = cells[issue_col]
-                bug_id_text = bug_id_cell.get_text(strip=True)
-
-                platform_match = re.search(r"\(([^)]+)\)", bug_id_text)
-                affected_components: list[str] | None = None
-                if platform_match:
-                    platform = platform_match.group(1).strip().lower()
-                    platform_map = {
-                        "windows": "Windows",
-                        "linux": "Linux",
-                        "macos": "macOS",
-                        "mac": "macOS",
-                        "android": "Android",
-                        "ios": "iOS",
-                    }
-                    if platform in platform_map:
-                        affected_components = [platform_map[platform]]
-
-                bug_id = re.sub(r"\([^)]+\)", "", bug_id_text)
-                bug_id = bug_id.split("\n")[0].strip()
-                bug_id = re.sub(r"[‑–—]", "-", bug_id)  # noqa: RUF001
-
-                if not bug_id or not re.match(r"^[A-Z]+-\d+", bug_id):
-                    match = re.search(r"([A-Z]+-\d+)", bug_id_cell.get_text())
-                    if match:
-                        bug_id = match.group(1)
-                    else:
-                        continue
-
-                description = ""
-                if desc_col is not None and desc_col < len(cells):
-                    description = cells[desc_col].get_text(strip=True)
-                else:
-                    description = row.get_text(strip=True).replace(bug_id, "", 1).strip()
-
-                description = re.sub(r"\s+", " ", description).strip()
-                clean_desc, workaround = extract_workaround(description)
-
-                issue = Issue(
-                    bug_id=bug_id,
-                    description=clean_desc or description,
-                    workaround=workaround,
-                    affected_components=affected_components,
-                )
-
-                if force_section == "known":
-                    known.append(issue)
-                else:
-                    addressed.append(issue)
-
-        return known, addressed
-
-    async def _legacy_crawl(
-        self,
-        major_versions: list[str] | None = None,
-        skip_versions: set[str] | None = None,
-    ) -> CrawlResult:
-        """Crawl Cortex XDR via the legacy Playwright shadow-DOM walk."""
-        logger.info("Crawling Cortex XDR Agent (legacy Playwright)...")
+    async def _discover(
+        self, transport, skip_versions: set[str]
+    ) -> tuple[dict[str, list[tuple[str, str]]], list[FailedFetch]]:
+        """Map each agent version to its ``(page_url, page_type)`` pairs."""
         failed_fetches: list[FailedFetch] = []
-        skip_versions = skip_versions or set()
-
-        releases_url = (
-            f"{CORTEX_BASE_URL}/r/Cortex-XDR/Cortex-XDR-Agent-Releases/Cortex-XDR-Agent-Releases"
-        )
+        index_url = f"{CORTEX_BASE_URL}/sitemap.xml"
+        self._log("Crawling Cortex XDR Agent release notes (GitBook)...")
 
         try:
-            soup = await self._fetch_cortex_page_with_semaphore(releases_url, wait_time=5000)
-        except Exception as e:
-            logger.error(f"Error fetching releases page: {e}")
+            index_xml = await self._fetch_body(transport, index_url)
+        except Exception as exc:
+            self._log(f"  Error fetching the Cortex sitemap index: {exc}")
             failed_fetches.append(
                 FailedFetch(
-                    url=releases_url,
-                    error=str(e),
+                    url=index_url,
+                    error=str(exc),
                     product=self.product_id,
-                    issue_type="releases",
+                    issue_type="sitemap",
                 )
             )
-            return CrawlResult(
-                product=Product(id=self.product_id, name=self.product_name, versions=[]),
-                failed_fetches=failed_fetches,
-            )
+            return {}, failed_fetches
 
-        release_links = self._parse_cortex_xdr_releases_page(soup)
-        logger.info(f"  Found {len(release_links)} releases to process")
+        sitemap_urls = self._space_sitemap_urls(index_xml)
+        self._log(f"  Found {len(sitemap_urls)} Cortex XDR agent release-notes spaces")
 
-        releases_to_fetch: list[tuple[str, str, str | None]] = []
-        for version, url, release_date in release_links:
-            if version in skip_versions:
-                logger.info(f"  Skipping existing version: {version}")
-            else:
-                releases_to_fetch.append((version, url, release_date))
-
-        if not releases_to_fetch:
-            logger.info("  No new versions to fetch")
-            self._set_task_total(0, f"{self.product_name}: nothing new to fetch")
-            return CrawlResult(
-                product=Product(id=self.product_id, name=self.product_name, versions=[]),
-                failed_fetches=failed_fetches,
-            )
-
-        logger.info(f"  Fetching {len(releases_to_fetch)} versions...")
-        self._set_task_total(
-            len(releases_to_fetch),
-            f"{self.product_name}: fetching {len(releases_to_fetch)} versions",
+        space_results = await asyncio.gather(
+            *(self._resolve_space(transport, url) for url in sitemap_urls),
+            return_exceptions=True,
         )
 
-        version_dates: dict[str, str | None] = {v: d for v, _, d in releases_to_fetch}
-
-        async def fetch_release(
-            version: str, url: str
-        ) -> tuple[str, BeautifulSoup | None, str | None]:
-            try:
-                soup = await self._fetch_cortex_page_with_semaphore(url, wait_time=5000)
-                return (version, soup, None)
-            except Exception as e:
-                return (version, None, str(e))
-            finally:
-                self._advance_task(f"{self.product_name}: {version} done")
-
-        fetch_tasks = [fetch_release(ver, url) for ver, url, _ in releases_to_fetch]
-        results = await asyncio.gather(*fetch_tasks)
-
-        all_product_versions: list[ProductVersion] = []
-
-        for version, soup, error in results:
-            if error:
-                logger.error(f"Error fetching {version}: {error}")
+        versions: dict[str, list[tuple[str, str]]] = {}
+        for sitemap_url, outcome in zip(sitemap_urls, space_results, strict=True):
+            if isinstance(outcome, Exception):
+                logger.warning("Cortex space %s failed: %s", sitemap_url, outcome)
                 failed_fetches.append(
                     FailedFetch(
-                        url=next((u for v, u, _ in releases_to_fetch if v == version), ""),
-                        error=error,
+                        url=sitemap_url,
+                        error=str(outcome),
                         product=self.product_id,
-                        version=version,
-                        issue_type="release",
+                        issue_type="sitemap",
                     )
                 )
                 continue
+            version, pages = outcome
+            if not pages:
+                # Benign and common: this space simply has no known/addressed
+                # pages (or only an index page that _drop_index_pages
+                # dropped). _resolve_space already logged this at debug.
+                continue
+            if version is None:
+                # Pages exist but version resolution genuinely failed (both
+                # the space-path segment and the root page's <title> gave
+                # nothing usable) — a real problem, not the benign case above.
+                logger.warning("Could not resolve a version for Cortex space %s", sitemap_url)
+                continue
+            if version in skip_versions:
+                logger.info("  Skipping existing version: %s", version)
+                continue
+            versions.setdefault(version, []).extend(pages)
 
-            known_issues, addressed_issues = self._parse_cortex_xdr_release_page(soup)
+        return versions, failed_fetches
 
-            logger.info(
-                "%s: %d known, %d addressed",
-                version,
-                len(known_issues),
-                len(addressed_issues),
+    async def _resolve_space(
+        self, transport, sitemap_url: str
+    ) -> tuple[str | None, list[tuple[str, str]]]:
+        """Return ``(version, [(page_url, page_type), ...])`` for one space."""
+        space_path = self._space_path(sitemap_url)
+        pages_xml = await self._fetch_body(transport, sitemap_url)
+
+        pages = [
+            (url, page_type)
+            for url in self._page_urls(pages_xml)
+            if (page_type := self._classify_page(url)) is not None
+        ]
+        pages = self._drop_index_pages(pages)
+        if not pages:
+            # A space with no known/addressed pages at all is common and
+            # benign (e.g. a space that only holds admin-guide content) —
+            # not the same failure as version resolution coming up empty,
+            # so this is debug, not warning. `_discover` tells the two
+            # apart by checking `pages` before it checks `version`.
+            logger.debug("Cortex space %s has no issue pages", space_path)
+            return None, []
+
+        version = self._version_from_space_path(space_path)
+        if version is None:
+            root_html = await self._fetch_body(transport, f"{CORTEX_BASE_URL}/{space_path}")
+            version = self._version_from_space_root(root_html)
+        return version, pages
+
+    async def _crawl_version_pages(
+        self, transport, version: str, pages: list[tuple[str, str]]
+    ) -> tuple[ProductVersion | None, list[FailedFetch]]:
+        """Fetch and parse every issue page belonging to one version."""
+        failed_fetches: list[FailedFetch] = []
+        known: list[Issue] = []
+        addressed: list[Issue] = []
+
+        try:
+            bodies = await asyncio.gather(
+                *(self._fetch_body(transport, url) for url, _ in pages),
+                return_exceptions=True,
             )
-
-            if known_issues or addressed_issues:
-                all_product_versions.append(
-                    ProductVersion(
-                        version=version,
-                        release_date=version_dates.get(version),
-                        known_issues=self._deduplicate_issues(known_issues),
-                        addressed_issues=self._deduplicate_issues(addressed_issues),
+            for (url, page_type), body in zip(pages, bodies, strict=True):
+                if isinstance(body, Exception):
+                    failed_fetches.append(
+                        FailedFetch(
+                            url=url,
+                            error=str(body),
+                            product=self.product_id,
+                            version=version,
+                            issue_type=page_type,
+                        )
                     )
-                )
+                    continue
+                issues = self._parse_aria_issue_tables(BeautifulSoup(body, "lxml"))
+                if not issues:
+                    logger.warning("%s: no issues parsed from %s", version, url)
+                    failed_fetches.append(
+                        FailedFetch(
+                            url=url,
+                            error="no issues parsed",
+                            product=self.product_id,
+                            version=version,
+                            issue_type=page_type,
+                        )
+                    )
+                if page_type == "known":
+                    known.extend(issues)
+                else:
+                    addressed.extend(issues)
+        finally:
+            self._advance_task(f"{self.product_name}: {version} done")
 
-        if failed_fetches:
-            _, still_failed = await self._retry_failed_fetches_sequentially(failed_fetches)
-            failed_fetches = still_failed
+        known = self._deduplicate_issues(known)
+        addressed = self._deduplicate_issues(addressed)
+        logger.info("%s: %d known, %d addressed", version, len(known), len(addressed))
 
-        all_product_versions.sort(
-            key=lambda v: self._version_sort_key(v.version),
-            reverse=True,
+        if not known and not addressed:
+            return None, failed_fetches
+        return (
+            ProductVersion(version=version, known_issues=known, addressed_issues=addressed),
+            failed_fetches,
         )
 
-        return CrawlResult(
-            product=Product(
-                id=self.product_id,
-                name=self.product_name,
-                versions=all_product_versions,
-            ),
-            failed_fetches=failed_fetches,
-        )
+    async def _fetch_body(self, transport, url: str) -> str:
+        """Fetch a URL through the transport and return its body.
+
+        Used for HTML pages *and* for the sitemap XML, which is why this
+        returns the raw body rather than a parsed ``BeautifulSoup``.
+
+        This calls ``transport.fetch`` directly instead of going through
+        ``BaseCrawler._fetch_page_with_semaphore`` (or any other base fetch
+        helper), so ``BaseCrawler``'s ``max_concurrency`` semaphore, retry
+        loop, and global backoff never apply here — concurrency for Cortex
+        is bounded only by ``HttpxDocsTransport``'s own client-level limits.
+        Intentional: this module's discovery is two levels of small, cheap
+        XML/HTML fetches (one sitemap index, then one sitemap-pages.xml and
+        possibly one root page per space), not the large per-version issue
+        page fan-out the base plumbing was built to throttle.
+        """
+        page = await transport.fetch(url)
+        if page.status_code != 200:
+            raise RuntimeError(f"HTTP {page.status_code} for {url}")
+        return page.html

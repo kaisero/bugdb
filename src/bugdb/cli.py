@@ -266,7 +266,7 @@ def fetch(
         typer.Option(
             "--force",
             "-f",
-            help="Overwrite existing file.",
+            help="Overwrite existing file; ignores the manifest to guarantee a complete fetch.",
         ),
     ] = False,
     incremental: Annotated[
@@ -274,7 +274,10 @@ def fetch(
         typer.Option(
             "--incremental",
             "-i",
-            help="Only fetch versions not already in the output file. Requires existing data file.",
+            help=(
+                "Only fetch versions not already in the output file; does not refresh "
+                "versions you already have. Requires existing data file."
+            ),
         ),
     ] = False,
     headless: Annotated[
@@ -362,7 +365,7 @@ def fetch(
         bool,
         typer.Option(
             "--use-browser",
-            help="Use the legacy Playwright path instead of httpx + FluidTopics.",
+            help="Use the legacy Playwright path instead of httpx.",
         ),
     ] = False,
 ) -> None:
@@ -386,7 +389,6 @@ def fetch(
         Metadata,
     )
     from bugdb.sitemap import SitemapIndex
-    from bugdb.transport.fluidtopics_transport import FluidTopicsTransport
     from bugdb.transport.httpx_transport import HttpxDocsTransport
 
     # Resolve the --log-file flag. ``None`` disables file logging.
@@ -540,7 +542,11 @@ def fetch(
 
     # ----- Build shared sitemap + manifest ---------------------------------
     manifest_path = manifest or output.with_suffix(".manifest.json")
-    manifest_obj = FetchManifest() if no_manifest else FetchManifest.load(manifest_path)
+    # --force overwrites the output rather than merging into it, so honouring
+    # the manifest here would let "unchanged" URLs be skipped and end up
+    # simply absent from the written file. Bypass the read (the manifest is
+    # still written below) so --force always does a complete fetch.
+    manifest_obj = FetchManifest() if (no_manifest or force) else FetchManifest.load(manifest_path)
 
     sitemap_index: SitemapIndex | None = None
     if not use_browser:
@@ -607,7 +613,6 @@ def fetch(
                 # event loop that will use them so their httpx.AsyncClient
                 # and asyncio primitives belong to that loop.
                 docs_transport = None if use_browser else HttpxDocsTransport(concurrency=15)
-                fluidtopics = None if use_browser else FluidTopicsTransport(concurrency=10)
                 try:
                     for prod_name in products_to_fetch:
                         display_name = _display_name(prod_name)
@@ -634,10 +639,7 @@ def fetch(
                             task=sub_task,
                         )
                         if not use_browser:
-                            if prod_name == "cortex-xdr":
-                                kwargs["fluidtopics"] = fluidtopics
-                            else:
-                                kwargs["transport"] = docs_transport
+                            kwargs["transport"] = docs_transport
                             kwargs["sitemap"] = sitemap_index
                             kwargs["manifest"] = manifest_obj
 
@@ -655,8 +657,6 @@ def fetch(
                 finally:
                     if docs_transport is not None:
                         await docs_transport.aclose()
-                    if fluidtopics is not None:
-                        await fluidtopics.aclose()
 
             asyncio.run(_run_all())
 
