@@ -175,6 +175,40 @@ class CortexXDRCrawler(BaseCrawler):
             return "addressed"
         return None
 
+    def _drop_index_pages(self, pages: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """Drop index/TOC pages that only link to child topic pages.
+
+        Some spaces (e.g. ``9.2``) hold an index page like
+        ``.../addressed-issues`` that carries no table at all — it just
+        links to real content pages beneath it, such as
+        ``.../addressed-issues/addressed-issues-92`` and
+        ``.../addressed-issues/addressed-issues-92-hotfix``. Fetching the
+        index yields zero issues and would otherwise be misreported as a
+        genuine parser gap (see :meth:`_crawl_version_pages`).
+
+        A discovered page is an index only when another discovered page's
+        path sits strictly beneath it, compared on ``/``-delimited path
+        segments so that ``.../addressed-issues`` is not mistaken for a
+        prefix of the sibling ``.../addressed-issues-92`` (no segment
+        boundary between them). Other spaces (e.g. ``8.1-eol``) have no
+        child page at all for their issue page — that page is the leaf
+        content itself and must be kept even though it's alone.
+
+        This mirrors the "known-and-addressed" landing-page convention in
+        ``sitemap_discovery.group_into_version_infos`` for the main docs
+        site, adapted to the Cortex GitBook URL shapes.
+        """
+        segments = {url: url.rstrip("/").split("/") for url, _ in pages}
+
+        def is_index(url: str) -> bool:
+            segs = segments[url]
+            return any(
+                other != url and other_segs[: len(segs)] == segs
+                for other, other_segs in segments.items()
+            )
+
+        return [(url, page_type) for url, page_type in pages if not is_index(url)]
+
     def _version_from_space_path(self, space_path: str) -> str | None:
         """Derive the agent version from a space path, if it carries one.
 
@@ -476,6 +510,7 @@ class CortexXDRCrawler(BaseCrawler):
             for url in self._page_urls(pages_xml)
             if (page_type := self._classify_page(url)) is not None
         ]
+        pages = self._drop_index_pages(pages)
         if not pages:
             return None, []
 

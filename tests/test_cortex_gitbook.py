@@ -262,6 +262,54 @@ class TestPageClassification:
         assert crawler._classify_page(CORTEX_BASE_URL + path) == expected
 
 
+class TestIndexPageFiltering:
+    """Index/TOC pages hold no table of their own — they just link to child
+    topic pages that carry the real content. A discovered page whose path is
+    a strict prefix (on segment boundaries) of another discovered page's path
+    is dropped before fetching; a page nobody sits beneath is kept, even if
+    it's the only page for its version.
+    """
+
+    def test_drops_index_page_that_has_children_but_keeps_childless_leaf(self):
+        index_url = (
+            f"{CORTEX_BASE_URL}/xdr-agent-release-notes/9.2/release-information/addressed-issues"
+        )
+        child_1 = f"{index_url}/addressed-issues-92"
+        child_2 = f"{index_url}/addressed-issues-92-hotfix"
+        leaf_url = (
+            f"{CORTEX_BASE_URL}/8.x/8.1-eol/cortex-xdr-agent-8.1-release-information/"
+            "addressed-issues-in-cortex-xdr-agent-8.1.x"
+        )
+        pages = [
+            (index_url, "addressed"),
+            (child_1, "addressed"),
+            (child_2, "addressed"),
+            (leaf_url, "addressed"),
+        ]
+
+        crawler = CortexXDRCrawler()
+        kept = crawler._drop_index_pages(pages)
+
+        assert {url for url, _ in kept} == {child_1, child_2, leaf_url}
+
+    def test_does_not_treat_a_sibling_with_a_shared_prefix_as_an_index(self):
+        """ "/addressed-issues" is not a prefix of "/addressed-issues-92" —
+        they're siblings, not parent and child, because there's no '/'
+        boundary between them."""
+        sibling_a = (
+            f"{CORTEX_BASE_URL}/xdr-agent-release-notes/9.2/release-information/addressed-issues"
+        )
+        sibling_b = (
+            f"{CORTEX_BASE_URL}/xdr-agent-release-notes/9.2/release-information/addressed-issues-92"
+        )
+        pages = [(sibling_a, "addressed"), (sibling_b, "addressed")]
+
+        crawler = CortexXDRCrawler()
+        kept = crawler._drop_index_pages(pages)
+
+        assert {url for url, _ in kept} == {sibling_a, sibling_b}
+
+
 class TestVersionResolution:
     @pytest.mark.parametrize(
         ("space_path", "expected"),
@@ -473,6 +521,40 @@ class TestCrawl:
 
         assert result.product.versions == []
         assert [f.url for f in result.failed_fetches] == [f"{CORTEX_BASE_URL}/sitemap.xml"]
+
+    @pytest.mark.asyncio
+    async def test_crawl_skips_index_pages_without_fetching_or_flagging_them(self):
+        """The index page at ".../addressed-issues" is a TOC for its two
+        children and holds no table — it must be neither fetched nor
+        recorded as a failed fetch, and the version's issue counts must be
+        unaffected by its absence."""
+        pages = _two_space_site()
+        addressed_url = next(
+            u
+            for u in pages
+            if u.endswith("release-information/addressed-issues/addressed-issues-92")
+        )
+        index_url = addressed_url.rsplit("/", 1)[0]
+        pages_xml_url = f"{CORTEX_BASE_URL}/xdr-agent-release-notes/9.2/sitemap-pages.xml"
+        pages[pages_xml_url] = _minimal_pages(
+            [
+                f"{CORTEX_BASE_URL}/xdr-agent-release-notes/9.2",
+                f"{CORTEX_BASE_URL}/xdr-agent-release-notes/9.2/release-information/"
+                "feature-enhancements",
+                index_url,
+                addressed_url,
+                f"{CORTEX_BASE_URL}/xdr-agent-release-notes/9.2/release-information/known-issues",
+            ]
+        )
+        transport = FakeTransport(pages)
+
+        async with CortexXDRCrawler(transport=transport) as crawler:
+            result = await crawler.crawl()
+
+        assert index_url not in transport.requested
+        assert not any(f.url == index_url for f in result.failed_fetches)
+        versions = {v.version: v for v in result.product.versions}
+        assert len(versions["9.2"].addressed_issues) == 4
 
     @pytest.mark.asyncio
     async def test_crawl_resolves_version_from_space_root_when_slug_has_none(self):
