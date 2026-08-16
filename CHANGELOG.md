@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Bug IDs packed two-to-a-cell are no longer lost.** Some issue tables
+  put two ids in one `<td>` as sibling `<div class="p">` elements sharing
+  a single description (verified live on the RBI known-issues page: 8
+  rows, 10 distinct ids). The table parser's `get_text(strip=True)` fused
+  them into one string like `"ARBI-7796ARBI-7757"`, which silently
+  dropped the second id and attached the first as garbage `fix_info`.
+  Table parsing now recovers every id in a cell when every part looks
+  like a bug id, so both share the row's description.
+
 ## [1.0.6] - 2026-08-05
 
 ### Fixed
