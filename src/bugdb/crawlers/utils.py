@@ -370,7 +370,21 @@ def extract_cell_text_with_tables(cell) -> str:
 # bug id. This keeps the "EPM-4616" + "Resolved in ..." shape going
 # through extract_bug_id_and_fix_info as one string, so no existing
 # product's parse changes.
-_BUG_ID_PART_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
+#
+# The split-side patterns below (this one and _BUG_ID_FINDALL_RE) are
+# deliberately tighter than the downstream validation regex in base.py
+# (`^[A-Z]+-\d+$`): every one of the 11,439 distinct bug ids measured in
+# assets/bugdb.json has a letters-only prefix and at least 3 digits after
+# the hyphen (digit-length distribution: {3: 86, 4: 785, 5: 4073, 6: 6494,
+# 7: 1}), so `[A-Z]+-\d{3,}` matches all real ids while rejecting
+# id-shaped noise like "FIPS140-2" (a digit in the prefix, and only one
+# digit after the hyphen) that would otherwise let two fused elements —
+# e.g. <span class="ph uicontrol">PAN-262287</span><span class="ph
+# uicontrol">FIPS140-2</span> — be mistaken for two bug ids. A genuine
+# id shorter than this floor would still be accepted downstream as a
+# single unsplit value, which is the safe direction, so the validation
+# regex in base.py is intentionally left as-is.
+_BUG_ID_PART_RE = re.compile(r"^[A-Z]+-\d{3,}$")
 
 # Finds every bug-id-shaped run inside a cell's text, regardless of what
 # (if anything) separates them. Real cells fuse adjacent inline elements
@@ -378,12 +392,16 @@ _BUG_ID_PART_RE = re.compile(r"^[A-Z][A-Z0-9]*-\d+$")
 # LST-15123" into "LST-15102andLST-15123", and two sibling ids into
 # "PAN-212726PAN-211519"), so a separator-driven split can't see either
 # shape. Extract-and-verify-residue can: find every id-shaped run, then
-# check nothing but connectors is left over.
-_BUG_ID_FINDALL_RE = re.compile(r"[A-Z][A-Z0-9]*-\d+")
+# check nothing but connectors is left over. See _BUG_ID_PART_RE above
+# for why this uses [A-Z]+-\d{3,} rather than the looser shape.
+_BUG_ID_FINDALL_RE = re.compile(r"[A-Z]+-\d{3,}")
 
 # Connector tokens allowed to remain once every bug id has been removed
-# from a cell's text: whitespace, ',', ';', '&', '/', and the word "and".
-_CONNECTOR_RESIDUE_RE = re.compile(r"(?:[\s,;&/]|and)*", re.IGNORECASE)
+# from a cell's text: whitespace, ',', and the word "and". Limited to
+# exactly what's evidenced in observed markup (the report) and the test
+# fixtures below — no ';', '&', '/', or case-insensitive "AND" have ever
+# been seen, so they're left out rather than added speculatively.
+_CONNECTOR_RESIDUE_RE = re.compile(r"(?:[\s,]|and)*")
 
 
 def _split_bug_id_text(text: str) -> list[str]:
@@ -393,7 +411,7 @@ def _split_bug_id_text(text: str) -> list[str]:
     extract-and-verify-residue rather than a separator split: find every
     bug-id-shaped run in the text, remove them, and only accept the split
     if what remains is nothing but connector characters/words (whitespace,
-    ``,``, ``;``, ``&``, ``/``, ``and``). This is what lets it see fused
+    ``,``, ``and``). This is what lets it see fused
     text with no separating whitespace at all, e.g.
     "LST-15102andLST-15123" or "PAN-212726PAN-211519" — both produced by
     ``get_text(strip=True)`` collapsing adjacent inline elements — while
@@ -421,27 +439,39 @@ def _split_bug_id_text(text: str) -> list[str]:
 def split_bug_id_cell(cell) -> list[str]:
     """Return the raw bug-id strings held in an issue-ID table cell.
 
-    Upstream sometimes maps two bug ids to one description by putting
-    two sibling ``<div class="p">`` elements in a single ``<td>``
-    (verified on the RBI known-issues page). ``get_text(strip=True)``
-    fuses those into ``"ARBI-7796ARBI-7757"``, which fails the caller's
-    ``^[A-Z]+-\\d+$`` guard and silently drops the row.
+    Two-step algorithm:
 
-    Upstream also joins two ids with "and" or a comma list inside a
-    single element, fused by the same ``get_text(strip=True)`` collapse,
-    e.g. ``"LST-15102andLST-15123"`` (AI Access Security known-issues
-    page). Each ``div.p`` part is run through that same
-    extract-and-verify-residue split, so the two shapes compose: a
-    sibling ``div.p`` may itself hold an 'and'-joined pair.
+    1. Extract each sibling ``<div class="p">`` element's text, running
+       each part through ``_split_bug_id_text`` and flattening the
+       result. If that yields two or more parts that all look like bug
+       ids, return them.
+    2. Otherwise, fall back to running the same ``_split_bug_id_text``
+       extract-and-verify-residue split over the whole cell's text.
 
-    A third shape puts the two ids in *different* element types — one in
-    a ``<span class="ph uicontrol">``, one in a ``<div class="p">``
-    (verified on the panos known-issues page, PAN-212726 / PAN-211519).
-    ``cell.find_all("div", class_="p")`` only ever sees the ``div.p``
-    side of that pair, so whenever the ``div.p`` parts alone don't
-    resolve to two-or-more clean ids, the fallback re-applies the same
-    residue rule to the *whole* cell's text rather than returning it raw
-    — that is what lets it see ids living outside any ``div.p``.
+    Step 2 is the single fallback used everywhere — there is no separate
+    raw-text return — so ids living outside any ``div.p`` are still
+    found. Both steps rely on the same all-or-nothing guard: a cell (or
+    part) is only ever split when every resulting piece matches
+    ``_BUG_ID_PART_RE``.
+
+    This handles three markup shapes seen upstream, all folded into the
+    two steps above rather than requiring separate handling:
+
+    - Two sibling ``<div class="p">`` elements sharing one description
+      (RBI known-issues page). ``get_text(strip=True)`` fuses these into
+      e.g. ``"ARBI-7796ARBI-7757"`` if read raw; step 1 splits each
+      ``div.p`` instead.
+    - Two ids joined by "and" or a comma list *inside* a single element,
+      fused with no whitespace at all by the same collapse, e.g.
+      ``"LST-15102andLST-15123"`` (AI Access Security known-issues
+      page). The two shapes compose: a sibling ``div.p`` may itself hold
+      an 'and'-joined pair.
+    - The two ids living in *different* element types — one in a
+      ``<span class="ph uicontrol">``, one in a ``<div class="p">``
+      (panos known-issues page, PAN-212726 / PAN-211519).
+      ``cell.find_all("div", class_="p")`` only ever sees the ``div.p``
+      side of that pair, so step 2's whole-cell-text fallback is what
+      recovers the id living outside it.
 
     Returns a single-element list for the ordinary case, so callers can
     treat all shapes identically.

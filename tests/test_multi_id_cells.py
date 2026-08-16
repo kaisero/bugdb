@@ -152,6 +152,59 @@ def test_split_bug_id_cell_keeps_pan_os_version_and_fix_text_intact():
     assert split_bug_id_cell(soup.find("td")) == ["PAN-OS 11.2.4-h4 onlyThis issue is..."]
 
 
+def test_split_bug_id_cell_keeps_two_adjacent_ids_intact_when_one_is_not_a_real_id():
+    """The reviewer's construction: two adjacent <span class="ph
+    uicontrol"> elements fuse to "PAN-262287FIPS140-2". The old looser
+    pattern ([A-Z][A-Z0-9]*-\\d+) matches both "PAN-262287" and
+    "FIPS140-2" (a digit in the prefix, one digit after the hyphen),
+    leaving empty residue and fabricating a bogus id. The tightened
+    pattern ([A-Z]+-\\d{3,}) rejects "FIPS140-2" on both counts, so this
+    must stay unsplit."""
+    soup = BeautifulSoup(
+        '<td class="entry">'
+        '<span class="ph uicontrol">PAN-262287</span>'
+        '<span class="ph uicontrol">FIPS140-2</span>'
+        "</td>",
+        "lxml",
+    )
+    assert split_bug_id_cell(soup.find("td")) == ["PAN-262287FIPS140-2"]
+
+
+def test_split_bug_id_cell_keeps_real_id_fused_to_standards_token_intact():
+    """A real id fused to a standards/version-style token of similar
+    shape (an early, short RFC reference — RFC 91 is a real, short RFC
+    number) must not be mistaken for a second bug id. Unlike
+    "FIPS140-2" (digit in the prefix), "RFC-91" has a letters-only
+    prefix, so this pins the digit-count floor (\\d{3,}) in isolation:
+    a longer numeric reference like "RFC-2119" is, by the corpus
+    evidence the floor is based on, genuinely indistinguishable in
+    shape from a real bug id and is out of scope for shape-only
+    filtering."""
+    soup = BeautifulSoup(
+        '<td class="entry">'
+        '<span class="ph uicontrol">PAN-123456</span>'
+        '<span class="ph uicontrol">RFC-91</span>'
+        "</td>",
+        "lxml",
+    )
+    assert split_bug_id_cell(soup.find("td")) == ["PAN-123456RFC-91"]
+
+
+def test_split_bug_id_cell_keeps_real_id_fused_to_short_digit_token_intact():
+    """An id-shaped token with only 1-2 digits after the hyphen, fused to
+    a real bug id, must not be split out as a second id — real ids never
+    have fewer than 3 digits after the hyphen (measured across all
+    11,439 distinct ids in assets/bugdb.json)."""
+    soup = BeautifulSoup(
+        '<td class="entry">'
+        '<span class="ph uicontrol">PAN-262287</span>'
+        '<span class="ph uicontrol">AB-7</span>'
+        "</td>",
+        "lxml",
+    )
+    assert split_bug_id_cell(soup.find("td")) == ["PAN-262287AB-7"]
+
+
 def test_split_bug_id_cell_recovers_id_living_outside_div_p():
     """The panos known-issues page puts one id in a <span class="ph
     uicontrol"> and the other in a sibling <div class="p"> — a third
