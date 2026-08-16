@@ -362,7 +362,7 @@ def fetch(
         bool,
         typer.Option(
             "--use-browser",
-            help="Use the legacy Playwright path instead of httpx + FluidTopics.",
+            help="Use the legacy Playwright path instead of httpx.",
         ),
     ] = False,
 ) -> None:
@@ -386,7 +386,6 @@ def fetch(
         Metadata,
     )
     from bugdb.sitemap import SitemapIndex
-    from bugdb.transport.fluidtopics_transport import FluidTopicsTransport
     from bugdb.transport.httpx_transport import HttpxDocsTransport
 
     # Resolve the --log-file flag. ``None`` disables file logging.
@@ -607,7 +606,6 @@ def fetch(
                 # event loop that will use them so their httpx.AsyncClient
                 # and asyncio primitives belong to that loop.
                 docs_transport = None if use_browser else HttpxDocsTransport(concurrency=15)
-                fluidtopics = None if use_browser else FluidTopicsTransport(concurrency=10)
                 try:
                     for prod_name in products_to_fetch:
                         display_name = _display_name(prod_name)
@@ -634,10 +632,7 @@ def fetch(
                             task=sub_task,
                         )
                         if not use_browser:
-                            if prod_name == "cortex-xdr":
-                                kwargs["fluidtopics"] = fluidtopics
-                            else:
-                                kwargs["transport"] = docs_transport
+                            kwargs["transport"] = docs_transport
                             kwargs["sitemap"] = sitemap_index
                             kwargs["manifest"] = manifest_obj
 
@@ -655,8 +650,6 @@ def fetch(
                 finally:
                     if docs_transport is not None:
                         await docs_transport.aclose()
-                    if fluidtopics is not None:
-                        await fluidtopics.aclose()
 
             asyncio.run(_run_all())
 

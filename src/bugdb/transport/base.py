@@ -8,9 +8,9 @@ from typing import Protocol
 class FetchedPage:
     """Result of a single page fetch.
 
-    `html` is always a serialized HTML string the existing BeautifulSoup-based
-    parsers can consume. `lastmod` is the sitemap timestamp if known (None for
-    transports that don't carry one, e.g. FluidTopics topic content).
+    `html` is always the response body as text — usually HTML for the
+    BeautifulSoup-based parsers, occasionally XML (sitemaps). `lastmod` is the
+    sitemap timestamp if known, None for transports that don't carry one.
     """
 
     url: str

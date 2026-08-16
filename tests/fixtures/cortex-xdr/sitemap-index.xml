@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Trimmed copy of https://cortex-docs.paloaltonetworks.com/sitemap.xml captured
+  2026-08-16. The live index lists ~230 GitBook spaces; this fixture keeps a
+  representative slice: the five kinds of Cortex XDR agent release-notes space
+  the crawler must pick up, plus neighbouring spaces (XSIAM, XSOAR, the agent
+  admin guides, the mobile guides) it must ignore.
+-->
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/cortex-xsiam-docs/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/cortex-xdr-docs/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/xsoar-6-release-notes/6.14/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/cortex-xdr-agent/9.3/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/cortex-xdr-agent-ios-guide/9.2/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/cortex-xdr-3.x/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/agent-release-notes/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/9.2/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/9.1-ce/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/8.x/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/8.x/8.1-eol/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/8.x/8.3ce/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/7.x/7.5ce-eol/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/6.1-eol/sitemap-pages.xml</loc>
+
+		</sitemap>
+		<sitemap>
+				<loc>https://cortex-docs.paloaltonetworks.com/5.0/sitemap-pages.xml</loc>
+
+		</sitemap>
+</sitemapindex>

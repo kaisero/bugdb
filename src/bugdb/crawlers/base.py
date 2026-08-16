@@ -131,10 +131,9 @@ class BaseCrawler:
         """Return True iff this crawler will actually use Playwright.
 
         Default: only when no httpx Transport was injected. Subclasses
-        that have an alternative API client (e.g. CortexXDRCrawler with
-        a FluidTopics khub client) override this to also return False
-        when their alternative client is present, so Playwright isn't
-        launched on machines that don't have its browser binaries.
+        that fetch through something other than the injected Transport
+        may override this to return False, so Playwright isn't launched
+        on machines that don't have its browser binaries.
         """
         return self._transport is None
 
@@ -480,127 +479,6 @@ class BaseCrawler:
                 f"No fetch attempts were made for {url} (max_retries={self.max_retries})"
             )
         raise last_error
-
-    async def _fetch_cortex_page_with_semaphore(
-        self, url: str, wait_time: int = 5000
-    ) -> BeautifulSoup:
-        """Fetch a Cortex XDR page with shadow DOM content.
-
-        Cortex XDR docs use shadow DOM which isn't captured by page.content().
-        This method uses Playwright's query_selector_all which pierces shadow DOM
-        to extract tables and links, then builds a synthetic HTML document.
-
-        Args:
-            url: URL to fetch.
-            wait_time: Time to wait for JS to render (ms).
-
-        Returns:
-            BeautifulSoup parsed HTML with extracted content.
-
-        Raises:
-            Exception: If all retry attempts fail.
-        """
-        last_error: Exception | None = None
-
-        for attempt in range(self.max_retries):
-            await self._wait_for_global_backoff()
-
-            logger.debug("Acquiring semaphore for Cortex page: %s (attempt %d)", url, attempt + 1)
-            async with self._semaphore:
-                logger.debug("Semaphore acquired, creating new page for: %s", url)
-                page: Page | None = None
-                try:
-                    page = await self._new_page()
-                    result = await self._fetch_cortex_page(page, url, wait_time)
-                    logger.debug("Successfully fetched Cortex page: %s", url)
-                    return result
-                except Exception as e:
-                    last_error = e
-
-                    if self._is_connection_refused_error(e):
-                        await self._trigger_global_backoff()
-
-                    logger.warning(
-                        "Fetch failed for %s (attempt %d/%d): %s",
-                        url,
-                        attempt + 1,
-                        self.max_retries,
-                        e,
-                    )
-                finally:
-                    if page is not None:
-                        await page.close()
-
-            if attempt < self.max_retries - 1:
-                delay = self.retry_delay * (2**attempt)
-                logger.debug("Waiting %.1f seconds before retry for: %s", delay, url)
-                await asyncio.sleep(delay)
-
-        # All retries failed. See _fetch_page_with_semaphore for rationale.
-        if last_error is None:
-            raise RuntimeError(
-                f"No fetch attempts were made for {url} (max_retries={self.max_retries})"
-            )
-        raise last_error
-
-    async def _fetch_cortex_page(
-        self, page: Page, url: str, wait_time: int = 5000
-    ) -> BeautifulSoup:
-        """Fetch a Cortex XDR page and extract content from shadow DOM.
-
-        Cortex XDR docs use shadow DOM which isn't captured by page.content()
-        or JavaScript's document.querySelectorAll(). This method uses Playwright's
-        query_selector_all which can pierce shadow DOM.
-
-        Args:
-            page: Playwright page instance.
-            url: URL to fetch.
-            wait_time: Time to wait for JS to render (ms).
-
-        Returns:
-            BeautifulSoup parsed HTML with extracted content.
-        """
-        logger.debug("Fetching Cortex page: %s", url)
-        await page.goto(url, wait_until="networkidle", timeout=60000)
-        await page.wait_for_timeout(wait_time)
-
-        # Extract headings and tables using Playwright's query_selector_all
-        # which pierces shadow DOM (JavaScript querySelectorAll cannot)
-        elements = await page.query_selector_all("h1, h2, h3, h4, table")
-        elements_html = []
-        for element in elements:
-            html = await element.evaluate("el => el.outerHTML")
-            elements_html.append(html)
-        logger.debug("Extracted %d headings/tables from Cortex page", len(elements_html))
-
-        # Extract links using Playwright's query_selector_all
-        links = await page.query_selector_all("a")
-        links_html = []
-        for link in links:
-            href = await link.get_attribute("href")
-            if href:
-                text = await link.inner_text()
-                # Escape any HTML in the text
-                text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                links_html.append(f'<a href="{href}">{text}</a>')
-        logger.debug("Extracted %d links from Cortex page", len(links_html))
-
-        # Build synthetic HTML document with elements in document order
-        combined_html = f"""
-        <html>
-        <body>
-        <div class="content">
-        {"".join(elements_html)}
-        </div>
-        <div class="links">
-        {"".join(links_html)}
-        </div>
-        </body>
-        </html>
-        """
-
-        logger.debug("Built synthetic HTML (%d bytes) for: %s", len(combined_html), url)
-        return BeautifulSoup(combined_html, "lxml")
 
     def _version_sort_key(self, version: str) -> tuple:
         """Create a sort key for version strings.

@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 # Base URLs for documentation
 BASE_URL = "https://docs.paloaltonetworks.com"
-CORTEX_BASE_URL = "https://docs-cortex.paloaltonetworks.com"
+# The Cortex docs moved off FluidTopics (docs-cortex.paloaltonetworks.com,
+# which 301s here without preserving the path) onto GitBook.
+CORTEX_BASE_URL = "https://cortex-docs.paloaltonetworks.com"
 
 
 def version_sort_key(version: str) -> tuple:
