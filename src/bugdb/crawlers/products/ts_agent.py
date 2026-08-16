@@ -152,12 +152,21 @@ class TSAgentCrawler(BaseCrawler):
         return "known"
 
     def _major_from_url(self, url: str) -> str:
-        """PAN-OS major as a dotted string, e.g. "10.2". Falls back to
-        the 11.x slug suffix when the path segment is absent."""
-        m = _MAJOR_RE.search(url)
+        """PAN-OS major as a dotted string, e.g. "10.2".
+
+        The trailing ``-<major>-<minor>`` on the page's own slug (the
+        11.x combined layout) identifies the document's subject
+        version and is checked first. The ``/pan-os/<major>-<minor>/``
+        ancestor path segment only says where the page is filed — the
+        11.1 combined page, for instance, is filed under the 11-0 path
+        tree, so that segment would misattribute it. Fall back to the
+        path segment for the 10.x split layout, whose slugs carry no
+        trailing version suffix.
+        """
+        m = re.search(r"release-information-(\d+)-(\d+)$", url)
         if m:
             return f"{m.group(1)}.{m.group(2)}"
-        m = re.search(r"release-information-(\d+)-(\d+)$", url)
+        m = _MAJOR_RE.search(url)
         if m:
             return f"{m.group(1)}.{m.group(2)}"
         return ""
@@ -182,6 +191,7 @@ class TSAgentCrawler(BaseCrawler):
         for element in soup.find_all(["h1", "h2", "h3", "h4", "table"]):
             if element.name != "table":
                 text = element.get_text(" ", strip=True)
+                lower = text.lower()
                 m = _HEADING_VERSION_RE.search(text)
                 if m:
                     current_version = m.group(1)
@@ -189,10 +199,8 @@ class TSAgentCrawler(BaseCrawler):
                     # A kind-only heading ("Known Issues") applies to the
                     # page's own version, not to whatever patch section
                     # happened to come before it.
-                    lower = text.lower()
                     if "known" in lower or "addressed" in lower or "fixed" in lower:
                         current_version = self._major_from_url(url)
-                lower = text.lower()
                 if "known" in lower and "addressed" not in lower:
                     current_kind = "known"
                 elif "addressed" in lower or "fixed" in lower:

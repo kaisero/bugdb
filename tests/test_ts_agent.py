@@ -32,6 +32,13 @@ _COMBINED_11_0 = (
     "terminal-services-ts-agent-release-information/"
     "terminal-services-ts-agent-release-information-11-0"
 )
+# The 11.1 combined page is filed under the /pan-os/11-0/ path tree
+# despite documenting 11.1 — this is the case Important 1 fixes.
+_COMBINED_11_1 = (
+    f"{_TS}/11-0/terminal-services-agent-release-notes/"
+    "terminal-services-ts-agent-release-information/"
+    "terminal-services-ts-agent-release-information-11-1"
+)
 _PANOS_CORE = f"{_TS}/10-2/pan-os-release-notes/pan-os-10-2-4-known-issues"
 
 _SITEMAP = f"""<?xml version="1.0"?>
@@ -39,6 +46,7 @@ _SITEMAP = f"""<?xml version="1.0"?>
   <url><loc>{_ADDRESSED_10_2}</loc><lastmod>2026-08-01</lastmod></url>
   <url><loc>{_KNOWN_10_2}</loc><lastmod>2026-08-01</lastmod></url>
   <url><loc>{_COMBINED_11_0}</loc><lastmod>2026-08-01</lastmod></url>
+  <url><loc>{_COMBINED_11_1}</loc><lastmod>2026-08-01</lastmod></url>
   <url><loc>{_PANOS_CORE}</loc><lastmod>2026-08-01</lastmod></url>
 </urlset>
 """
@@ -74,6 +82,8 @@ class _StubCrawler(TSAgentCrawler):
             name = "10-2-addressed-issues.html"
         elif "release-information-11-0" in url:
             name = "11-0-release-information.html"
+        elif "release-information-11-1" in url:
+            name = "11-1-release-information.html"
         else:
             return BeautifulSoup("<html><body></body></html>", "lxml")
         return BeautifulSoup((FIXTURES / name).read_text(), "lxml")
@@ -121,6 +131,17 @@ async def test_11_x_addressed_issues_are_keyed_to_the_patch():
 
 
 @pytest.mark.asyncio
+async def test_11_1_known_issue_is_keyed_to_11_1_not_11_0():
+    """The 11.1 combined page is filed under the /pan-os/11-0/ path
+    tree. Its own bare "Known Issues" heading must key to the page's
+    own slug version (11.1), not to the ancestor path segment (11.0) —
+    the bug this branch has hit three times before."""
+    by_version = {v.version: v for v in (await _crawl()).product.versions}
+    assert [i.bug_id for i in by_version["11.1"].known_issues] == ["WINAGENT-1300"]
+    assert "WINAGENT-1300" not in [i.bug_id for i in by_version["11.0"].known_issues]
+
+
+@pytest.mark.asyncio
 async def test_features_introduced_table_is_not_parsed_as_issues():
     """'New Feature | Description' has no issue column, so it yields
     nothing. Guards against a future header-matching change."""
@@ -131,3 +152,18 @@ async def test_features_introduced_table_is_not_parsed_as_issues():
     ]
     assert "11.0.0" not in [v.version for v in (await _crawl()).product.versions]
     assert all(i.startswith("WINAGENT-") for i in all_ids)
+
+
+def test_major_from_url_prefers_the_pages_own_slug_over_the_ancestor_path():
+    """Pins the regex priority independently of the parsing path.
+
+    The 10.x split-page layout has no slug suffix, so the
+    /pan-os/<major>-<minor>/ ancestor path segment is authoritative.
+    The 11.x combined layout's trailing -<major>-<minor> slug suffix
+    names the page's own subject version and must win even when the
+    page is filed under a different major's path tree (the 11.1 page
+    lives under /pan-os/11-0/)."""
+    crawler = TSAgentCrawler(sitemap=SitemapIndex.from_xml(_SITEMAP), transport=object())
+    assert crawler._major_from_url(_KNOWN_10_2) == "10.2"
+    assert crawler._major_from_url(_COMBINED_11_0) == "11.0"
+    assert crawler._major_from_url(_COMBINED_11_1) == "11.1"
