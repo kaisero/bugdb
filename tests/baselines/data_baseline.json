@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-16T16:21:15+00:00",
+  "captured_at": "2026-08-16T16:47:06+00:00",
   "products": {
     "adem": {
       "versions": {
@@ -30324,7 +30324,7 @@
           ]
         },
         "5.1.1": {
-          "known": 5,
+          "known": 6,
           "addressed": 3,
           "bug_ids": [
             "FWAAS-5817",
@@ -30332,6 +30332,7 @@
             "FWAAS-7721",
             "FWAAS-7766",
             "FWAAS-8899",
+            "PLUG-12161",
             "PLUG-12504",
             "PLUG-12882",
             "PLUG-13076"
@@ -30357,29 +30358,31 @@
           ]
         },
         "5.2.0": {
-          "known": 4,
+          "known": 5,
           "addressed": 1,
           "bug_ids": [
             "FWAAS-5817",
             "FWAAS-6961",
             "FWAAS-7721",
             "FWAAS-7766",
+            "PLUG-12161",
             "PLUG-14381"
           ]
         },
         "5.2.1": {
-          "known": 4,
+          "known": 5,
           "addressed": 1,
           "bug_ids": [
             "FWAAS-5817",
             "FWAAS-6961",
             "FWAAS-7721",
             "FWAAS-7766",
+            "PLUG-12161",
             "PLUG-15452"
           ]
         },
         "5.2.2": {
-          "known": 5,
+          "known": 6,
           "addressed": 3,
           "bug_ids": [
             "FWAAS-5817",
@@ -30387,6 +30390,7 @@
             "FWAAS-7721",
             "FWAAS-7766",
             "PAN-243989",
+            "PLUG-12161",
             "PLUG-14830",
             "PLUG-15003",
             "PLUG-15577"
