@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import re
 from collections.abc import Awaitable, Callable
@@ -785,15 +786,29 @@ class BaseCrawler:
         issues = []
 
         for topic in soup.find_all("div", class_="topic"):
-            # Only leaf topics are issues. AI Access Security and
-            # Enterprise DLP wrap their per-issue blocks in an outer
-            # div.topic; matching the wrapper emits a phantom issue that
-            # borrows the first inner bug id and the whole page's text.
-            if topic.find("div", class_="topic"):
-                continue
+            # A topic is an issue when it has its own content once nested
+            # topics are excluded. Some pages nest issue blocks (e.g.
+            # PLUG-12161 on the plugin-aws known-issues page physically
+            # contains the FWAAS-5817/6961/7721/7766 blocks as
+            # descendants) and every level in that chain can be a real,
+            # independent issue. Others use div.topic purely as a
+            # wrapper around their per-issue children (AI Access Security,
+            # Enterprise DLP) and borrow the first child's heading with no
+            # content of their own.
+            #
+            # Extracting from a copy with nested div.topic descendants
+            # removed handles both: a pure wrapper loses its borrowed
+            # title and all content, so it's skipped below (no title, or
+            # empty description); a topic with its own text keeps that
+            # text scoped to itself, with the nested topics' content
+            # excluded.
+            scoped = copy.copy(topic)
+            for nested in scoped.find_all("div", class_="topic"):
+                nested.decompose()
 
-            # Extract bug ID from h2.title or h3.title
-            title_elem = topic.find(["h2", "h3"], class_="title")
+            # Extract bug ID from h2.title or h3.title, scoped so a
+            # wrapper can't borrow a nested topic's heading.
+            title_elem = scoped.find(["h2", "h3"], class_="title")
             if not title_elem:
                 continue
 
@@ -810,7 +825,7 @@ class BaseCrawler:
             fix_info_text = None
 
             # Get shortdesc if present
-            shortdesc = topic.find("div", class_="shortdesc")
+            shortdesc = scoped.find("div", class_="shortdesc")
             if shortdesc:
                 description_parts.append(normalize_text(shortdesc))
 
@@ -818,7 +833,7 @@ class BaseCrawler:
             in_workaround = False
             first_p_processed = False
 
-            for p_elem in topic.find_all("div", class_="p"):
+            for p_elem in scoped.find_all("div", class_="p"):
                 p_text = normalize_text(p_elem)
 
                 # Check for workaround marker
