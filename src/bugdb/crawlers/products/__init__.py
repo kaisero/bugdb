@@ -4,6 +4,7 @@ from .adem import ADEMCrawler
 from .cloud_ngfw import CloudNGFWAWSCrawler, CloudNGFWAzureCrawler
 from .cortex_xdr import CortexXDRCrawler
 from .device_security import DeviceSecurityCrawler
+from .enterprise_dlp import EnterpriseDLPCrawler
 from .globalprotect import GlobalProtectCrawler
 from .panos import PANOSCrawler
 from .plugins import PluginCrawler
@@ -27,6 +28,7 @@ __all__ = [
     "CloudNGFWAzureCrawler",
     "CortexXDRCrawler",
     "DeviceSecurityCrawler",
+    "EnterpriseDLPCrawler",
     "GlobalProtectCrawler",
     "PANOSCrawler",
     "PluginCrawler",

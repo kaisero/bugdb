@@ -18,6 +18,7 @@ from .products.adem import ADEMCrawler
 from .products.cloud_ngfw import CloudNGFWAWSCrawler, CloudNGFWAzureCrawler
 from .products.cortex_xdr import CortexXDRCrawler
 from .products.device_security import DeviceSecurityCrawler
+from .products.enterprise_dlp import EnterpriseDLPCrawler
 from .products.globalprotect import GlobalProtectCrawler
 from .products.panos import PANOSCrawler
 from .products.plugins import PLUGIN_CONFIGS, PluginCrawler
@@ -47,6 +48,7 @@ PRODUCT_CRAWLERS = {
     "ai-runtime-security": AIRuntimeSecurityCrawler,
     "strata-logging-service": StrataLoggingServiceCrawler,
     "device-security": DeviceSecurityCrawler,
+    "enterprise-dlp": EnterpriseDLPCrawler,
     "adem": ADEMCrawler,
     "scm": SCMCrawler,
     "sdwan-plugin": SDWANPluginCrawler,
@@ -92,6 +94,7 @@ def _build_async_dispatch() -> dict:
         "ai-runtime-security": _crawl_ai_runtime_security_async,
         "strata-logging-service": _crawl_strata_logging_service_async,
         "device-security": _crawl_device_security_async,
+        "enterprise-dlp": _crawl_enterprise_dlp_async,
         "adem": _crawl_adem_async,
         "scm": _crawl_scm_async,
         "sdwan-plugin": _crawl_sdwan_plugin_async,
@@ -630,6 +633,46 @@ async def _crawl_device_security_async(
                     generated_at=datetime.now(timezone.utc),
                     version="1.0.0",
                     source="Palo Alto Networks Device Security Release Notes",
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
+async def _crawl_enterprise_dlp_async(
+    major_versions: list[str] | None = None,
+    headless: bool = True,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: set[str] | None = None,
+    transport=None,
+    sitemap=None,
+    manifest=None,
+    discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
+) -> FetchResult:
+    """Async implementation of Enterprise DLP crawler."""
+    async with EnterpriseDLPCrawler(
+        headless=headless,
+        debug=debug,
+        max_concurrency=max_concurrency,
+        transport=transport,
+        sitemap=sitemap,
+        manifest=manifest,
+        discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
+    ) as crawler:
+        result = await crawler.crawl(major_versions, skip_versions)
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Enterprise DLP Release Notes",
                 ),
                 products=[result.product],
             ),
@@ -1231,6 +1274,37 @@ def crawl_device_security(
     )
 
 
+def crawl_enterprise_dlp(
+    major_versions: list[str] | None = None,
+    headless: bool = True,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: set[str] | None = None,
+    transport=None,
+    sitemap=None,
+    manifest=None,
+    discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
+) -> FetchResult:
+    """Crawl Enterprise DLP release notes and return a FetchResult."""
+    return asyncio.run(
+        _crawl_enterprise_dlp_async(
+            major_versions,
+            headless,
+            debug,
+            max_concurrency,
+            skip_versions,
+            transport=transport,
+            sitemap=sitemap,
+            manifest=manifest,
+            discovery_cache=discovery_cache,
+            reporter=reporter,
+            task=task,
+        )
+    )
+
+
 def crawl_adem(
     major_versions: list[str] | None = None,
     headless: bool = True,
@@ -1442,6 +1516,7 @@ PRODUCT_WRAPPERS: dict[str, Callable[..., FetchResult]] = {
     "cloud-ngfw-azure": crawl_cloud_ngfw_azure,
     "cortex-xdr": crawl_cortex_xdr,
     "device-security": crawl_device_security,
+    "enterprise-dlp": crawl_enterprise_dlp,
     "globalprotect": crawl_globalprotect,
     "panos": crawl_panos,
     "plugin-aws": crawl_plugin_aws,

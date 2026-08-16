@@ -175,6 +175,7 @@ class TestVersions:
             "ai-runtime-security",
             "strata-logging-service",
             "device-security",
+            "enterprise-dlp",
             "prisma-access",
             "prisma-access-agent",
             "sdwan-plugin",

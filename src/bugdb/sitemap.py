@@ -62,6 +62,7 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
     # plugin shares that path but uses semantic versions, so its URLs
     # are filtered out inside the DeviceSecurityCrawler.
     "device-security": ("/iot/release-notes/",),
+    "enterprise-dlp": ("/enterprise-dlp/",),
     "adem": ("/autonomous-dem/",),
     "scm": ("/strata-cloud-manager/",),
     "sdwan-plugin": (

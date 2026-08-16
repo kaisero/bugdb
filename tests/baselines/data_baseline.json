@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-16T16:54:49+00:00",
+  "captured_at": "2026-08-16T17:11:34+00:00",
   "products": {
     "adem": {
       "versions": {
@@ -1724,6 +1724,721 @@
             "DIT-82588",
             "DIT-82642",
             "DIT-84365"
+          ]
+        }
+      }
+    },
+    "enterprise-dlp": {
+      "versions": {
+        "1.0.1": {
+          "known": 11,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9461",
+            "WIF-523"
+          ]
+        },
+        "1.0.2": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-8313",
+            "PLUG-9461",
+            "WIF-523"
+          ]
+        },
+        "1.0.3": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-8313",
+            "PLUG-9461",
+            "WIF-523"
+          ]
+        },
+        "1.0.4": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-8313",
+            "PLUG-9323",
+            "PLUG-9360",
+            "PLUG-9461",
+            "WIF-523"
+          ]
+        },
+        "1.0.5": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-10530",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9323",
+            "PLUG-9811",
+            "WIF-523"
+          ]
+        },
+        "1.0.6": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-10252",
+            "PLUG-10282",
+            "PLUG-10530",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-6145",
+            "PLUG-6254",
+            "WIF-523",
+            "WIF-582"
+          ]
+        },
+        "1.0.7": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-10252",
+            "PLUG-10282",
+            "PLUG-10530",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811",
+            "WIF-523"
+          ]
+        },
+        "1.0.8": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PLUG-10252",
+            "PLUG-10282",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811",
+            "WIF-523"
+          ]
+        },
+        "2025": {
+          "known": 0,
+          "addressed": 7,
+          "bug_ids": [
+            "DIT-54573",
+            "DSPM-557",
+            "DSS-18161",
+            "DSS-21179",
+            "DSS-21292",
+            "DSS-21945",
+            "DSS-22557"
+          ]
+        },
+        "3.0.0": {
+          "known": 26,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-157371",
+            "PAN-191014",
+            "PLUG-10252",
+            "PLUG-11197",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9323",
+            "PLUG-9811",
+            "WIF-470",
+            "WIF-495",
+            "WIF-523"
+          ]
+        },
+        "3.0.1": {
+          "known": 26,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-155923",
+            "PAN-191014",
+            "PAN-191513",
+            "PLUG-10252",
+            "PLUG-10330",
+            "PLUG-11197",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9323",
+            "PLUG-9811",
+            "WIF-523"
+          ]
+        },
+        "3.0.10": {
+          "known": 11,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-15645",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "3.0.2": {
+          "known": 21,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206066",
+            "PLUG-11447",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811",
+            "WIF-864"
+          ]
+        },
+        "3.0.3": {
+          "known": 20,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811",
+            "WIF-864"
+          ]
+        },
+        "3.0.4": {
+          "known": 19,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11750",
+            "PLUG-11851",
+            "PLUG-12430",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811"
+          ]
+        },
+        "3.0.5": {
+          "known": 18,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13111",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254",
+            "PLUG-9811"
+          ]
+        },
+        "3.0.6": {
+          "known": 16,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "3.0.7": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "3.0.8": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "3.0.9": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-11447",
+            "PLUG-11851",
+            "PLUG-13729",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145",
+            "PLUG-6254"
+          ]
+        },
+        "4.0.0": {
+          "known": 15,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-11423",
+            "PLUG-11742",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.1": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.2": {
+          "known": 15,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-11750",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.3": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.4": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-11851",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "4.0.5": {
+          "known": 10,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PAN-206186",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.0": {
+          "known": 14,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-13729",
+            "PLUG-14201",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.1": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-14534",
+            "PLUG-15177",
+            "PLUG-15192",
+            "PLUG-15645",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.2": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.3": {
+          "known": 12,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-17207",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.4": {
+          "known": 13,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-14534",
+            "PLUG-15192",
+            "PLUG-16872",
+            "PLUG-17207",
+            "PLUG-18281",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.5": {
+          "known": 9,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-15192",
+            "PLUG-18713",
+            "PLUG-18987",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.6": {
+          "known": 6,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.7": {
+          "known": 6,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-20948",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "5.0.8": {
+          "known": 5,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-20948",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "6.0.1": {
+          "known": 9,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-16720",
+            "PLUG-19290",
+            "PLUG-20948",
+            "PLUG-21080",
+            "PLUG-21209",
+            "PLUG-21528",
+            "PLUG-6145"
+          ]
+        },
+        "6.0.2": {
+          "known": 4,
+          "addressed": 0,
+          "bug_ids": [
+            "DSS-17763",
+            "PAN-144897",
+            "PLUG-16720",
+            "PLUG-6145"
           ]
         }
       }
