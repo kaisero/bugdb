@@ -907,6 +907,13 @@ class BaseCrawler:
         issues = []
 
         for topic in soup.find_all("div", class_="topic"):
+            # Only leaf topics are issues. AI Access Security and
+            # Enterprise DLP wrap their per-issue blocks in an outer
+            # div.topic; matching the wrapper emits a phantom issue that
+            # borrows the first inner bug id and the whole page's text.
+            if topic.find("div", class_="topic"):
+                continue
+
             # Extract bug ID from h2.title or h3.title
             title_elem = topic.find(["h2", "h3"], class_="title")
             if not title_elem:
