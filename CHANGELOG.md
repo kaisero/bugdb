@@ -5,6 +5,98 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-08-16
+
+### Added
+- **Three new products: AI Access Security, Enterprise DLP, and
+  Terminal Server Agent.** `bugdb fetch ai-access-security`,
+  `bugdb fetch enterprise-dlp`, and `bugdb fetch ts-agent` now work, and
+  all three appear in the site's product filter. Enterprise DLP carries
+  two version axes in one product — plugin releases (1.0–6.0 and their
+  patches) for known issues, and calendar years for addressed issues,
+  because upstream does not version the addressed pages.
+
+### Fixed
+- **Cortex XDR data is being collected again.** Palo Alto migrated the
+  Cortex documentation off its FluidTopics platform, whose JSON API the
+  crawler depended on; the endpoint now redirects to a site that does not
+  serve it. The crawler is rebuilt against the new GitBook site, which
+  needs no browser and no API — its tables are ARIA `role` elements
+  rather than `<table>` markup. Coverage improves from 836 to 1,126
+  issues, including five agent versions the previous crawler never
+  reached. The failure had been invisible because incremental fetches
+  preserve data for products that return nothing.
+- **Bug IDs are no longer lost when one cell lists several of them.**
+  Upstream maps multiple IDs to a single description in three different
+  ways — as sibling `<div class="p">` elements, as run-together text
+  (`LST-15102andLST-15123`), and as an ID in a `<span>` beside one in a
+  `<div class="p">`. All three collapsed into one string, so only the
+  first ID survived and the rest were filed as its "fix info". Recovers
+  28 issues, mostly in PAN-OS.
+- **Nested issue blocks no longer drop or duplicate issues.** Upstream
+  nests issue blocks inside one another, so a real issue can enclose the
+  ones that follow it. Each block's text is now scoped to itself: the
+  enclosing issue is kept with its own description instead of being
+  discarded, and pure layout wrappers no longer emit a phantom copy of
+  the first issue they contain.
+
+### Note
+- Terminal Server Agent issues are published inside the PAN-OS
+  documentation tree, so two `WINAGENT-*` bugs (`WINAGENT-727` and
+  `WINAGENT-890`) appear under **both** `panos` (where they have always
+  been) and the new `ts-agent` product. This is deliberate — PAN-OS data
+  was left untouched. The other `WINAGENT-*` IDs under `panos`
+  (`742`, `804`, `830`, `851`, `1006`) are not TS Agent duplicates — they
+  belong to the User-ID Agent, a different product that also publishes
+  release notes under `/pan-os/`. Separating the genuine duplicates is
+  tracked as follow-up work, along with the `APL-`, `APPORTAL-`, `WIF-`,
+  `PLUG-`, and User-ID Agent IDs that reach `panos` from other non-core
+  subtrees under `/pan-os/`.
+- Eleven Cortex XDR EOL pages (7.1 and 7.3–7.6) use a heading-based
+  layout the parser does not read and are reported as failed fetches on
+  every crawl. They carry no issues that were previously collected; the
+  visible failure is deliberate, so the gap is not forgotten.
+
+## [1.0.6] - 2026-08-05
+
+### Fixed
+- **PAN-OS 12.1 and 12.2 are discovered again.** Palo Alto moved PAN-OS
+  release notes off `/pan-os/<v>/pan-os-release-notes` onto the shared
+  NGFW book at `/ngfw/release-notes/<v>` starting with 12.1; the legacy
+  path now 404s for 12.x. `_PRODUCT_PREFIXES["panos"]` matched only
+  `/pan-os/`, so all 36 issue URLs under `/ngfw/release-notes/`
+  classified with no product and never reached a crawler. This was a
+  regression: the 12.1 URL move was handled in 1.0.3 for the probe-based
+  discovery path, and the 1.0.4 sitemap rewrite added a second discovery
+  path — made primary — that did not carry the knowledge across.
+  Recovers 17 versions, 317 known and 758 addressed issues.
+- **Release notes no longer lose entries on every deploy.**
+  `release_notes.py` held only 1.0.0 and 1.0.1 while
+  `assets/release-notes.json` had a hand-edited 1.0.3 entry. Since the
+  site build regenerates the JSON from the module, 1.0.3 was dropped
+  from the site on each publish. 1.0.2 through 1.0.5 were never present
+  at all. All are now backfilled, and the module documents itself as the
+  single source of truth.
+- **`bugdb build` honours its documented `--release-notes` default.** The
+  option help promises "a sibling of the --bugdb file in the same
+  directory" but the implementation used a static
+  `assets/release-notes.json` relative to the working directory, so
+  `bugdb build -b /elsewhere/bugs.json` wrote release notes into `./assets/`.
+  This also made the CLI test suite overwrite the repository's own copy on
+  every run.
+
+### Changed
+- **The upstream canary now checks ingestion, not just reachability.** It
+  previously only asserted that a version's landing page returns 200, so
+  PAN-OS 12.1 looked healthy for weeks while producing zero data. New
+  canary tests run the real sitemap classification path against the live
+  sitemap and assert each known major yields issue URLs. PAN-OS 10.0 is
+  recorded as an explicit, documented exclusion (delisted upstream, EOL —
+  see 1.0.5) rather than an untracked blind spot.
+- **`PANOSCrawler.CANDIDATE_VERSIONS` promoted to a class attribute** and
+  `12-2` added. The canary previously kept its own copy of the probe list
+  and asserted against that copy, so the two drifted silently.
+
 ## [1.0.5] - 2026-06-11
 
 ### Changed

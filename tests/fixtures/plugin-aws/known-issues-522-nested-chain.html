@@ -1,0 +1,56 @@
+<!--
+  Provenance: markup hand-trimmed from the live Panorama Plugin for AWS
+  5.2.2 known-issues page (aws-plugin-522), under
+  /plugins/vm-series-and-panorama-plugins-release-notes/panorama-plugin-for-aws/
+  (verified 2026-08-16). The bug ids (PLUG-15577, PLUG-12161, FWAAS-5817,
+  FWAAS-6961) and descriptions are genuine, matching the live page,
+  including the real nested-topic structure (PLUG-12161 physically
+  contains the FWAAS-* topics) this fixture exists to test.
+-->
+<html><body>
+<div class="concept topic">
+<div class="topic topic concept" id="id_kth_1ww_2bc">
+<h2 class="title">PLUG-15577</h2>
+<div class="shortdesc"></div>
+<div class="p">Fixed an issue where the Panorama plugin for AWS retrieves IP addresses only from the
+            first interface of AWS EC2 instances associated with a security group.</div>
+</div>
+</div>
+<div class="concept0 topic">
+<div class="topic topic concept" id="id_p3f_vzt_5wb">
+<h2 class="title">PLUG-12161</h2>
+<div class="shortdesc">Description of PLUG-12711</div>
+<div class="p">The VM Monitoring and Orchestration on <b class="ph b">AWS plugin 3.0.0</b> and above is not supported
+            on AWS GovCloud. </div><div class="note" data-label="NOTE">
+<!-- FM Dita Overlay for Notes Component-->
+<div><div style="display: inline;"><div class="p" dir="ltr"> AWS Plugin 3.0.0 and above does not orchestrate VM-Series firewall
+                deployments on <b class="ph b">AWS GovCloud.</b></div></div></div>
+</div><div class="p" dir="ltr"><b class="ph b">Workaround:</b></div><div class="p" dir="ltr">To support VM monitoring on AWS Plugin 3.0.0 and above on AWS GovCloud, perform
+            the following steps for a workaround:</div><ol class="ol" id="id_p3f_vzt_5wb_d18e52"><li class="li" dir="ltr"><div class="p" dir="ltr">Set the AWS region running the <span class="ph codeph">op-command</span>. </div><div class="p" dir="ltr">Following is an example to set the AWS region using the op-command:</div><div class="p" dir="ltr"><!-- FM Dita Overlay for Code --><div class="code-wrap"><pre class="pre codeblock" data-label="PRE CODEBLOCK"><div style="display: inline;">request plugins aws set-aws-region region &lt;aws-govcloud-region&gt;</div></pre></div><li class="li" dir="ltr"><div class="p" dir="ltr">Configure the AWS region under monitoring definition using the <b class="ph b">CLI
+                    </b>and <b class="ph b">commit </b>the changes.</div><div class="p" dir="ltr">Run the following command on CLI:</div><div class="p" dir="ltr"><!-- FM Dita Overlay for Code --><div class="code-wrap"><pre class="pre codeblock" data-label="PRE CODEBLOCK"><div style="display: inline;">set plugins aws monitoring-definition &lt;vm-mon-name&gt; aws-regions &lt;aws-govcloud-region&gt;</div></pre></div><div class="p" dir="ltr">On successful execution of the above command, the VPCs will be
+                    displayed on the UI and you will be able to select VPCs on the AWS GovCloud.</div>
+</div>
+</li></div>
+<div class="concept1 topic">
+<div class="topic topic concept" id="concept_x2t_3mm_1yb">
+<h2 class="title">FWAAS-5817</h2>
+<div class="shortdesc"></div>
+<div class="p">The Panorama UI does not display any error message when cloud manager or cloud NGFW
+            service push fails. You will only know about push failure when the firewall <b class="ph b">commit
+            </b>fails.</div>
+</div>
+</div>
+<div class="concept2 topic">
+<div class="topic topic concept" id="concept_g1r_kmm_1yb">
+<h2 class="title">FWAAS-6961</h2>
+<div class="shortdesc"></div>
+<div class="p" dir="ltr">On the Panorama AWS Plugin for Cloud NGFW service, the first time tenant linked
+            to Panorama will not be able to see any VPCs under the <b class="ph b">Discovered VPC</b> tab. </div><div class="p" dir="ltr"><b class="ph b">Workaround</b>: The first time tenant must click <b class="ph b">Refresh Vpc</b> button
+                under<b class="ph b"> Discover VPC</b> tab to get a list of VPCs. </div>
+</div>
+</div>
+
+
+</li></ol></div>
+</div>
+</body></html>

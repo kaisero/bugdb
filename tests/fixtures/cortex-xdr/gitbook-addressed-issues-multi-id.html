@@ -1,0 +1,101 @@
+<!--
+  Synthetic fixture built to match the ARIA markup shape of
+  gitbook-addressed-issues.html (same role="table"/"row"/"cell" nesting,
+  same three-column ISSUE/PLATFORM/DESCRIPTION layout), covering two real
+  shapes noted in the recon file but not exercised by any existing fixture:
+  a multi-id ISSUE cell ("CPATR-13480, CPATR-13408, CPATR-13405") and an
+  ISSUE cell carrying trailing fix info after the id ("This issue is
+  resolved in Cortex XDR agent 7.0.3"). The PLATFORM cell on the second row
+  also carries a comma-separated multi-platform value.
+-->
+<html><head><title>Addressed Issues</title></head><body><main>
+<div class="flex flex-col min-w-full w-fit" role="table">
+ <div role="rowgroup">
+  <div role="row">
+   <div role="columnheader">
+    ISSUE
+   </div>
+   <div role="columnheader">
+    PLATFORM
+   </div>
+   <div role="columnheader">
+    DESCRIPTION
+   </div>
+  </div>
+ </div>
+ <div>
+  <div role="rowgroup">
+   <div role="row">
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        CPATR-13480, CPATR-13408, CPATR-13405
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        Windows, Linux
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        Fixed an issue affecting multiple related defects in the same release.
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </div>
+   <div role="row">
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        CPATR-10688 This issue is resolved in Cortex XDR agent 7.0.3
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        Mac
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        Fixed an issue that caused the agent to crash on startup.
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </div>
+  </div>
+ </div>
+</div>
+</main></body></html>

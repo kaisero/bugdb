@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+			<url>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/9.2</loc>
+				<priority>1</priority>
+				<lastmod>2026-06-11T13:54:16.080Z</lastmod>
+</url>
+
+			<url>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/9.2/release-information/feature-enhancements</loc>
+				<priority>0.84</priority>
+				<lastmod>2026-07-09T06:22:15.309Z</lastmod>
+</url>
+
+			<url>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/9.2/release-information/addressed-issues</loc>
+				<priority>0.84</priority>
+				<lastmod>2026-08-11T17:35:34.140Z</lastmod>
+</url>
+
+			<url>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/9.2/release-information/addressed-issues/addressed-issues-92-hotfix</loc>
+				<priority>0.7</priority>
+				<lastmod>2026-07-24T08:58:53.724Z</lastmod>
+</url>
+
+			<url>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/9.2/release-information/addressed-issues/addressed-issues-92</loc>
+				<priority>0.7</priority>
+				<lastmod>2026-07-24T08:58:53.724Z</lastmod>
+</url>
+
+			<url>
+				<loc>https://cortex-docs.paloaltonetworks.com/xdr-agent-release-notes/9.2/release-information/known-issues</loc>
+				<priority>0.84</priority>
+				<lastmod>2026-07-09T06:22:15.309Z</lastmod>
+</url>
+
+
+</urlset>

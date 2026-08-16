@@ -1,0 +1,169 @@
+<!--
+  Captured from the live GitBook Cortex XDR docs (cortex-docs.paloaltonetworks.com)
+  on 2026-08-16 and trimmed: only a few rows are kept and the presentational
+  class/style attributes were dropped. The ARIA role attributes and the
+  surrounding div nesting -- which is all the parser keys on -- are exactly as
+  served, including the U+2011 non-breaking hyphens in some bug ids.
+  Source: /xdr-agent-release-notes/9.2/release-information/known-issues
+-->
+<html><head><title>Known Limitations</title></head><body><main>
+<div class="flex flex-col min-w-full w-fit" role="table">
+ <div role="rowgroup">
+  <div role="row">
+   <div role="columnheader">
+    ISSUE
+   </div>
+   <div role="columnheader">
+    DESCRIPTION
+   </div>
+  </div>
+ </div>
+ <div>
+  <div role="rowgroup">
+   <div role="row">
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        Windows on ARM
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        The Cortex XDR agent 9.2 on ARM architecture has the following limitations:
+       </p>
+       <div>
+       </div>
+      </div>
+      <ul>
+       <li>
+        <div>
+         <div>
+         </div>
+        </div>
+        <div>
+         <div>
+          <p>
+           Behavioral Threat Protection: Not fully supported
+          </p>
+          <div>
+          </div>
+         </div>
+        </div>
+       </li>
+       <li>
+        <div>
+         <div>
+         </div>
+        </div>
+        <div>
+         <div>
+          <p>
+           Exploit Protection: Not supported
+          </p>
+          <div>
+          </div>
+         </div>
+        </div>
+       </li>
+       <li>
+        <div>
+         <div>
+         </div>
+        </div>
+        <div>
+         <div>
+          <p>
+           File Examination: JScript, VBScript, and PowerShell file examination not fully supported
+          </p>
+          <div>
+          </div>
+         </div>
+        </div>
+       </li>
+      </ul>
+     </div>
+    </div>
+   </div>
+   <div role="row">
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        GKE Autopilot
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        When using GKE Autopilot, if there is a timing issue encountered during Cortex XDR agent installation (GKE Warden constraints violations), the YAML installation command should be repeated.
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </div>
+   <div role="row">
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        Custer-level scoping
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        Cluster name is currently not supported in Oracle Cloud, GCP, Azure and Openshift (any cloud). For these operating systems, use the node name instead.
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </div>
+   <div role="row">
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        CPATR-18568
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+    <div role="cell">
+     <div>
+      <div>
+       <p>
+        [Linux] On some occasions, when a container is a short-lived container (exits within a short period of time) retrieval of the container information is not guaranteed.
+       </p>
+       <div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </div>
+  </div>
+ </div>
+</div>
+</main></body></html>

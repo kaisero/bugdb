@@ -1,0 +1,28 @@
+<!--
+  Provenance: the document structure (div.topic > h2 > h3 nesting per
+  patch, the "Known Issues" heading kind, and the fact that the h2
+  wrapper text does not match _HEADING_VERSION_RE) is live-derived from
+  the real 11.1 combined Release Information page — a page filed under
+  the /pan-os/11-0/ path tree despite documenting 11.1. The bug id
+  (WINAGENT-1300) and description are synthetic: the live 11.1 page
+  currently has no known issues, so this fixture supplies one to make
+  the 11.1-vs-11.0 attribution test meaningful.
+-->
+<html><body>
+<h1 class="title">Terminal Server (TS) Agent 11.1 Release Information</h1>
+<div class="topic">
+<h2 class="title">Terminal Server (TS) Agent 11.1 Release Information</h2>
+<h3 class="title">Changes to Default Behavior</h3>
+<div class="p">There are no changes to default behavior in this release.</div>
+<h3 class="title">Known Issues</h3>
+<table>
+  <thead><tr><th>Issue</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><b class="ph b">WINAGENT-1300</b></td>
+      <td><div class="p">The agent leaks a handle when the session table is full.</div></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+</body></html>

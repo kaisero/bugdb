@@ -5,7 +5,7 @@ A Python CLI application that crawls Palo Alto Networks release notes and genera
 ## Features
 
 - **Automated Crawling**: Fetch known and addressed issues directly from Palo Alto Networks documentation
-- **27 Supported Products**: PAN-OS, Prisma Access, GlobalProtect, Cloud NGFW, Cortex XDR, and more
+- **29 Supported Products**: PAN-OS, Prisma Access, GlobalProtect, Cloud NGFW, Cortex XDR, and more
 - **Static Site Generation**: Build a fast, searchable HTML site with client-side filtering
 - **Incremental Updates**: Add new products or versions without re-fetching existing data
 - **Full-Text Search**: Search across bug IDs, descriptions, symptoms, and workarounds
@@ -15,6 +15,7 @@ A Python CLI application that crawls Palo Alto Networks release notes and genera
 | Product | Supported |
 |---------|:---------:|
 | PAN-OS | ✅ |
+| Terminal Server Agent | ✅ |
 | GlobalProtect | ✅ |
 | Strata Cloud Manager (SCM) | ✅ |
 | Prisma Access | ✅ |
@@ -38,6 +39,8 @@ A Python CLI application that crawls Palo Alto Networks release notes and genera
 | Panorama SD-WAN Plugin | ✅ |
 | Autonomous DEM (ADEM) | ✅ |
 | AI Runtime Security | ✅ |
+| AI Access Security | ✅ |
+| Enterprise DLP | ✅ |
 | Remote Browser Isolation | ✅ |
 | Strata Logging Service | ✅ |
 
@@ -179,6 +182,12 @@ open dist/index.html
 | `--debug` | Enable debug logging |
 | `--progress/--no-progress` | Show live progress bar (default: auto-detect TTY) |
 | `-l, --log-file` | Write streaming fetch log to PATH; `-l auto` defaults to `<output>.log` |
+
+`--incremental` only adds versions that aren't already in the output file — it
+won't refresh a version you already have, even if the upstream data changed.
+If you need corrected data for an existing version, run a full fetch instead.
+`--force` overwrites the output file rather than merging into it, and always
+ignores the manifest, so it does a complete fetch every time.
 
 ## JSON Schema
 

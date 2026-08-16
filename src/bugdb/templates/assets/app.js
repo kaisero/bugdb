@@ -955,9 +955,11 @@
             case 'feature':
                 return 'Feature';
             case 'improvement':
-                return 'Improvement';
+                // Label only — the stored value stays 'improvement' so an
+                // already-cached release-notes.json keeps rendering.
+                return 'Enhancement';
             case 'fix':
-                return 'Fix';
+                return 'Bugfix';
             case 'breaking':
                 return 'Breaking';
             default:
@@ -1000,21 +1002,31 @@
                 );
             }
 
-            const changeList = el('ul', { className: 'space-y-3' });
+            // The list is the grid and each row uses `display: contents`, so
+            // the marker column is sized once and shared by every row (see
+            // .rn-list in theme.css). Descriptions therefore share one left
+            // edge no matter what the marker contains.
+            const changeList = el('ul', { className: 'rn-list' });
             if (Array.isArray(release.changes)) {
                 for (const change of release.changes) {
+                    // Icon-only marker. Every marker is the same width, so the
+                    // description column is exact — a text label made each row
+                    // start at a different x ("Enhancement" vs "Bugfix"). The
+                    // legend in the modal header carries the meaning visually;
+                    // aria-label/title carry it for screen readers and hover.
+                    const changeLabel = getChangeTypeLabel(change.type);
                     const badge = el('span', {
-                        className: `flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${getChangeTypeStyles(change.type)} shrink-0`,
+                        className: `rn-marker ${getChangeTypeStyles(change.type)}`,
                     });
+                    badge.setAttribute('role', 'img');
+                    badge.setAttribute('aria-label', changeLabel);
+                    badge.setAttribute('title', changeLabel);
                     const icon = getChangeTypeIcon(change.type);
                     if (icon) badge.appendChild(icon);
-                    badge.appendChild(
-                        document.createTextNode(getChangeTypeLabel(change.type))
-                    );
 
                     changeList.appendChild(
                         el('li', {
-                            className: 'flex items-start gap-3',
+                            className: 'contents',
                             children: [
                                 badge,
                                 el('span', {

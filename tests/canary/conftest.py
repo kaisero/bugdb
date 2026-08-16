@@ -68,3 +68,26 @@ def _probe_url(path: str) -> ProbeResult:
 def probe() -> callable:
     """Return the URL-probe helper so tests can call it directly."""
     return _probe_url
+
+
+@pytest.fixture(scope="session")
+def live_sitemap():
+    """Parsed docs.paloaltonetworks.com sitemap, or skip on network failure.
+
+    Session-scoped: the sitemap is ~4.5 MB, fetch it once per run.
+    """
+    from bugdb.sitemap import SitemapIndex
+
+    last_error: str | None = None
+    for attempt in range(MAX_ATTEMPTS):
+        try:
+            req = urllib.request.Request(
+                f"{DOCS_BASE}/sitemap.xml", headers={"User-Agent": "bugdb-canary/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return SitemapIndex.from_xml(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last_error = f"{type(e).__name__}: {e}"
+            if attempt < MAX_ATTEMPTS - 1:
+                time.sleep(BACKOFF_SECONDS * (2**attempt))
+    pytest.skip(f"could not fetch sitemap: {last_error}")
