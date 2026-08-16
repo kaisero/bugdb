@@ -171,6 +171,7 @@ class TestVersions:
         tolerated_products = {
             "scm",
             "cortex-xdr",
+            "ai-access-security",
             "ai-runtime-security",
             "strata-logging-service",
             "device-security",

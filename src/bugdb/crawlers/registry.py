@@ -25,6 +25,7 @@ from .products.prisma_access import PrismaAccessCrawler
 from .products.prisma_access_agent import PrismaAccessAgentCrawler
 from .products.prisma_sdwan import PrismaSDWANCrawler
 from .products.saas import (
+    AIAccessSecurityCrawler,
     AIRuntimeSecurityCrawler,
     RemoteBrowserIsolationCrawler,
     StrataLoggingServiceCrawler,
@@ -42,6 +43,7 @@ PRODUCT_CRAWLERS = {
     "cloud-ngfw-azure": CloudNGFWAzureCrawler,
     "cloud-ngfw-aws": CloudNGFWAWSCrawler,
     "remote-browser-isolation": RemoteBrowserIsolationCrawler,
+    "ai-access-security": AIAccessSecurityCrawler,
     "ai-runtime-security": AIRuntimeSecurityCrawler,
     "strata-logging-service": StrataLoggingServiceCrawler,
     "device-security": DeviceSecurityCrawler,
@@ -86,6 +88,7 @@ def _build_async_dispatch() -> dict:
         "cloud-ngfw-azure": _crawl_cloud_ngfw_azure_async,
         "cloud-ngfw-aws": _crawl_cloud_ngfw_aws_async,
         "remote-browser-isolation": _crawl_remote_browser_isolation_async,
+        "ai-access-security": _crawl_ai_access_security_async,
         "ai-runtime-security": _crawl_ai_runtime_security_async,
         "strata-logging-service": _crawl_strata_logging_service_async,
         "device-security": _crawl_device_security_async,
@@ -466,6 +469,47 @@ async def _crawl_remote_browser_isolation_async(
                     generated_at=datetime.now(timezone.utc),
                     version="1.0.0",
                     source="Palo Alto Networks Remote Browser Isolation Release Notes",
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
+async def _crawl_ai_access_security_async(
+    major_versions: list[str] | None = None,
+    headless: bool = True,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: set[str] | None = None,
+    transport=None,
+    sitemap=None,
+    manifest=None,
+    fluidtopics=None,
+    discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
+) -> FetchResult:
+    """Async implementation of AI Access Security crawler."""
+    async with AIAccessSecurityCrawler(
+        headless=headless,
+        debug=debug,
+        max_concurrency=max_concurrency,
+        transport=transport,
+        sitemap=sitemap,
+        manifest=manifest,
+        discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
+    ) as crawler:
+        result = await crawler.crawl(major_versions, skip_versions)
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks AI Access Security Release Notes",
                 ),
                 products=[result.product],
             ),
@@ -1062,6 +1106,38 @@ def crawl_remote_browser_isolation(
     )
 
 
+def crawl_ai_access_security(
+    major_versions: list[str] | None = None,
+    headless: bool = True,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: set[str] | None = None,
+    transport=None,
+    sitemap=None,
+    manifest=None,
+    fluidtopics=None,
+    discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
+) -> FetchResult:
+    """Crawl AI Access Security release notes and return a FetchResult."""
+    return asyncio.run(
+        _crawl_ai_access_security_async(
+            major_versions,
+            headless,
+            debug,
+            max_concurrency,
+            skip_versions,
+            transport=transport,
+            sitemap=sitemap,
+            manifest=manifest,
+            discovery_cache=discovery_cache,
+            reporter=reporter,
+            task=task,
+        )
+    )
+
+
 def crawl_ai_runtime_security(
     major_versions: list[str] | None = None,
     headless: bool = True,
@@ -1360,6 +1436,7 @@ crawl_plugin_clustering = _make_plugin_crawler("plugin-clustering")
 # v1.1.0.)
 PRODUCT_WRAPPERS: dict[str, Callable[..., FetchResult]] = {
     "adem": crawl_adem,
+    "ai-access-security": crawl_ai_access_security,
     "ai-runtime-security": crawl_ai_runtime_security,
     "cloud-ngfw-aws": crawl_cloud_ngfw_aws,
     "cloud-ngfw-azure": crawl_cloud_ngfw_azure,

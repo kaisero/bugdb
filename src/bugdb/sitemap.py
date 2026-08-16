@@ -53,6 +53,7 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
     "cloud-ngfw-azure": ("/cloud-ngfw-azure/",),
     "cloud-ngfw-aws": ("/cloud-ngfw-aws/",),
     "remote-browser-isolation": ("/remote-browser-isolation/",),
+    "ai-access-security": ("/ai-access-security/",),
     "ai-runtime-security": ("/ai-runtime-security/",),
     "strata-logging-service": ("/strata-logging-service/",),
     # The legacy `/iot/iot-security-release-notes` and `/iot-security/`

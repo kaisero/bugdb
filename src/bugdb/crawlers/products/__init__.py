@@ -11,6 +11,7 @@ from .prisma_access import PrismaAccessCrawler
 from .prisma_access_agent import PrismaAccessAgentCrawler
 from .prisma_sdwan import PrismaSDWANCrawler
 from .saas import (
+    AIAccessSecurityCrawler,
     AIRuntimeSecurityCrawler,
     RemoteBrowserIsolationCrawler,
     StrataLoggingServiceCrawler,
@@ -20,6 +21,7 @@ from .sdwan_plugin import SDWANPluginCrawler
 
 __all__ = [
     "ADEMCrawler",
+    "AIAccessSecurityCrawler",
     "AIRuntimeSecurityCrawler",
     "CloudNGFWAWSCrawler",
     "CloudNGFWAzureCrawler",

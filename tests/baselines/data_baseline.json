@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-16T16:47:06+00:00",
+  "captured_at": "2026-08-16T16:54:49+00:00",
   "products": {
     "adem": {
       "versions": {
@@ -144,6 +144,21 @@
             "DEM-10817",
             "DEM-12280",
             "DEM-12332"
+          ]
+        }
+      }
+    },
+    "ai-access-security": {
+      "versions": {
+        "SaaS": {
+          "known": 2,
+          "addressed": 3,
+          "bug_ids": [
+            "LST-15102",
+            "NETVIS-1825",
+            "NETVIS-1973",
+            "NETVIS-2039",
+            "NETVIS-2045"
           ]
         }
       }
