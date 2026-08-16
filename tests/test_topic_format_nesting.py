@@ -85,16 +85,19 @@ def test_non_leaf_description_excludes_nested_topic_text():
 
 
 def test_non_leaf_workaround_excludes_nested_topic_text():
-    """PLUG-12161's "Workaround:" marker sits alone in its own div.p (the
-    steps that follow are in later sibling div.p elements, which the
-    existing single-paragraph workaround extraction doesn't reach — a
-    pre-existing gap, unrelated to nesting). What matters here is that
-    scoping never lets the nested FWAAS-* workaround text leak in.
+    """PLUG-12161's "Workaround:" marker sits alone in its own div.p, with
+    the actual steps in later sibling div.p elements — the existing
+    single-paragraph workaround extraction doesn't reach those siblings, so
+    ``workaround`` comes back None. That's a known, pre-existing extraction
+    gap (unrelated to nesting), not something this test is trying to fix.
+    Asserting the exact value, instead of only checking it when non-None,
+    pins the gap: if scoping logic ever changes and the nested FWAAS-*
+    workaround text leaks in, this test fails loudly instead of silently
+    passing.
     """
     by_id = {i.bug_id: i for i in _parse_nested_chain()}
     plug_12161 = by_id["PLUG-12161"]
-    if plug_12161.workaround is not None:
-        assert "Refresh Vpc" not in plug_12161.workaround
+    assert plug_12161.workaround is None
 
 
 def test_nested_leaf_descriptions_stay_scoped_to_themselves():

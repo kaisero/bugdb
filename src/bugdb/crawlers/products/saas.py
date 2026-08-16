@@ -256,6 +256,10 @@ class AIAccessSecurityCrawler(BaseCrawler):
         known_urls, addressed_urls = discover_saas_urls(
             self._sitemap, self.product_id, manifest=self._manifest
         )
+        if not known_urls and not addressed_urls:
+            logger.warning(
+                "%s: discovery found nothing, falling back to default URLs", self.product_name
+            )
         if not known_urls:
             known_urls = [self._DEFAULT_KNOWN_ISSUES_URL]
         if not addressed_urls:

@@ -97,6 +97,7 @@ class EnterpriseDLPCrawler(BaseCrawler):
         known: dict[str, str] = {}
         addressed: dict[str, str] = {}
         if self._sitemap is None:
+            logger.warning("%s: discovery found nothing (no sitemap)", self.product_name)
             return known, addressed
 
         for entry in self._sitemap.for_product(self.product_id):
@@ -116,6 +117,8 @@ class EnterpriseDLPCrawler(BaseCrawler):
             if version is not None:
                 known.setdefault(version, path)
 
+        if not known and not addressed:
+            logger.warning("%s: discovery found nothing", self.product_name)
         return known, addressed
 
     async def _parse_page(self, url: str) -> list[Issue]:

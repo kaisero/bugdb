@@ -137,6 +137,8 @@ class TSAgentCrawler(BaseCrawler):
             path = to_relative_path(entry.url)
             if path not in paths:
                 paths.append(path)
+        if not paths:
+            logger.warning("%s: discovery found nothing", self.product_name)
         return paths
 
     def _default_kind(self, url: str) -> str:

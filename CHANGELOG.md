@@ -5,6 +5,8 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
 ## [1.0.8] - 2026-08-16
 
 ### Added
@@ -42,12 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Note
 - Terminal Server Agent issues are published inside the PAN-OS
-  documentation tree, so the `WINAGENT-*` bugs appear under **both**
-  `panos` (versions 10.1.0 and 10.2.0, where they have always been) and
-  the new `ts-agent` product. This is deliberate — PAN-OS data was left
-  untouched. Separating them is tracked as follow-up work, along with
-  the `APL-`, `APPORTAL-`, `WIF-`, and `PLUG-` IDs that reach `panos`
-  from other non-core subtrees under `/pan-os/`.
+  documentation tree, so two `WINAGENT-*` bugs (`WINAGENT-727` and
+  `WINAGENT-890`) appear under **both** `panos` (where they have always
+  been) and the new `ts-agent` product. This is deliberate — PAN-OS data
+  was left untouched. The other `WINAGENT-*` IDs under `panos`
+  (`742`, `804`, `830`, `851`, `1006`) are not TS Agent duplicates — they
+  belong to the User-ID Agent, a different product that also publishes
+  release notes under `/pan-os/`. Separating the genuine duplicates is
+  tracked as follow-up work, along with the `APL-`, `APPORTAL-`, `WIF-`,
+  `PLUG-`, and User-ID Agent IDs that reach `panos` from other non-core
+  subtrees under `/pan-os/`.
 - Eleven Cortex XDR EOL pages (7.1 and 7.3–7.6) use a heading-based
   layout the parser does not read and are reported as failed fetches on
   every crawl. They carry no issues that were previously collected; the

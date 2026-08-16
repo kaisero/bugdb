@@ -488,7 +488,15 @@ class CortexXDRCrawler(BaseCrawler):
                 )
                 continue
             version, pages = outcome
+            if not pages:
+                # Benign and common: this space simply has no known/addressed
+                # pages (or only an index page that _drop_index_pages
+                # dropped). _resolve_space already logged this at debug.
+                continue
             if version is None:
+                # Pages exist but version resolution genuinely failed (both
+                # the space-path segment and the root page's <title> gave
+                # nothing usable) — a real problem, not the benign case above.
                 logger.warning("Could not resolve a version for Cortex space %s", sitemap_url)
                 continue
             if version in skip_versions:
@@ -512,6 +520,12 @@ class CortexXDRCrawler(BaseCrawler):
         ]
         pages = self._drop_index_pages(pages)
         if not pages:
+            # A space with no known/addressed pages at all is common and
+            # benign (e.g. a space that only holds admin-guide content) —
+            # not the same failure as version resolution coming up empty,
+            # so this is debug, not warning. `_discover` tells the two
+            # apart by checking `pages` before it checks `version`.
+            logger.debug("Cortex space %s has no issue pages", space_path)
             return None, []
 
         version = self._version_from_space_path(space_path)
@@ -580,6 +594,16 @@ class CortexXDRCrawler(BaseCrawler):
 
         Used for HTML pages *and* for the sitemap XML, which is why this
         returns the raw body rather than a parsed ``BeautifulSoup``.
+
+        This calls ``transport.fetch`` directly instead of going through
+        ``BaseCrawler._fetch_page_with_semaphore`` (or any other base fetch
+        helper), so ``BaseCrawler``'s ``max_concurrency`` semaphore, retry
+        loop, and global backoff never apply here — concurrency for Cortex
+        is bounded only by ``HttpxDocsTransport``'s own client-level limits.
+        Intentional: this module's discovery is two levels of small, cheap
+        XML/HTML fetches (one sitemap index, then one sitemap-pages.xml and
+        possibly one root page per space), not the large per-version issue
+        page fan-out the base plumbing was built to throttle.
         """
         page = await transport.fetch(url)
         if page.status_code != 200:
