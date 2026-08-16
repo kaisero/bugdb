@@ -24,6 +24,15 @@ on:
     # Every 3 days at 02:00 UTC (days 1, 4, 7, ... of each month).
     - cron: "0 2 */3 * *"
   workflow_dispatch:
+    inputs:
+      full_fetch:
+        description: >-
+          Re-crawl every product from scratch instead of incrementally.
+          Needed when a crawler's parsing or version keying changed, because
+          an incremental fetch can only ADD absent version keys — it can
+          never update or remove one that already exists.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,9 +45,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Incremental crawl. The first-ever run does a full fetch (no artifact
-  # exists yet -> starts from scratch); later runs restore the previous
-  # bugdb.json and pass --incremental so only new versions are crawled.
+  # Incremental crawl by default. The first-ever run does a full fetch (no
+  # artifact exists yet -> starts from scratch); later runs restore the
+  # previous bugdb.json and pass --incremental so only new versions are
+  # crawled.
+  #
+  # Dispatch with `full_fetch: true` to re-crawl everything instead. That is
+  # required whenever parsing or version keying changes, because the merge
+  # only ADDS absent version keys — it cannot update or remove one that is
+  # already there, so corrected data for an existing version is parsed and
+  # then discarded. Cortex XDR's move to a new documentation platform
+  # re-keyed all of its versions and needed exactly this.
   fetch:
     name: Fetch bug data
     runs-on: ubuntu-latest
@@ -65,11 +82,28 @@ jobs:
           required: "false"
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Fetch
+      # Two mutually exclusive fetch modes. `inputs.full_fetch` is empty for
+      # schedule and workflow_call events, so those always take the
+      # incremental path.
+      - name: Fetch (incremental)
+        if: ${{ !inputs.full_fetch }}
         run: >-
           uv run bugdb fetch
           -o assets/bugdb.json
           --incremental
+          --no-progress
+          -l assets/bugdb.log
+
+      # `--force` because the merge cannot refresh an existing version, and
+      # `--no-manifest` because --force does not merge: a manifest-skipped
+      # URL would be absent from the output rather than merely unrefreshed.
+      - name: Fetch (full re-crawl)
+        if: ${{ inputs.full_fetch }}
+        run: >-
+          uv run bugdb fetch
+          -o assets/bugdb.json
+          --force
+          --no-manifest
           --no-progress
           -l assets/bugdb.log
 
