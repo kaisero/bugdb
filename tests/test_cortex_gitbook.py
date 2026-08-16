@@ -136,6 +136,47 @@ class TestAriaTableParsing:
         assert issues[0].affected_components == ["Linux"]
         assert "(Linux)" not in issues[0].bug_id
 
+    def test_multi_id_issue_cell_yields_one_issue_per_id(self):
+        """A real ISSUE cell can hold several comma-separated bug ids."""
+        crawler = CortexXDRCrawler()
+        issues = crawler._parse_aria_issue_tables(_soup("gitbook-addressed-issues-multi-id.html"))
+
+        multi = [i for i in issues if i.bug_id in ("CPATR-13480", "CPATR-13408", "CPATR-13405")]
+        assert {i.bug_id for i in multi} == {"CPATR-13480", "CPATR-13408", "CPATR-13405"}
+        for issue in multi:
+            assert issue.description == (
+                "Fixed an issue affecting multiple related defects in the same release."
+            )
+            assert issue.fix_info is None
+
+    def test_platform_column_splits_on_commas(self):
+        """A "Windows, Linux" PLATFORM cell becomes two components, not one."""
+        crawler = CortexXDRCrawler()
+        issues = crawler._parse_aria_issue_tables(_soup("gitbook-addressed-issues-multi-id.html"))
+
+        by_id = {i.bug_id: i for i in issues}
+        assert by_id["CPATR-13480"].affected_components == ["Windows", "Linux"]
+
+    def test_platform_column_is_normalised_through_platform_map(self):
+        """Raw "Mac" from a PLATFORM column normalises to "macOS", matching
+        the normalisation already applied to parenthesised tags."""
+        crawler = CortexXDRCrawler()
+        issues = crawler._parse_aria_issue_tables(_soup("gitbook-addressed-issues-multi-id.html"))
+
+        by_id = {i.bug_id: i for i in issues}
+        assert by_id["CPATR-10688"].affected_components == ["macOS"]
+
+    def test_trailing_resolution_text_becomes_fix_info(self):
+        """Text after the bug id in the ISSUE cell is captured as fix_info."""
+        crawler = CortexXDRCrawler()
+        issues = crawler._parse_aria_issue_tables(_soup("gitbook-addressed-issues-multi-id.html"))
+
+        by_id = {i.bug_id: i for i in issues}
+        assert by_id["CPATR-10688"].fix_info == "This issue is resolved in Cortex XDR agent 7.0.3"
+        assert by_id["CPATR-10688"].description == (
+            "Fixed an issue that caused the agent to crash on startup."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Sitemap-driven discovery
@@ -369,6 +410,61 @@ class TestCrawl:
         assert result.failed_fetches[0].issue_type == "addressed"
 
     @pytest.mark.asyncio
+    async def test_crawl_surfaces_zero_yield_pages_as_failed_fetches(self):
+        """A page classified known/addressed that parses to zero issues must
+        not vanish silently — it has to show up in failed_fetches too.
+
+        This is the real EoL-space shape: issues render as bare headings
+        with no ARIA table, so the page fetches fine (200) but yields
+        nothing.
+        """
+        pages = _two_space_site()
+        known_url = next(u for u in pages if u.endswith("known-issues"))
+        pages[known_url] = (
+            "<html><head><title>Known Issues</title></head>"
+            "<body><main><h3>CPATR-99999: something not in ARIA table form</h3>"
+            "</main></body></html>"
+        )
+        transport = FakeTransport(pages)
+
+        async with CortexXDRCrawler(transport=transport) as crawler:
+            result = await crawler.crawl()
+
+        zero_yield = [f for f in result.failed_fetches if f.url == known_url]
+        assert len(zero_yield) == 1
+        assert zero_yield[0].error == "no issues parsed"
+        assert zero_yield[0].product == "cortex-xdr"
+        assert zero_yield[0].version == "9.2"
+        assert zero_yield[0].issue_type == "known"
+        # The version's addressed issues still came through fine.
+        versions = {v.version: v for v in result.product.versions}
+        assert versions["9.2"].known_issues == []
+        assert len(versions["9.2"].addressed_issues) == 4
+
+    @pytest.mark.asyncio
+    async def test_crawl_survives_one_version_raising(self, monkeypatch):
+        """An exception while crawling one version must not sink the whole
+        product — the outer gather has to isolate failures per version."""
+        transport = FakeTransport(_two_space_site())
+        original = CortexXDRCrawler._crawl_version_pages
+
+        async def flaky(self, transport, version, pages):
+            if version == "8.1":
+                raise RuntimeError("boom")
+            return await original(self, transport, version, pages)
+
+        monkeypatch.setattr(CortexXDRCrawler, "_crawl_version_pages", flaky)
+
+        async with CortexXDRCrawler(transport=transport) as crawler:
+            result = await crawler.crawl()
+
+        assert [v.version for v in result.product.versions] == ["9.2"]
+        broken = [f for f in result.failed_fetches if f.version == "8.1"]
+        assert len(broken) == 1
+        assert "boom" in broken[0].error
+        assert broken[0].product == "cortex-xdr"
+
+    @pytest.mark.asyncio
     async def test_crawl_reports_a_missing_sitemap_index(self):
         transport = FakeTransport({})
 
@@ -417,3 +513,12 @@ class TestFluidTopicsIsGone:
 
     def test_base_url_points_at_the_gitbook_host(self):
         assert CORTEX_BASE_URL == "https://cortex-docs.paloaltonetworks.com"
+
+
+class TestNeedsBrowser:
+    """The GitBook site is server-rendered; Cortex must never launch Chromium."""
+
+    def test_needs_browser_is_false_even_without_a_transport(self):
+        crawler = CortexXDRCrawler()
+        assert crawler._transport is None
+        assert crawler._needs_browser() is False

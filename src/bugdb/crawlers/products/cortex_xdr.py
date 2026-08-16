@@ -121,6 +121,12 @@ class CortexXDRCrawler(BaseCrawler):
     product_id = "cortex-xdr"
     product_name = "Cortex XDR Agent"
 
+    def _needs_browser(self) -> bool:
+        # The GitBook docs site is fully server-rendered, so this crawler
+        # only ever fetches through httpx (see the module docstring) and
+        # never touches Playwright, even with no transport injected.
+        return False
+
     # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------
@@ -231,6 +237,7 @@ class CortexXDRCrawler(BaseCrawler):
         headers = [
             cell.get_text(" ", strip=True).lower()
             for cell in table.find_all(attrs={"role": "columnheader"})
+            if cell.find_parent(attrs={"role": "table"}) is table
         ]
         if not headers and rows:
             first = [
@@ -301,8 +308,13 @@ class CortexXDRCrawler(BaseCrawler):
 
         if platform_cell is not None:
             platform = platform_cell.get_text(" ", strip=True)
-            if platform.strip().lower() not in _NON_PLATFORMS and platform not in components:
-                components.append(platform)
+            for part in platform.split(","):
+                part = part.strip()
+                if not part or part.lower() in _NON_PLATFORMS:
+                    continue
+                mapped = _PLATFORM_MAP.get(part.lower(), part)
+                if mapped not in components:
+                    components.append(mapped)
 
         raw_description = desc_cell.get_text(" ", strip=True) if desc_cell is not None else ""
         raw_description = re.sub(r"\s+", " ", raw_description).strip()
@@ -357,18 +369,32 @@ class CortexXDRCrawler(BaseCrawler):
                 f"{self.product_name}: fetching {len(versions)} versions",
             )
 
+            sorted_versions = sorted(versions.items())
             results = await asyncio.gather(
                 *(
                     self._crawl_version_pages(transport, version, pages)
-                    for version, pages in sorted(versions.items())
-                )
+                    for version, pages in sorted_versions
+                ),
+                return_exceptions=True,
             )
         finally:
             if own_transport is not None:
                 await own_transport.aclose()
 
         product_versions: list[ProductVersion] = []
-        for product_version, version_failures in results:
+        for (version, pages), outcome in zip(sorted_versions, results, strict=True):
+            if isinstance(outcome, Exception):
+                logger.warning("Cortex version %s failed: %s", version, outcome)
+                failed_fetches.append(
+                    FailedFetch(
+                        url=pages[0][0] if pages else f"{CORTEX_BASE_URL}/{version}",
+                        error=str(outcome),
+                        product=self.product_id,
+                        version=version,
+                    )
+                )
+                continue
+            product_version, version_failures = outcome
             failed_fetches.extend(version_failures)
             if product_version is not None:
                 product_versions.append(product_version)
@@ -485,6 +511,17 @@ class CortexXDRCrawler(BaseCrawler):
                     )
                     continue
                 issues = self._parse_aria_issue_tables(BeautifulSoup(body, "lxml"))
+                if not issues:
+                    logger.warning("%s: no issues parsed from %s", version, url)
+                    failed_fetches.append(
+                        FailedFetch(
+                            url=url,
+                            error="no issues parsed",
+                            product=self.product_id,
+                            version=version,
+                            issue_type=page_type,
+                        )
+                    )
                 if page_type == "known":
                     known.extend(issues)
                 else:
