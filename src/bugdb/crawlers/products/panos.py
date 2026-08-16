@@ -29,6 +29,27 @@ class PANOSCrawler(BaseCrawler):
     _NGFW_BASE = "/ngfw/release-notes/{v}"
     _LEGACY_BASE = "/pan-os/{v}/pan-os-release-notes"
 
+    # Major versions probed by the fallback (non-sitemap) discovery path,
+    # newest first. Only used when no sitemap is available — either the
+    # sitemap fetch failed or the legacy `--use-browser` path is active.
+    #
+    # Exposed as a class attribute so tests/canary/test_upstream_versions.py
+    # can assert against the real list. It previously kept its own copy,
+    # which drifted out of sync the moment this list changed.
+    CANDIDATE_VERSIONS: tuple[str, ...] = (
+        "12-2",
+        "12-1",
+        "12-0",
+        "11-3",
+        "11-2",
+        "11-1",
+        "11-0",
+        "10-2",
+        "10-1",
+        "10-0",
+        "9-1",
+    )
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Per-major-version landing URL that actually responded with a real
@@ -119,18 +140,7 @@ class PANOSCrawler(BaseCrawler):
         logger.debug("Discovering PAN-OS versions by probing URLs")
 
         # Known version patterns to check (newest first)
-        candidate_versions = [
-            "12-1",
-            "12-0",
-            "11-3",
-            "11-2",
-            "11-1",
-            "11-0",
-            "10-2",
-            "10-1",
-            "10-0",
-            "9-1",
-        ]
+        candidate_versions = list(self.CANDIDATE_VERSIONS)
 
         tasks = [self._resolve_landing_url(v) for v in candidate_versions]
         results = await asyncio.gather(*tasks, return_exceptions=True)

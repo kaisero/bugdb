@@ -42,7 +42,12 @@ htmlcov/
 # Generated files
 dist/
 data/
-assets/
+# Leading slash matters: this is the working directory `bugdb fetch` writes
+# into at the repo root. Unanchored, the pattern also swallowed
+# `src/bugdb/templates/assets/`, so any NEW template asset was silently
+# ignored (app.js and tailwind.css only survive because they predate the
+# rule).
+/assets/
 
 # OS
 .DS_Store

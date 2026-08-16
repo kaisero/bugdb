@@ -1,0 +1,217 @@
+/* BugDB theme layer.
+ *
+ * tailwind.css is a committed, pre-built artifact with no `dark:` variants
+ * and the repo has no Tailwind build step, so dark mode is expressed by
+ * redefining the concrete utilities the page already uses, scoped to
+ * [data-theme="dark"]. Colours live in tokens so both themes are defined
+ * in one place.
+ *
+ * This file is loaded AFTER tailwind.css, so any selector here of equal
+ * specificity wins. Watch for that when adding rules (see .hdr-pill).
+ */
+
+:root { color-scheme: light; }
+
+:root[data-theme="dark"] {
+  --d-bg:        #0f1115;   /* page ground: cool near-black, not pure #000 */
+  --d-surface:   #171a21;   /* cards, modal panel */
+  --d-surface-2: #1d212a;   /* subtle raised / hover */
+  --d-header:    #0b0d11;   /* the pan-dark header, deepened */
+  --d-border:    #2a303c;
+  --d-text:      #e6e8ed;
+  --d-text-2:    #c3c8d2;
+  --d-text-3:    #99a1b0;
+  --d-text-4:    #7d8595;
+  --d-accent:    #ff7a55;   /* pan-orange lifted for contrast on dark */
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] body { background-color: var(--d-bg); color: var(--d-text); }
+
+/* ---- surfaces ---- */
+[data-theme="dark"] .bg-white    { background-color: var(--d-surface) !important; }
+[data-theme="dark"] .bg-gray-50  { background-color: var(--d-surface-2) !important; }
+[data-theme="dark"] .bg-gray-100 { background-color: var(--d-surface-2) !important; }
+[data-theme="dark"] .bg-pan-dark { background-color: var(--d-header) !important; }
+[data-theme="dark"] .bg-gray-900 { background-color: #2a303c !important; }
+[data-theme="dark"] .hover\:bg-gray-800:hover { background-color: #343b49 !important; }
+[data-theme="dark"] .hover\:bg-gray-50:hover,
+[data-theme="dark"] .hover\:bg-gray-100:hover { background-color: var(--d-surface-2) !important; }
+[data-theme="dark"] .disabled\:bg-gray-100:disabled { background-color: #14171d !important; }
+
+/* The modal backdrop is `bg-black bg-opacity-50`, which Tailwind renders as
+   rgb(0 0 0 / var(--tw-bg-opacity)). Setting background-color here would
+   drop the alpha and make the backdrop fully opaque, hiding the page behind
+   it — deepen it via the opacity variable instead. */
+[data-theme="dark"] .bg-black.bg-opacity-50 { --tw-bg-opacity: 0.72 !important; }
+
+/* ---- borders ---- */
+[data-theme="dark"] .border-gray-200,
+[data-theme="dark"] .border-gray-300 { border-color: var(--d-border) !important; }
+[data-theme="dark"] .border-emerald-200 { border-color: rgba(16,185,129,.35) !important; }
+
+/* ---- greys ---- */
+[data-theme="dark"] .text-gray-900 { color: var(--d-text) !important; }
+[data-theme="dark"] .text-gray-800,
+[data-theme="dark"] .text-gray-700 { color: var(--d-text-2) !important; }
+[data-theme="dark"] .text-gray-600,
+[data-theme="dark"] .text-gray-500 { color: var(--d-text-3) !important; }
+[data-theme="dark"] .text-gray-400 { color: var(--d-text-4) !important; }
+[data-theme="dark"] .text-pan-orange { color: var(--d-accent) !important; }
+[data-theme="dark"] .border-pan-orange { border-color: var(--d-accent) !important; }
+
+/* ---- tinted chips ----
+   BOTH halves of every pair are redefined. Lightening only the foreground
+   and leaving the light pastel fill is what made the Addressed tag
+   unreadable at 1.34:1. Fills are translucent so they read as tints; every
+   pair measures >= 7.7:1 on the card surface. */
+[data-theme="dark"] .bg-emerald-100 { background-color: rgba(16,185,129,.16) !important; }
+[data-theme="dark"] .text-emerald-800,
+[data-theme="dark"] .text-emerald-900,
+[data-theme="dark"] .text-emerald-600 { color: #6ee7b7 !important; }
+
+[data-theme="dark"] .bg-green-100   { background-color: rgba(34,197,94,.16) !important; }
+[data-theme="dark"] .text-green-800 { color: #86efac !important; }
+[data-theme="dark"] .hover\:bg-green-200:hover { background-color: rgba(34,197,94,.28) !important; }
+
+[data-theme="dark"] .bg-sky-100     { background-color: rgba(14,165,233,.16) !important; }
+[data-theme="dark"] .text-sky-800   { color: #7dd3fc !important; }
+
+[data-theme="dark"] .bg-violet-100  { background-color: rgba(139,92,246,.18) !important; }
+[data-theme="dark"] .text-violet-800{ color: #c4b5fd !important; }
+
+[data-theme="dark"] .bg-amber-100   { background-color: rgba(245,158,11,.16) !important; }
+[data-theme="dark"] .text-amber-800,
+[data-theme="dark"] .text-amber-600 { color: #fcd34d !important; }
+[data-theme="dark"] .hover\:bg-amber-200:hover { background-color: rgba(245,158,11,.28) !important; }
+
+[data-theme="dark"] .bg-blue-100    { background-color: rgba(59,130,246,.16) !important; }
+[data-theme="dark"] .text-blue-800  { color: #93c5fd !important; }
+
+[data-theme="dark"] .bg-red-100     { background-color: rgba(239,68,68,.16) !important; }
+[data-theme="dark"] .text-red-800,
+[data-theme="dark"] .text-red-600   { color: #fca5a5 !important; }
+
+[data-theme="dark"] .bg-emerald-500 { background-color: #10b981 !important; }
+
+/* ---- "fix available" gradient banner ---- */
+[data-theme="dark"] .from-emerald-50 {
+  --tw-gradient-from: rgba(16,185,129,.14) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(16,185,129,0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+}
+[data-theme="dark"] .to-teal-50 {
+  --tw-gradient-to: rgba(20,184,166,.14) var(--tw-gradient-to-position) !important;
+}
+
+/* ---- native controls ---- */
+[data-theme="dark"] input,
+[data-theme="dark"] select { background-color: var(--d-surface-2); color: var(--d-text); }
+[data-theme="dark"] input::placeholder { color: var(--d-text-4); }
+
+/* ---- autocomplete dropdown ----
+   index.html carries an inline <style> block with hard-coded light colours
+   (background: white, #d1d5db, #FFF7ED, #FFEDD5, #6b7280) for these. They
+   are plain CSS rather than Tailwind utilities, so the overrides above do
+   not reach them. The attribute selector gives these rules a higher
+   specificity than the inline block, so they win regardless of source
+   order. */
+[data-theme="dark"] .autocomplete-dropdown {
+  background: var(--d-surface-2);
+  border-color: var(--d-border);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, .5);
+}
+[data-theme="dark"] .autocomplete-option { color: var(--d-text-2); }
+[data-theme="dark"] .autocomplete-option:hover,
+[data-theme="dark"] .autocomplete-option.highlighted { background-color: rgba(255, 122, 85, .16); }
+[data-theme="dark"] .autocomplete-option.selected {
+  background-color: rgba(255, 122, 85, .26);
+  color: var(--d-text);
+}
+[data-theme="dark"] .autocomplete-no-results { color: var(--d-text-3); }
+
+/* ---- header controls ----
+   The header is dark in both themes, so these are styled once against that
+   ground and read identically either way.
+
+   `:not(.hidden)` is load-bearing: this file loads after tailwind.css, so a
+   bare `display: inline-flex` would beat `.hidden { display: none }` and
+   reveal the Release Notes button before app.js has loaded any notes. */
+.hdr-pill:not(.hidden) { display: inline-flex; }
+.hdr-pill {
+  align-items: center; gap: .375rem; flex: none;
+  height: 1.75rem; padding: 0 .75rem; margin: 0;
+  border-radius: 9999px; border: 1px solid rgba(255,255,255,.2);
+  background: rgba(255,255,255,.1); color: #fff;
+  font-size: .8125rem; line-height: 1; cursor: pointer;
+  transition: background-color .18s ease, border-color .18s ease;
+}
+.hdr-pill:hover { background: rgba(255,255,255,.16); }
+.hdr-pill:focus-visible { outline: 2px solid #fa582d; outline-offset: 2px; }
+.hdr-pill svg { width: .875rem; height: .875rem; }
+
+/* ---- theme switch ---- */
+.theme-switch {
+  position: relative; display: inline-flex; align-items: center; flex: none;
+  width: 3.25rem; height: 1.75rem; padding: 0; cursor: pointer;
+  border-radius: 9999px; border: 1px solid rgba(255,255,255,.2);
+  background: rgba(255,255,255,.1);
+  transition: background-color .18s ease, border-color .18s ease;
+}
+.theme-switch:hover { background: rgba(255,255,255,.16); }
+.theme-switch:focus-visible { outline: 2px solid #fa582d; outline-offset: 2px; }
+.theme-switch[aria-checked="true"] {
+  background: rgba(255,122,85,.28); border-color: rgba(255,122,85,.5);
+}
+.theme-switch .knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 1.375rem; height: 1.375rem; border-radius: 9999px;
+  background: #fff; color: #1a1a1a;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .18s ease, background-color .18s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4);
+}
+.theme-switch[aria-checked="true"] .knob {
+  transform: translateX(1.5rem); background: #ff7a55; color: #0b0d11;
+}
+.theme-switch svg { width: .8125rem; height: .8125rem; display: block; }
+.theme-switch .i-moon { display: none; }
+.theme-switch[aria-checked="true"] .i-sun { display: none; }
+.theme-switch[aria-checked="true"] .i-moon { display: block; }
+
+/* ---- release notes modal ---- */
+.rn-wide { max-width: 48rem; }
+
+/* The LIST is the grid and each row uses `display: contents`, so the marker
+   column is sized once and shared by every row — descriptions share one
+   left edge regardless of marker content. */
+.rn-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: .75rem;
+  row-gap: .75rem;
+  align-items: start;
+}
+
+/* Icon-only marker: fixed square, so the description column is exact. */
+.rn-marker {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.5rem; height: 1.5rem; border-radius: .5rem; flex: none;
+  margin-top: .0625rem;   /* optical: align with the first line of text */
+}
+.rn-marker svg { width: .875rem; height: .875rem; }
+
+/* Legend in the modal header — the key for the icon-only markers. */
+.rn-legend {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: .25rem .875rem;
+  font-size: .75rem; line-height: 1rem;
+  margin-left: auto; margin-right: 1rem;
+}
+.rn-legend-item { display: inline-flex; align-items: center; gap: .375rem; white-space: nowrap; }
+.rn-legend .rn-marker { width: 1.25rem; height: 1.25rem; border-radius: .375rem; margin-top: 0; }
+.rn-legend .rn-marker svg { width: .75rem; height: .75rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-switch, .theme-switch .knob, .hdr-pill { transition: none; }
+}
