@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "captured_at": "2026-08-16T17:11:34+00:00",
+  "captured_at": "2026-08-16T17:30:55+00:00",
   "products": {
     "adem": {
       "versions": {
@@ -36399,6 +36399,59 @@
             "SLS-1831",
             "SLS-1938",
             "VRPT-9314"
+          ]
+        }
+      }
+    },
+    "ts-agent": {
+      "versions": {
+        "10.1.0": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-727"
+          ]
+        },
+        "10.1.2": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-890"
+          ]
+        },
+        "10.2.2": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-890"
+          ]
+        },
+        "11.0.1": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-890"
+          ]
+        },
+        "11.0.2": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-1032"
+          ]
+        },
+        "11.0.3": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-1122"
+          ]
+        },
+        "11.0.4": {
+          "known": 0,
+          "addressed": 1,
+          "bug_ids": [
+            "WINAGENT-1137"
           ]
         }
       }

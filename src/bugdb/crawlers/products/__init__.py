@@ -19,6 +19,7 @@ from .saas import (
 )
 from .scm import SCMCrawler
 from .sdwan_plugin import SDWANPluginCrawler
+from .ts_agent import TSAgentCrawler
 
 __all__ = [
     "ADEMCrawler",
@@ -39,4 +40,5 @@ __all__ = [
     "SCMCrawler",
     "SDWANPluginCrawler",
     "StrataLoggingServiceCrawler",
+    "TSAgentCrawler",
 ]

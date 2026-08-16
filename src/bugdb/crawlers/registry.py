@@ -33,6 +33,7 @@ from .products.saas import (
 )
 from .products.scm import SCMCrawler
 from .products.sdwan_plugin import SDWANPluginCrawler
+from .products.ts_agent import TSAgentCrawler
 
 # Registry of all product crawlers by product ID
 PRODUCT_CRAWLERS = {
@@ -53,6 +54,7 @@ PRODUCT_CRAWLERS = {
     "scm": SCMCrawler,
     "sdwan-plugin": SDWANPluginCrawler,
     "cortex-xdr": CortexXDRCrawler,
+    "ts-agent": TSAgentCrawler,
 }
 
 # Add plugin crawlers
@@ -99,6 +101,7 @@ def _build_async_dispatch() -> dict:
         "scm": _crawl_scm_async,
         "sdwan-plugin": _crawl_sdwan_plugin_async,
         "cortex-xdr": _crawl_cortex_xdr_async,
+        "ts-agent": _crawl_ts_agent_async,
     }
 
 
@@ -846,6 +849,46 @@ async def _crawl_cortex_xdr_async(
         )
 
 
+async def _crawl_ts_agent_async(
+    major_versions: list[str] | None = None,
+    headless: bool = True,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: set[str] | None = None,
+    transport=None,
+    sitemap=None,
+    manifest=None,
+    discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
+) -> FetchResult:
+    """Async implementation of Terminal Server Agent crawler."""
+    async with TSAgentCrawler(
+        headless=headless,
+        debug=debug,
+        max_concurrency=max_concurrency,
+        transport=transport,
+        sitemap=sitemap,
+        manifest=manifest,
+        discovery_cache=discovery_cache,
+        reporter=reporter,
+        task=task,
+    ) as crawler:
+        result = await crawler.crawl(major_versions, skip_versions)
+
+        return FetchResult(
+            database=BugDatabase(
+                metadata=Metadata(
+                    generated_at=datetime.now(timezone.utc),
+                    version="1.0.0",
+                    source="Palo Alto Networks Terminal Server Agent Release Notes",
+                ),
+                products=[result.product],
+            ),
+            failed_fetches=result.failed_fetches,
+        )
+
+
 async def _crawl_plugin_async(
     plugin_id: str,
     major_versions: list[str] | None = None,
@@ -1429,6 +1472,37 @@ def crawl_cortex_xdr(
     )
 
 
+def crawl_ts_agent(
+    major_versions: list[str] | None = None,
+    headless: bool = True,
+    debug: bool = False,
+    max_concurrency: int = 3,
+    skip_versions: set[str] | None = None,
+    transport=None,
+    sitemap=None,
+    manifest=None,
+    discovery_cache: DiscoveryCache | None = None,
+    reporter: ProgressReporter | None = None,
+    task: TaskHandle | None = None,
+) -> FetchResult:
+    """Crawl Terminal Server Agent release notes and return a FetchResult."""
+    return asyncio.run(
+        _crawl_ts_agent_async(
+            major_versions,
+            headless,
+            debug,
+            max_concurrency,
+            skip_versions,
+            transport=transport,
+            sitemap=sitemap,
+            manifest=manifest,
+            discovery_cache=discovery_cache,
+            reporter=reporter,
+            task=task,
+        )
+    )
+
+
 # Factory function for plugin crawlers
 def _make_plugin_crawler(plugin_id: str):
     """Factory function to create a plugin crawler function."""
@@ -1536,6 +1610,7 @@ PRODUCT_WRAPPERS: dict[str, Callable[..., FetchResult]] = {
     "scm": crawl_scm,
     "sdwan-plugin": crawl_sdwan_plugin,
     "strata-logging-service": crawl_strata_logging_service,
+    "ts-agent": crawl_ts_agent,
     "vm-series-plugin": crawl_vm_series_plugin,
 }
 
