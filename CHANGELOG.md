@@ -5,17 +5,53 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.8] - 2026-08-16
+
+### Added
+- **Three new products: AI Access Security, Enterprise DLP, and
+  Terminal Server Agent.** `bugdb fetch ai-access-security`,
+  `bugdb fetch enterprise-dlp`, and `bugdb fetch ts-agent` now work, and
+  all three appear in the site's product filter. Enterprise DLP carries
+  two version axes in one product — plugin releases (1.0–6.0 and their
+  patches) for known issues, and calendar years for addressed issues,
+  because upstream does not version the addressed pages.
 
 ### Fixed
-- **Bug IDs packed two-to-a-cell are no longer lost.** Some issue tables
-  put two ids in one `<td>` as sibling `<div class="p">` elements sharing
-  a single description (verified live on the RBI known-issues page: 8
-  rows, 10 distinct ids). The table parser's `get_text(strip=True)` fused
-  them into one string like `"ARBI-7796ARBI-7757"`, which silently
-  dropped the second id and attached the first as garbage `fix_info`.
-  Table parsing now recovers every id in a cell when every part looks
-  like a bug id, so both share the row's description.
+- **Cortex XDR data is being collected again.** Palo Alto migrated the
+  Cortex documentation off its FluidTopics platform, whose JSON API the
+  crawler depended on; the endpoint now redirects to a site that does not
+  serve it. The crawler is rebuilt against the new GitBook site, which
+  needs no browser and no API — its tables are ARIA `role` elements
+  rather than `<table>` markup. Coverage improves from 836 to 1,126
+  issues, including five agent versions the previous crawler never
+  reached. The failure had been invisible because incremental fetches
+  preserve data for products that return nothing.
+- **Bug IDs are no longer lost when one cell lists several of them.**
+  Upstream maps multiple IDs to a single description in three different
+  ways — as sibling `<div class="p">` elements, as run-together text
+  (`LST-15102andLST-15123`), and as an ID in a `<span>` beside one in a
+  `<div class="p">`. All three collapsed into one string, so only the
+  first ID survived and the rest were filed as its "fix info". Recovers
+  28 issues, mostly in PAN-OS.
+- **Nested issue blocks no longer drop or duplicate issues.** Upstream
+  nests issue blocks inside one another, so a real issue can enclose the
+  ones that follow it. Each block's text is now scoped to itself: the
+  enclosing issue is kept with its own description instead of being
+  discarded, and pure layout wrappers no longer emit a phantom copy of
+  the first issue they contain.
+
+### Note
+- Terminal Server Agent issues are published inside the PAN-OS
+  documentation tree, so the `WINAGENT-*` bugs appear under **both**
+  `panos` (versions 10.1.0 and 10.2.0, where they have always been) and
+  the new `ts-agent` product. This is deliberate — PAN-OS data was left
+  untouched. Separating them is tracked as follow-up work, along with
+  the `APL-`, `APPORTAL-`, `WIF-`, and `PLUG-` IDs that reach `panos`
+  from other non-core subtrees under `/pan-os/`.
+- Eleven Cortex XDR EOL pages (7.1 and 7.3–7.6) use a heading-based
+  layout the parser does not read and are reported as failed fetches on
+  every crawl. They carry no issues that were previously collected; the
+  visible failure is deliberate, so the gap is not forgotten.
 
 ## [1.0.6] - 2026-08-05
 

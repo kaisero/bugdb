@@ -19,6 +19,28 @@ def get_release_notes() -> ReleaseNotes:
     return ReleaseNotes(
         releases=[
             Release(
+                version="1.0.8",
+                date="2026-08-16",
+                changes=[
+                    ReleaseChange(
+                        type=ChangeType.FEATURE,
+                        description="AI Access Security release notes crawler",
+                    ),
+                    ReleaseChange(
+                        type=ChangeType.FEATURE,
+                        description="Enterprise DLP release notes crawler",
+                    ),
+                    ReleaseChange(
+                        type=ChangeType.FEATURE,
+                        description="Terminal Server Agent release notes crawler",
+                    ),
+                    ReleaseChange(
+                        type=ChangeType.FIX,
+                        description="Recover bug IDs from table cells that list two IDs",
+                    ),
+                ],
+            ),
+            Release(
                 version="1.0.7",
                 date="2026-08-05",
                 changes=[
