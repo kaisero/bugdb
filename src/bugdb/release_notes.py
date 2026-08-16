@@ -24,19 +24,48 @@ def get_release_notes() -> ReleaseNotes:
                 changes=[
                     ReleaseChange(
                         type=ChangeType.FEATURE,
-                        description="AI Access Security release notes crawler",
+                        description=(
+                            "AI Access Security known and addressed issues are now "
+                            "crawled and searchable."
+                        ),
                     ),
                     ReleaseChange(
                         type=ChangeType.FEATURE,
-                        description="Enterprise DLP release notes crawler",
+                        description=(
+                            "Enterprise DLP is now crawled and searchable, covering "
+                            "plugin releases 1.0 through 6.0 for known issues and "
+                            "calendar years for addressed issues."
+                        ),
                     ),
                     ReleaseChange(
                         type=ChangeType.FEATURE,
-                        description="Terminal Server Agent release notes crawler",
+                        description=(
+                            "Terminal Server (TS) Agent addressed issues are now "
+                            "crawled and searchable."
+                        ),
                     ),
                     ReleaseChange(
                         type=ChangeType.FIX,
-                        description="Recover bug IDs from table cells that list two IDs",
+                        description=(
+                            "Cortex XDR data is being collected again. Palo Alto "
+                            "moved those release notes onto a new documentation "
+                            "platform and the crawler had been quietly returning "
+                            "nothing; coverage goes from 836 to 1,126 issues."
+                        ),
+                    ),
+                    ReleaseChange(
+                        type=ChangeType.FIX,
+                        description=(
+                            "Bug IDs are no longer lost when one table cell lists "
+                            "several of them. Recovers 28 issues, mostly in PAN-OS."
+                        ),
+                    ),
+                    ReleaseChange(
+                        type=ChangeType.FIX,
+                        description=(
+                            "Issues that contain other issues are no longer dropped, "
+                            "and layout wrappers no longer show up as duplicates."
+                        ),
                     ),
                 ],
             ),
