@@ -134,3 +134,43 @@ def test_parse_addressed_index_groups_tables_by_h2_version():
     assert set(by_version.keys()) == {"26.2", "26.1.1"}
     assert {i.bug_id for i in by_version["26.2"]} == {"PAA-1", "PAA-2"}
     assert {i.bug_id for i in by_version["26.1.1"]} == {"PAA-3"}
+
+
+# ============================================================
+# Renamed to "Prisma Agent": docs moved to /prisma-agent/
+# ============================================================
+
+_RENAMED_SITEMAP = """<?xml version="1.0"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://docs.paloaltonetworks.com/prisma-agent/release-notes/prisma-agent-release-information/prisma-agent-known-issues/prisma-agent-26-3-known-issues</loc></url>
+  <url><loc>https://docs.paloaltonetworks.com/prisma-agent/release-notes/prisma-agent-release-information/prisma-agent-addressed-issues/prisma-agent-26-3-1-addressed-issues</loc></url>
+  <url><loc>https://docs.paloaltonetworks.com/prisma-agent/user-guide/prisma-agent-for-desktop-devices/get-help-for-prisma-agent-issues/report-prisma-agent-known-issues</loc></url>
+</urlset>
+"""
+
+
+def test_discovers_versions_under_the_renamed_prisma_agent_path():
+    """Upstream renamed the product and moved its release notes to
+    /prisma-agent/; the old path 301s there and left the sitemap, so
+    matching only /prisma-access-agent/ found zero versions."""
+    c = PrismaAccessAgentCrawler.__new__(PrismaAccessAgentCrawler)
+    c._sitemap = SitemapIndex.from_xml(_RENAMED_SITEMAP)
+    c._manifest = None
+
+    assert c.discover_versions_from_sitemap() == ["26-3"]
+    versions = {vi.version for vi in c.discover_version_pages_from_sitemap("26-3")}
+    assert versions == {"26.3.0", "26.3.1"}
+
+
+def test_user_guide_pages_under_prisma_agent_are_not_release_notes():
+    index = SitemapIndex.from_xml(_RENAMED_SITEMAP)
+    urls = [e.url for e in index.for_product("prisma-access-agent")]
+    assert not any("/user-guide/" in u for u in urls)
+
+
+def test_parse_addressed_index_accepts_the_prisma_agent_name():
+    from bs4 import BeautifulSoup
+
+    html = _INDEX_HTML.replace("Prisma Access Agent", "Prisma Agent")
+    by_version = _crawler()._parse_addressed_index_by_version(BeautifulSoup(html, "lxml"))
+    assert set(by_version.keys()) == {"26.2", "26.1.1"}

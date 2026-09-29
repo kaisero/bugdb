@@ -39,10 +39,16 @@ _PRODUCT_PREFIXES: dict[str, tuple[str, ...]] = {
     # saving ~250 redirected GETs per full fetch.
     "globalprotect": ("/globalprotect/release-notes/",),
     "prisma-access": ("/prisma-access/",),
+    # Upstream renamed the product to "Prisma Agent" and moved its docs
+    # to `/prisma-agent/`; the old `/prisma-access-agent/` URLs 301 there
+    # and have left the sitemap, so matching only the old path found zero
+    # versions. Pin to `/release-notes/`: the new book's user guide has
+    # URLs like ".../get-help-for-prisma-agent-issues" too.
     "prisma-access-agent": (
         "/gp-app-for-prisma-access/",
         "/prisma-access-agent/",
         "/prisma-access-app/",
+        "/prisma-agent/release-notes/",
     ),
     "prisma-sdwan": ("/prisma-sd-wan/",),
     # The docs site has been migrated from /cloud-ngfw/azure/* paths to
