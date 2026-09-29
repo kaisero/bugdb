@@ -59,6 +59,7 @@ _SPACE_VERSION_RE = re.compile(r"^(\d+\.\d+)(-?ce)?$", re.IGNORECASE)
 _TITLE_VERSION_RE = re.compile(r"Agent\s+(\d+\.\d+)(\s*-?\s*CE)?\b", re.IGNORECASE)
 
 _LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+_HREF_RE = re.compile(r'href="([^"#?]+)')
 
 _BUG_ID_RE = re.compile(r"[A-Z][A-Z0-9]*-\d+")
 
@@ -158,6 +159,49 @@ class CortexXDRCrawler(BaseCrawler):
     def _page_urls(self, pages_xml: str) -> list[str]:
         """Return every page URL listed in a space's ``sitemap-pages.xml``."""
         return _LOC_RE.findall(pages_xml)
+
+    def _root_link_urls(self, root_html: str, space_path: str) -> list[str]:
+        """Return the space's own page URLs linked from its root page.
+
+        The fallback for a space whose ``sitemap-pages.xml`` is empty. GitBook
+        leaves spaces marked ``noindex`` — every EoL 7.x and 8.x release —
+        out of their sitemaps, but the root page's navigation still links
+        every page. Links into other spaces are dropped.
+        """
+        prefix = f"{CORTEX_BASE_URL}/{space_path}/"
+        urls: list[str] = []
+        for href in _HREF_RE.findall(root_html):
+            url = f"{CORTEX_BASE_URL}{href}" if href.startswith("/") else href
+            url = url.rstrip("/")
+            if url.startswith(prefix) and url not in urls:
+                urls.append(url)
+        return urls
+
+    async def _expand_issue_pages(self, transport, urls: list[str], space_path: str) -> list[str]:
+        """Add the child pages that only an issue page's own navigation lists.
+
+        GitBook expands the navigation only down the current page's branch,
+        so the root page links ``.../addressed-issues-in-cortex-xdr-agent-8.8``
+        but not the ``...-8.8.0`` and ``...-8.8.1`` pages beneath it that
+        hold the tables. Each issue page is fetched once and any in-space
+        link strictly beneath it is added, until nothing new appears.
+        """
+        urls = list(urls)
+        expanded: set[str] = set()
+        while pending := [
+            u for u in urls if u not in expanded and self._classify_page(u) is not None
+        ]:
+            bodies = await asyncio.gather(
+                *(self._fetch_body(transport, u) for u in pending), return_exceptions=True
+            )
+            for parent, body in zip(pending, bodies, strict=True):
+                expanded.add(parent)
+                if isinstance(body, BaseException):
+                    continue
+                for child in self._root_link_urls(body, space_path):
+                    if child.startswith(parent + "/") and child not in urls:
+                        urls.append(child)
+        return urls
 
     def _classify_page(self, url: str) -> str | None:
         """Classify a page URL as ``"known"``, ``"addressed"`` or ``None``.
@@ -512,10 +556,19 @@ class CortexXDRCrawler(BaseCrawler):
         """Return ``(version, [(page_url, page_type), ...])`` for one space."""
         space_path = self._space_path(sitemap_url)
         pages_xml = await self._fetch_body(transport, sitemap_url)
+        root_url = f"{CORTEX_BASE_URL}/{space_path}"
+        root_html: str | None = None
+
+        page_urls = self._page_urls(pages_xml)
+        if not page_urls:
+            root_html = await self._fetch_body(transport, root_url)
+            page_urls = await self._expand_issue_pages(
+                transport, self._root_link_urls(root_html, space_path), space_path
+            )
 
         pages = [
             (url, page_type)
-            for url in self._page_urls(pages_xml)
+            for url in page_urls
             if (page_type := self._classify_page(url)) is not None
         ]
         pages = self._drop_index_pages(pages)
@@ -530,7 +583,8 @@ class CortexXDRCrawler(BaseCrawler):
 
         version = self._version_from_space_path(space_path)
         if version is None:
-            root_html = await self._fetch_body(transport, f"{CORTEX_BASE_URL}/{space_path}")
+            if root_html is None:
+                root_html = await self._fetch_body(transport, root_url)
             version = self._version_from_space_root(root_html)
         return version, pages
 

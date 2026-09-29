@@ -579,6 +579,71 @@ class TestCrawl:
         assert [v.version for v in result.product.versions] == ["9.3"]
         assert [i.bug_id for i in result.product.versions[0].known_issues] == ["CPATR-18568"]
 
+    @pytest.mark.asyncio
+    async def test_crawl_reads_page_links_from_root_when_space_sitemap_is_empty(self):
+        """EoL spaces are marked noindex, so GitBook serves them an empty
+        sitemap-pages.xml while the pages themselves still exist. Losing
+        every 7.x and 8.x EoL version to that went unreported, so the space
+        root's own navigation links stand in for the missing sitemap."""
+        legacy_path = (
+            "/8.x/8.1-eol/cortex-xdr-agent-8.1-release-information/"
+            "addressed-issues-in-cortex-xdr-agent-8.1.x"
+        )
+        pages = {
+            f"{CORTEX_BASE_URL}/sitemap.xml": _minimal_index(["8.x/8.1-eol"]),
+            f"{CORTEX_BASE_URL}/8.x/8.1-eol/sitemap-pages.xml": _minimal_pages([]),
+            f"{CORTEX_BASE_URL}/8.x/8.1-eol": (
+                "<html><head><title>Cortex XDR Agent 8.1 Release Information | "
+                "8.1 (EoL) | Cortex Documentation Portal</title></head><body>"
+                f'<a href="{legacy_path}">Addressed Issues</a>'
+                '<a href="/8.x/8.2-eol/cortex-xdr-agent-known-issues">Other space</a>'
+                "</body></html>"
+            ),
+            f"{CORTEX_BASE_URL}{legacy_path}": _fixture("gitbook-addressed-issues-legacy.html"),
+        }
+        transport = FakeTransport(pages)
+
+        async with CortexXDRCrawler(transport=transport) as crawler:
+            result = await crawler.crawl()
+
+        versions = {v.version: v for v in result.product.versions}
+        assert set(versions) == {"8.1"}
+        assert len(versions["8.1"].addressed_issues) == 4
+        assert result.failed_fetches == []
+        assert not any("8.2-eol" in url for url in transport.requested)
+
+    @pytest.mark.asyncio
+    async def test_crawl_follows_issue_index_to_children_when_space_sitemap_is_empty(self):
+        """GitBook's navigation only expands the current page's branch, so an
+        EoL root links the addressed-issues index but not the per-release
+        pages beneath it. Those are found through the index page itself."""
+        index_path = (
+            "/8.x/8.8-eol/cortex-xdr-agent-8.8-release-information/"
+            "addressed-issues-in-cortex-xdr-agent-8.8"
+        )
+        child_path = f"{index_path}/addressed-issues-in-cortex-xdr-agent-8.8.0"
+        pages = {
+            f"{CORTEX_BASE_URL}/sitemap.xml": _minimal_index(["8.x/8.8-eol"]),
+            f"{CORTEX_BASE_URL}/8.x/8.8-eol/sitemap-pages.xml": _minimal_pages([]),
+            f"{CORTEX_BASE_URL}/8.x/8.8-eol": (
+                f'<html><body><a href="{index_path}">Addressed Issues</a></body></html>'
+            ),
+            f"{CORTEX_BASE_URL}{index_path}": (
+                f'<html><body><a href="{index_path}">Addressed Issues</a>'
+                f'<a href="{child_path}">8.8.0</a></body></html>'
+            ),
+            f"{CORTEX_BASE_URL}{child_path}": _fixture("gitbook-addressed-issues-legacy.html"),
+        }
+        transport = FakeTransport(pages)
+
+        async with CortexXDRCrawler(transport=transport) as crawler:
+            result = await crawler.crawl()
+
+        versions = {v.version: v for v in result.product.versions}
+        assert set(versions) == {"8.8"}
+        assert len(versions["8.8"].addressed_issues) == 4
+        assert result.failed_fetches == []
+
 
 class TestFluidTopicsIsGone:
     """The khub endpoint no longer exists; nothing may still reference it."""
