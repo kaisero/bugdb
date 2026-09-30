@@ -59,6 +59,7 @@ _SPACE_VERSION_RE = re.compile(r"^(\d+\.\d+)(-?ce)?$", re.IGNORECASE)
 _TITLE_VERSION_RE = re.compile(r"Agent\s+(\d+\.\d+)(\s*-?\s*CE)?\b", re.IGNORECASE)
 
 _LOC_RE = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+_HREF_RE = re.compile(r'href="([^"#?]+)')
 
 _BUG_ID_RE = re.compile(r"[A-Z][A-Z0-9]*-\d+")
 
@@ -99,6 +100,26 @@ _PLATFORM_MAP = {
 
 # PLATFORM column values that mean "not platform specific".
 _NON_PLATFORMS = frozenset({"general", "all", "n/a", "-", ""})
+
+# A block of page text that opens a new bug on the table-less EoL 7.x pages:
+# a heading or line starting with a bug id, e.g. "CPATR-15252 (Windows), ...".
+_LEADING_BUG_ID_RE = re.compile(r"^\s*[A-Z][A-Z0-9]*-\d{3,}\b")
+
+# A list item "CPATR-15252 (Windows), CPATR-14737: Fixed an issue ...":
+# the ids and their platform tags, then a colon, then the description.
+_LIST_ITEM_RE = re.compile(
+    r"^\s*((?:[A-Z][A-Z0-9]*-\d{3,}(?:\s*\([^)]*\))?(?:\s*,\s*|\s+and\s+)?)+)\s*:\s*(.*)$",
+    re.DOTALL,
+)
+
+# A line holding nothing but a platform tag, e.g. "(Windows)".
+_PLATFORM_LINE_RE = re.compile(r"^\s*\([^)]*\)\s*$")
+
+# Headings of a table that GitBook flattened into blocks ("Feature",
+# "Description"). They label the next block and carry no content.
+_LABEL_HEADINGS = _HEADER_WORDS | {"feature"}
+
+_HEADING_TAGS = ("h1", "h2", "h3", "h4", "h5", "h6")
 
 
 def _cortex_version_sort_key(version: str) -> tuple[int, int, int]:
@@ -158,6 +179,49 @@ class CortexXDRCrawler(BaseCrawler):
     def _page_urls(self, pages_xml: str) -> list[str]:
         """Return every page URL listed in a space's ``sitemap-pages.xml``."""
         return _LOC_RE.findall(pages_xml)
+
+    def _root_link_urls(self, root_html: str, space_path: str) -> list[str]:
+        """Return the space's own page URLs linked from its root page.
+
+        The fallback for a space whose ``sitemap-pages.xml`` is empty. GitBook
+        leaves spaces marked ``noindex`` — every EoL 7.x and 8.x release —
+        out of their sitemaps, but the root page's navigation still links
+        every page. Links into other spaces are dropped.
+        """
+        prefix = f"{CORTEX_BASE_URL}/{space_path}/"
+        urls: list[str] = []
+        for href in _HREF_RE.findall(root_html):
+            url = f"{CORTEX_BASE_URL}{href}" if href.startswith("/") else href
+            url = url.rstrip("/")
+            if url.startswith(prefix) and url not in urls:
+                urls.append(url)
+        return urls
+
+    async def _expand_issue_pages(self, transport, urls: list[str], space_path: str) -> list[str]:
+        """Add the child pages that only an issue page's own navigation lists.
+
+        GitBook expands the navigation only down the current page's branch,
+        so the root page links ``.../addressed-issues-in-cortex-xdr-agent-8.8``
+        but not the ``...-8.8.0`` and ``...-8.8.1`` pages beneath it that
+        hold the tables. Each issue page is fetched once and any in-space
+        link strictly beneath it is added, until nothing new appears.
+        """
+        urls = list(urls)
+        expanded: set[str] = set()
+        while pending := [
+            u for u in urls if u not in expanded and self._classify_page(u) is not None
+        ]:
+            bodies = await asyncio.gather(
+                *(self._fetch_body(transport, u) for u in pending), return_exceptions=True
+            )
+            for parent, body in zip(pending, bodies, strict=True):
+                expanded.add(parent)
+                if isinstance(body, BaseException):
+                    continue
+                for child in self._root_link_urls(body, space_path):
+                    if child.startswith(parent + "/") and child not in urls:
+                        urls.append(child)
+        return urls
 
     def _classify_page(self, url: str) -> str | None:
         """Classify a page URL as ``"known"``, ``"addressed"`` or ``None``.
@@ -318,7 +382,21 @@ class CortexXDRCrawler(BaseCrawler):
 
     def _issues_from_aria_row(self, issue_cell, desc_cell, platform_cell) -> list[Issue]:
         """Build zero or more issues from one ARIA row's cells."""
-        raw = _DASH_RE.sub("-", issue_cell.get_text(" ", strip=True))
+        return self._issues_from_text(
+            issue_cell.get_text(" ", strip=True),
+            desc_cell.get_text(" ", strip=True) if desc_cell is not None else "",
+            platform_cell.get_text(" ", strip=True) if platform_cell is not None else None,
+        )
+
+    def _issues_from_text(
+        self, issue_text: str, description_text: str, platform_text: str | None = None
+    ) -> list[Issue]:
+        """Build zero or more issues from an issue's id text and description.
+
+        ``issue_text`` carries the bug ids plus anything that rides along with
+        them: parenthesised platform tags and trailing fix information.
+        """
+        raw = _DASH_RE.sub("-", issue_text)
 
         # Parenthesised platform tags ride along in the ISSUE cell on the
         # older spaces: "CPATR-21870 (Windows)".
@@ -340,9 +418,8 @@ class CortexXDRCrawler(BaseCrawler):
         tail = re.sub(r"\s+", " ", tail).strip(" ,;:.-")
         fix_info = tail if re.search(r"[A-Za-z]{3}", tail) else None
 
-        if platform_cell is not None:
-            platform = platform_cell.get_text(" ", strip=True)
-            for part in platform.split(","):
+        if platform_text is not None:
+            for part in platform_text.split(","):
                 part = part.strip()
                 if not part or part.lower() in _NON_PLATFORMS:
                     continue
@@ -350,8 +427,7 @@ class CortexXDRCrawler(BaseCrawler):
                 if mapped not in components:
                     components.append(mapped)
 
-        raw_description = desc_cell.get_text(" ", strip=True) if desc_cell is not None else ""
-        raw_description = re.sub(r"\s+", " ", raw_description).strip()
+        raw_description = re.sub(r"\s+", " ", description_text).strip()
         description, workaround = extract_workaround(raw_description)
 
         return [
@@ -364,6 +440,128 @@ class CortexXDRCrawler(BaseCrawler):
             )
             for bug_id in bug_ids
         ]
+
+    # ------------------------------------------------------------------
+    # Pages without an ARIA table
+    # ------------------------------------------------------------------
+
+    def _parse_issue_page(self, soup: BeautifulSoup) -> list[Issue]:
+        """Extract issues from a page, whatever its layout.
+
+        ARIA tables cover every current space. The EoL 7.x spaces have none:
+        their pages list each bug as a heading, as the blocks of a table that
+        GitBook flattened, or as a list item. Those are read by
+        :meth:`_parse_issue_blocks` only when a page has no ARIA table.
+        """
+        return self._parse_aria_issue_tables(soup) or self._parse_issue_blocks(soup)
+
+    def _parse_issue_blocks(self, soup: BeautifulSoup) -> list[Issue]:
+        """Read a table-less page's content column top to bottom.
+
+        A heading or line that starts with a bug id opens a bug. Until the
+        next such line or any other heading, the blocks that follow fill it
+        in: "This issue is resolved in ..." is fix information, a lone
+        "(Windows)" is the platform, and anything else, including a list
+        without bug ids, is description.
+        "Feature" and "Description" headings are the labels of a flattened
+        table and are skipped. List items, and lines of the same shape, read
+        as "IDs (Platform): text".
+        """
+        column = self._content_column(soup)
+        if column is None:
+            return []
+
+        issues: list[Issue] = []
+        issue_parts: list[str] = []
+        description_parts: list[str] = []
+
+        def close() -> None:
+            if issue_parts:
+                issues.extend(
+                    self._issues_from_text(" ".join(issue_parts), " ".join(description_parts))
+                )
+            issue_parts.clear()
+            description_parts.clear()
+
+        for block in column.find_all(recursive=False):
+            text = re.sub(r"\s+", " ", _DASH_RE.sub("-", block.get_text(" ", strip=True)))
+            if not text:
+                continue
+            if block.name in ("ul", "ol"):
+                items = block.find_all("li", recursive=False)
+                if any(_LEADING_BUG_ID_RE.match(item.get_text(" ", strip=True)) for item in items):
+                    close()
+                    for item in items:
+                        issues.extend(self._issues_from_list_item(item))
+                elif issue_parts:
+                    description_parts.append(text)
+                continue
+            is_heading = block.name in _HEADING_TAGS
+            if is_heading and text.lower() in _LABEL_HEADINGS:
+                continue
+            if _LEADING_BUG_ID_RE.match(text):
+                close()
+                item = None if is_heading else _LIST_ITEM_RE.match(text)
+                if item and item.group(2).strip():
+                    # A whole bug on one line, shaped like a list item.
+                    issues.extend(self._issues_from_text(item.group(1), item.group(2)))
+                else:
+                    issue_parts.append(text)
+            elif is_heading:
+                close()
+            elif not issue_parts:
+                continue
+            elif _PLATFORM_LINE_RE.match(text) or text.lower().startswith("this issue is resolved"):
+                issue_parts.append(text)
+            else:
+                # "Suggested workaround: ..." would leave a stray "Suggested"
+                # in the description once the workaround is split off.
+                description_parts.append(re.sub(r"(?i)^suggested\s+(?=workaround)", "", text))
+        close()
+        return issues
+
+    def _issues_from_list_item(self, item) -> list[Issue]:
+        """Build issues from one "IDs (Platform): description" list item."""
+        text = re.sub(r"\s+", " ", _DASH_RE.sub("-", item.get_text(" ", strip=True)))
+        match = _LIST_ITEM_RE.match(text)
+        if not match:
+            return []
+        return self._issues_from_text(match.group(1), match.group(2))
+
+    @staticmethod
+    def _content_column(soup: BeautifulSoup):
+        """Return the element whose children are the page's content blocks.
+
+        Every bug id that opens a block marks one block: the list around it,
+        the heading around it, or the element holding it. The column is the
+        nearest element holding all of those blocks. When there is only one
+        block, the column is the first parent that holds more than just that
+        block, since GitBook wraps content in single-child divs. The
+        navigation never names a bug id, so it is never chosen.
+        """
+        main = soup.find("main") or soup
+        blocks = []
+        for text in main.find_all(string=_LEADING_BUG_ID_RE):
+            item = text.find_parent("li")
+            if item is not None:
+                block = item.find_parent(["ul", "ol"])
+            else:
+                block = text.find_parent(_HEADING_TAGS) or text.parent
+            if all(block is not other for other in blocks):
+                blocks.append(block)
+        if not blocks:
+            return None
+
+        first, *others = blocks
+        for column in first.parents:
+            if all(column in other.parents for other in others) and column is not first:
+                if others:
+                    return column
+                break
+        node = first
+        while node.parent is not None and len(node.parent.find_all(recursive=False)) == 1:
+            node = node.parent
+        return node.parent
 
     # ------------------------------------------------------------------
     # Crawl
@@ -512,10 +710,19 @@ class CortexXDRCrawler(BaseCrawler):
         """Return ``(version, [(page_url, page_type), ...])`` for one space."""
         space_path = self._space_path(sitemap_url)
         pages_xml = await self._fetch_body(transport, sitemap_url)
+        root_url = f"{CORTEX_BASE_URL}/{space_path}"
+        root_html: str | None = None
+
+        page_urls = self._page_urls(pages_xml)
+        if not page_urls:
+            root_html = await self._fetch_body(transport, root_url)
+            page_urls = await self._expand_issue_pages(
+                transport, self._root_link_urls(root_html, space_path), space_path
+            )
 
         pages = [
             (url, page_type)
-            for url in self._page_urls(pages_xml)
+            for url in page_urls
             if (page_type := self._classify_page(url)) is not None
         ]
         pages = self._drop_index_pages(pages)
@@ -530,7 +737,8 @@ class CortexXDRCrawler(BaseCrawler):
 
         version = self._version_from_space_path(space_path)
         if version is None:
-            root_html = await self._fetch_body(transport, f"{CORTEX_BASE_URL}/{space_path}")
+            if root_html is None:
+                root_html = await self._fetch_body(transport, root_url)
             version = self._version_from_space_root(root_html)
         return version, pages
 
@@ -559,7 +767,7 @@ class CortexXDRCrawler(BaseCrawler):
                         )
                     )
                     continue
-                issues = self._parse_aria_issue_tables(BeautifulSoup(body, "lxml"))
+                issues = self._parse_issue_page(BeautifulSoup(body, "lxml"))
                 if not issues:
                     logger.warning("%s: no issues parsed from %s", version, url)
                     failed_fetches.append(

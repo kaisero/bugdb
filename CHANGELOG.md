@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recognised as a separator, so the second ID disappeared and was filed as
   the first one's "fix info" — the same defect 1.0.8 fixed for the other
   separators, reintroduced for this one.
+- **Prisma Access Agent data is collected again.** Upstream renamed the
+  product to Prisma Agent and moved its release notes, so a full crawl found
+  no versions at all. It now finds every release, including 26.3.
+- **Cortex XDR 7.x and 8.x end-of-life releases are collected again.** Their
+  pages still exist but were dropped from the docs site's sitemap, so a full
+  crawl lost fifteen versions. Versions 7.1 and 7.3–7.6, which list issues
+  without tables and were never collected, are now included too.
 
 ## [1.0.8] - 2026-08-16
 

@@ -86,7 +86,7 @@ class PrismaAccessAgentCrawler(BaseCrawler):
         version. Returns dict[version_string, list[Issue]].
         """
         result: dict[str, list[Issue]] = {}
-        version_re = re.compile(r"Prisma Access Agent\s+(\d+\.\d+(?:\.\d+)?)")
+        version_re = re.compile(r"Prisma (?:Access )?Agent\s+(\d+\.\d+(?:\.\d+)?)")
         current_version: str | None = None
         for element in soup.find_all(["h2", "h3", "table"]):
             if element.name in ("h2", "h3"):
@@ -170,7 +170,7 @@ class PrismaAccessAgentCrawler(BaseCrawler):
             List of VersionInfo objects with URLs for each minor version.
         """
         version_infos = []
-        base_url = "/prisma-access-agent/release-notes"
+        base_url = "/prisma-agent/release-notes"
 
         try:
             soup = await self._fetch_page_with_semaphore(base_url)
