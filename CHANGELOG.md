@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no versions at all. It now finds every release, including 26.3.
 - **Cortex XDR 7.x and 8.x end-of-life releases are collected again.** Their
   pages still exist but were dropped from the docs site's sitemap, so a full
-  crawl lost fifteen versions.
+  crawl lost fifteen versions. Versions 7.1 and 7.3–7.6, which list issues
+  without tables and were never collected, are now included too.
 
 ## [1.0.8] - 2026-08-16
 

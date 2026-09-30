@@ -179,6 +179,115 @@ class TestAriaTableParsing:
 
 
 # ---------------------------------------------------------------------------
+# Pages without an ARIA table (EoL 7.x)
+# ---------------------------------------------------------------------------
+
+
+class TestPagesWithoutTables:
+    """The EoL 7.x spaces never had tables. Each bug is a heading, a line
+    of a flattened table, or a list item, and the page is read top to
+    bottom as one column of blocks."""
+
+    def test_fixtures_really_have_no_tables(self):
+        for name in (
+            "gitbook-known-issues-headings.html",
+            "gitbook-addressed-issues-flat-table.html",
+            "gitbook-addressed-issues-platform-line.html",
+            "gitbook-addressed-issues-list.html",
+        ):
+            soup = _soup(name)
+            assert soup.find("table") is None, name
+            assert soup.find(attrs={"role": "table"}) is None, name
+
+    def test_one_heading_per_bug(self):
+        issues = CortexXDRCrawler()._parse_issue_page(_soup("gitbook-known-issues-headings.html"))
+        by_id = {i.bug_id: i for i in issues}
+
+        assert list(by_id) == ["CPATR-14741", "CPATR-12923", "CPATR-12879"]
+        assert by_id["CPATR-14741"].fix_info == (
+            "This issue is resolved in Cortex XDR agent 7.5.1 release"
+        )
+        assert by_id["CPATR-14741"].description.startswith("When you install the agent on MacOS")
+        assert "resolved in" not in by_id["CPATR-14741"].description
+        assert by_id["CPATR-12923"].workaround.startswith("Remove the Cortex XDR agent")
+        assert "workaround" not in by_id["CPATR-12923"].description.lower()
+        assert not by_id["CPATR-12923"].description.endswith("Suggested")
+
+    def test_flattened_table_skips_its_label_headings(self):
+        issues = CortexXDRCrawler()._parse_issue_page(
+            _soup("gitbook-addressed-issues-flat-table.html")
+        )
+        by_id = {i.bug_id: i for i in issues}
+
+        assert set(by_id) == {"CPATR-15441", "CPATR-15252", "CPATR-14737", "CPATR-14804"}
+        assert by_id["CPATR-14804"].description == (
+            "Fixed an issue where external USB drives scans are inconsistent "
+            "with scan configuration."
+        )
+        assert by_id["CPATR-14804"].affected_components == ["Windows"]
+        assert by_id["CPATR-14737"].description == by_id["CPATR-15252"].description
+        for issue in issues:
+            assert not issue.description.startswith(("Feature", "Description"))
+
+    def test_list_inside_a_description_stays_with_its_bug(self):
+        """A list without bug ids is part of the open bug's description, and
+        the workaround after it still belongs to that bug."""
+        issues = CortexXDRCrawler()._parse_issue_page(
+            _soup("gitbook-known-issues-flat-table-list.html")
+        )
+
+        assert [i.bug_id for i in issues] == ["CPATR-13678"]
+        issue = issues[0]
+        assert issue.affected_components == ["macOS"]
+        assert issue.fix_info == "This issue is resolved with content update 183-59522 and later"
+        assert issue.description.endswith(
+            "running Cortex XDR agents 7.4: Live Terminal Script Execution Host Insights"
+        )
+        assert issue.workaround == "Install Rosetta 2."
+
+    def test_platform_on_its_own_line(self):
+        issues = CortexXDRCrawler()._parse_issue_page(
+            _soup("gitbook-addressed-issues-platform-line.html")
+        )
+
+        assert [i.bug_id for i in issues] == ["CPATR-14585"]
+        assert issues[0].affected_components == ["Windows"]
+        assert issues[0].description.startswith("Fixed an issue on Windows endpoints")
+
+    def test_one_list_item_per_bug(self):
+        issues = CortexXDRCrawler()._parse_issue_page(_soup("gitbook-addressed-issues-list.html"))
+        by_id = {i.bug_id: i for i in issues}
+
+        assert list(by_id) == [
+            "CPATR-16539",
+            "CPATR-15750",
+            "CPATR-16106",
+            "CPATR-14804",
+            "CPATR-14790",
+            "CPATR-14788",
+            "CPATR-14895",
+        ]
+        # A hotfix lists its one bug as a plain line in the same shape.
+        assert by_id["CPATR-14895"].description.startswith(
+            "Fixed an issue where Cortex XDR agents running without trusting certificates"
+        )
+        assert by_id["CPATR-14804"].affected_components == ["Windows"]
+        assert by_id["CPATR-14790"].affected_components == ["macOS"]
+        assert by_id["CPATR-14788"].affected_components is None
+        assert by_id["CPATR-14804"].description == (
+            "Fixed an issue where external USB drives scans are inconsistent "
+            "with scan configuration."
+        )
+        # A CVE named in the description is not a bug id of its own.
+        assert by_id["CPATR-16539"].description.endswith("CVE-2022-0778")
+
+    def test_aria_tables_still_take_precedence(self):
+        crawler = CortexXDRCrawler()
+        soup = _soup("gitbook-addressed-issues.html")
+        assert crawler._parse_issue_page(soup) == crawler._parse_aria_issue_tables(soup)
+
+
+# ---------------------------------------------------------------------------
 # Sitemap-driven discovery
 # ---------------------------------------------------------------------------
 
@@ -462,15 +571,14 @@ class TestCrawl:
         """A page classified known/addressed that parses to zero issues must
         not vanish silently — it has to show up in failed_fetches too.
 
-        This is the real EoL-space shape: issues render as bare headings
-        with no ARIA table, so the page fetches fine (200) but yields
-        nothing.
+        The page fetches fine (200) but names no bug at all, in any of the
+        layouts the parser reads.
         """
         pages = _two_space_site()
         known_url = next(u for u in pages if u.endswith("known-issues"))
         pages[known_url] = (
             "<html><head><title>Known Issues</title></head>"
-            "<body><main><h3>CPATR-99999: something not in ARIA table form</h3>"
+            "<body><main><h3>Known Issues</h3><p>There are no known issues.</p>"
             "</main></body></html>"
         )
         transport = FakeTransport(pages)
